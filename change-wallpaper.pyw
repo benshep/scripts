@@ -20,7 +20,6 @@ import screeninfo
 from math import ceil #calculation of mosaic dimensions
 from random import randint, choice
 from PIL import Image, ImageDraw, ImageFont
-import fnmatch  # matching wildcards
 from itertools import accumulate
 import datetime
 from time import time
@@ -34,7 +33,7 @@ def getFilesInPath(folder):
     """Use os.walk to get JPG files and sizes in the given folder."""
     file_list = []
     for root, dir, files in os.walk(folder):
-        file_list.extend([os.path.join(root, file) for file in fnmatch.filter(files, "*.[Jj][Pp][Gg]")])
+        file_list.extend([os.path.join(root, file) for file in files if file.lower().endswith(('.jpg', '.jpeg'))])
     return file_list
 
 print('\nWallpaper Changer')
