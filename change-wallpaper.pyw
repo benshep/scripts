@@ -53,6 +53,7 @@ print(pics_folder)
 lockscreen = 'lockscreen' in sys.argv
 for_phone = 'phone' in sys.argv
 wallpaper_folder = os.path.join(user_home, ('phone-pics' if for_phone else 'wallpaper'))
+os.makedirs(wallpaper_folder, exist_ok=True)
 wallpaper_filename = os.path.join(wallpaper_folder, ('lockscreen.jpg' if lockscreen else 'wallpaper.jpg'))
 print(wallpaper_filename)
 
@@ -191,8 +192,8 @@ for mon in monitors:
         if seasonal:
             file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
             days_diff = abs(file_date.replace(year=today.year) - today)
-            if days_diff > datetime.timedelta(days=30):
-                print('not seasonal enough! days_diff = ', days_diff)
+            print('days_diff = ', days_diff)
+            if datetime.timedelta(days=30) < days_diff < datetime.timedelta(days=335):
                 continue
         
         im = apply_orientation(Image.open(full_name))
@@ -299,7 +300,9 @@ for mon in monitors:
             write_caption(canvas, caption, caption_x, mosaic_height - 60)
             # Save into a numbered filename every run (max 200), in the appropriate folder (Landscape or Portrait)
             # Find the most recent
-            os.chdir(os.path.join(wallpaper_folder, 'Landscape' if mon_landscape else 'Portrait'))
+            wallpaper_subfolder = os.path.join(wallpaper_folder, 'Landscape' if mon_landscape else 'Portrait')
+            os.makedirs(wallpaper_subfolder, exist_ok=True)
+            os.chdir(wallpaper_subfolder)
             newest = max([f for f in os.listdir('.') if f[-3:] == 'jpg'], key=os.path.getmtime)
             # Increment by 1
             file_num = (int(newest[:-4]) + 1) % 200
