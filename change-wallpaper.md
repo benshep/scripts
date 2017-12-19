@@ -1,13 +1,15 @@
 # change-wallpaper.pyw
 
-This is a Python script to randomly switch your desktop wallpaper to a different image. It works under Windows and Linux. You can set this up on a timer (using `cron` on Linux or Task Scheduler on Windows) to change your wallpaper every hour (or as often as you like), or just run it when you feel like a change).
+This is a Python script to randomly switch your desktop wallpaper to a different image. It works under Windows and Linux. You can set this up on a timer (using `cron` on Linux or Task Scheduler on Windows) to change your wallpaper every hour (or as often as you like), or just run it when you feel like a change.
 
 # Features
 
+- **Cross-platform**. Written in Python, and works on Windows and Linux.
 - **Multi-monitor**. It will detect the placement of your monitors and automatically produce an image that covers all of them.
 - **Space filling**. If your monitor is *landscape* and the image chosen by the script is *portrait*, the script will look for another image in the same folder to fill the space, ensuring you don't have big empty spaces surrounding your image on the desktop.
 - **Captions**. The script places a caption at the bottom of the picture with the original filename of the chosen image. (The original image is unaffected.)
 - **Seasonal**. At random, 50% of the time, the script will only pick images that were taken around the same time of year as the current date.
+- **Lockscreen**. It can change your lockscreen wallpaper.
 
 # Requirements
 
@@ -31,6 +33,8 @@ Used without arguments, the script will pick a random JPG image from your Pictur
 It will add a caption to your image showing the filename relative to your Pictures folder.
 
 This will be repeated for each of your monitors, and a big image will be produced to cover all the monitors. The resulting image is saved as `wallpaper.jpg` in the `wallpaper` folder under your home folder.
+
+It will then set this wallpaper, using a system call in Windows, or by invoking [Nitrogen](https://github.com/l3ib/nitrogen) on Linux. It just uses Nitrogen's `--restore` option, so you'll need to run Nitrogen yourself to actually set the wallpaper.
 
 ## Lockscreen
 
