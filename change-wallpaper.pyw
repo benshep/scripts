@@ -52,9 +52,11 @@ print(pics_folder)
 
 lockscreen = 'lockscreen' in sys.argv
 for_phone = 'phone' in sys.argv
-wallpaper_folder = os.path.join(user_home, ('phone-pics' if for_phone else 'wallpaper'))
+wallpaper_folder = os.path.join(user_home, ('phone-pics' if for_phone else ('lockscreen' if lockscreen else 'wallpaper')))
+if lockscreen and on_windows:
+    wallpaper_folder = r'C:\lockscreen'
 os.makedirs(wallpaper_folder, exist_ok=True)
-wallpaper_filename = os.path.join(wallpaper_folder, ('lockscreen.jpg' if lockscreen else 'wallpaper.jpg'))
+wallpaper_filename = os.path.join(wallpaper_folder, 'wallpaper.jpg')
 print(wallpaper_filename)
 
 if on_windows and lockscreen:
@@ -71,6 +73,7 @@ if on_windows and lockscreen:
 
 # Get EXIF orientation and transpose the image accordingly
 # http://stackoverflow.com/questions/4228530/pil-thumbnail-is-rotating-my-image
+
 def flip_horizontal(im): return im.transpose(Image.FLIP_LEFT_RIGHT)
 def flip_vertical(im): return im.transpose(Image.FLIP_TOP_BOTTOM)
 def rotate_180(im): return im.transpose(Image.ROTATE_180)
@@ -158,6 +161,8 @@ def write_caption(image, caption, x, y):
         
 # read in exclude list
 exclude_list = [line.rstrip('\n') for line in open(os.path.join(pics_folder, 'exclude.txt'), 'r')]
+# ensure each item with a path separator uses the correct one for this OS
+exclude_list = [item.replace('\\', os.sep).replace('/', os.sep) for item in exclude_list]
 
 today = datetime.date.today()
 
@@ -303,17 +308,33 @@ for mon in monitors:
             wallpaper_subfolder = os.path.join(wallpaper_folder, 'Landscape' if mon_landscape else 'Portrait')
             os.makedirs(wallpaper_subfolder, exist_ok=True)
             os.chdir(wallpaper_subfolder)
-            newest = max([f for f in os.listdir('.') if f[-3:] == 'jpg'], key=os.path.getmtime)
-            # Increment by 1
-            file_num = (int(newest[:-4]) + 1) % 200
+            try:
+                newest = max([f for f in os.listdir('.') if f[-3:] == 'jpg'], key=os.path.getmtime)
+                # Increment by 1
+                file_num = (int(newest[:-4]) + 1) % 200
+            except ValueError:  # max throws exception if dir listing is empty
+                file_num = 0
             wallpaper_filename = '{:03d}.jpg'.format(file_num)
             print('Saving as', wallpaper_filename)
             canvas.save(wallpaper_filename)
             
 if not for_phone:
-    canvas.save(wallpaper_filename)
-    
+    if not lockscreen:
+        canvas.save(wallpaper_filename)
+
     if lockscreen: #save as lockscreen filename - symlinked from C:\Windows\System32\oobe\INFO\backgrounds
+        # Save into a numbered filename every run (max 2)
+        # Find the most recent
+        os.chdir(wallpaper_folder)
+        try:
+            newest = max([f for f in os.listdir('.') if f[-3:] == 'jpg'], key=os.path.getmtime)
+            # Increment by 1
+            file_num = (int(newest[:-4]) + 1) % 2
+        except ValueError:  # max throws exception if dir listing is empty
+            file_num = 0
+        wallpaper_filename = '{:02d}.jpg'.format(file_num)
+        print(wallpaper_filename)
+        canvas.save(wallpaper_filename)
         # file can be no more than 256kB (Windows limitation)
         q = 75 #default
         while os.path.getsize(wallpaper_filename) > 250 * 1024 and q > 0:
