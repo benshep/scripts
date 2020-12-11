@@ -21,3 +21,6 @@ lastfm = pylast.LastFMNetwork(api_key='MY_API_KEY', api_secret='MY_API_SECRET',
 ````
 
 For obvious reasons, the real code isn't posted here.
+
+## best-cycle-days.py
+Check the upcoming forecast and work calendar to find the best days to cycle to work. I don't cycle every day so I want an easy summary of when the best time will be.
