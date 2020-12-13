@@ -102,18 +102,21 @@ print('\nSpace for {:.1f} GB of music'.format(max_size / 1024**3))
 root_len = len(music_folder) + 1
 cd_folders = OrderedDict()
 
-# find Last.fm top albums
-top_albums = OrderedDict((f'{a.item.artist.name} - {a.item.title}'.lower(), None) for a in user.get_top_albums(limit=100))
+# Find Last.fm top albums. Here weight is number of tracks played. Third list item will be number of tracks per album.
+top_albums = OrderedDict((f'{a.item.artist.name} - {a.item.title}'.lower(), [None, int(a.weight), 1])
+                         for a in user.get_top_albums(limit=100))
 
 # search through music folders - get all the most recent ones
 exclude_prefixes = tuple(open(os.path.join(music_folder, 'not_cd_folders.txt')).read().split('\n'))
 for folder, folder_list, file_list in os.walk(music_folder):
     # use all files in the folder to detect the oldest...
     file_list = [os.path.join(folder, file) for file in file_list]
-    try:  # ...but filter this down to media files to look for tags
-        tags = phrydy.MediaFile(next(file for file in file_list if file.lower().endswith(('mp3', 'm4a', 'wma'))))
-    except StopIteration:  # no media files
+    # ...but filter this down to media files to look for tags
+    media_files = [file for file in file_list if file.lower().endswith(('mp3', 'm4a', 'wma'))]
+    if len(media_files) == 0:
         continue
+    try:
+        tags = phrydy.MediaFile(media_files[0])
     except phrydy.mediafile.FileTypeError:
         print(f'No media info for {file_list[0]}')
     # use album artist (if available) so we can compare 'Various Artist' albums
@@ -123,7 +126,8 @@ for folder, folder_list, file_list in os.walk(music_folder):
         pass  # print(f'Tag error for {tags.albumartist}, {tags.artist}, {tags.album} ({file_list[0]})')
     # print(album_name)
     if album_name in top_albums.keys():  # is it in the top albums? store a reference to it
-        top_albums[album_name] = folder
+        top_albums[album_name][0] = folder
+        top_albums[album_name][2] = len(media_files)
     name = folder[root_len:]
     name_ok = ' - ' in name or os.path.sep in name or 'best of' in name.lower()
     if not name.startswith(exclude_prefixes) and name_ok and len(file_list) > 0:
@@ -131,6 +135,9 @@ for folder, folder_list, file_list in os.walk(music_folder):
         total_size = sum([os.path.getsize(file) for file in file_list])
         cd_folders[folder] = (oldest, total_size)
 
+# Sort by (tracks played) / (tracks on album) i.e. approx number of times album has been played
+# This means albums with a lot of tracks don't get undue prominence
+top_albums = OrderedDict(sorted(top_albums.items(), key=lambda x: x[1][1] / x[1][2], reverse=True))
 print('\nNo album folder for:\n', '\n'.join(name for name, folder in top_albums.items() if folder is None))
 cd_folders = OrderedDict(sorted(cd_folders.items(), key=lambda x: x[1][0], reverse=True))  # sort on age of oldest file
 
@@ -146,7 +153,7 @@ while True:  # breaks out when total_size > max_size
         # we might have already used it though - loop through until we find one that's not been used (and isn't None)
         in_list = False
         while not in_list:
-            folder = top_albums.pop(next(iter(top_albums.keys())))  # remove the first one from the list
+            folder, tracks_played, n_tracks = top_albums.pop(next(iter(top_albums.keys())))  # remove the first one from the list
             in_list = folder in cd_folders.keys()
     oldest, size = cd_folders.pop(folder)  # remove from the list
     get_newest = not get_newest  # alternate between newest and top
