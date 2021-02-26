@@ -8,12 +8,13 @@ from datetime import datetime
 from collections import OrderedDict
 from send2trash import send2trash
 from contextlib import contextmanager
+from win10toast import ToastNotifier  # to show pop-up notification
 
 
 def get_track_title(media):
     title = media.title
     artist = media.artist
-    return f'{artist} - {title}'.lower()
+    return f'{artist} - {title}'
 
 
 # https://gist.github.com/howardhamilton/537e13179489d6896dd3
@@ -52,7 +53,7 @@ with pushd(radio_folder):
         if checking_scrobbles:
             tags = phrydy.MediaFile(file)
             track_title = get_track_title(tags)
-            if track_title in scrobbled_titles:
+            if track_title.lower() in scrobbled_titles:
                 print(f'Found: {track_title}')
                 scrobbled_radio.append(file)
             else:
@@ -69,29 +70,6 @@ for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not ha
     print(file)
     send2trash(os.path.join(radio_folder, file))
 
-# have we played the first folder in the commute list yet?
-# with pushd(commute_folder):
-#     played_tracks = 0
-#     for folder in os.listdir():
-#         try:
-#             d = datetime.strptime(folder[:10], '%Y-%m-%d')
-#         except ValueError:
-#             continue  # not a date-based filename
-#         with pushd(folder):
-#             print(f'Played any of {folder}?')
-#             for file in os.listdir():
-#                 media_info = MediaFile(file)
-#                 track_title = get_track_title(media_info)
-#                 if track_title in scrobbled_titles:
-#                     played_tracks += 1
-#                     print(f'Played: {track_title} ({played_tracks} from {folder})')
-#         if played_tracks > 2:
-#             print(f'Deleting {folder}')
-#             send2trash(folder)
-#             break
-#         break
-
-
 # update size of radio folder
 radio_files = os.listdir(radio_folder)
 radio_total = sum([os.path.getsize(os.path.join(radio_folder, file)) for file in radio_files])
@@ -104,7 +82,7 @@ cd_folders = OrderedDict()
 
 # Find Last.fm top albums. Here weight is number of tracks played. Third list item will be number of tracks per album.
 top_albums = OrderedDict((f'{a.item.artist.name} - {a.item.title}'.lower(), [None, int(a.weight), 1])
-                         for a in user.get_top_albums(limit=100))
+                         for a in user.get_top_albums(limit=300))
 
 # search through music folders - get all the most recent ones
 exclude_prefixes = tuple(open(os.path.join(music_folder, 'not_cd_folders.txt')).read().split('\n'))
@@ -143,20 +121,23 @@ cd_folders = OrderedDict(sorted(cd_folders.items(), key=lambda x: x[1][0], rever
 
 total_size = 0
 link_list = []
-get_newest = True
+get_newest = False
 print('\nAdding links to music folder:')
+links_added = []
 while True:  # breaks out when total_size > max_size
+    get_newest = not get_newest  # alternate between newest and top
     if get_newest:
         folder = next(iter(cd_folders.keys()))
+        # print(f'New: {folder}')
     else:
         # get the next from the top albums list
         # we might have already used it though - loop through until we find one that's not been used (and isn't None)
         in_list = False
         while not in_list:
-            folder, tracks_played, n_tracks = top_albums.pop(next(iter(top_albums.keys())))  # remove the first one from the list
+            folder, tracks_played, n_tracks = top_albums.pop(next(iter(top_albums.keys())))  # remove 1st one from list
             in_list = folder in cd_folders.keys()
+            # print(f'Top ({tracks_played / n_tracks:.1f}): {in_list} {folder}')
     oldest, size = cd_folders.pop(folder)  # remove from the list
-    get_newest = not get_newest  # alternate between newest and top
     total_size += size
     if total_size > max_size:
         break
@@ -165,6 +146,7 @@ while True:  # breaks out when total_size > max_size
     try:
         CreateJunction(folder, os.path.join(phone_folder, link_folder))
         print(link_folder)
+        links_added.append(link_folder)
     except FileExistsError:  # already created this link
         pass
     link_list.append(link_folder)
@@ -173,8 +155,18 @@ while True:  # breaks out when total_size > max_size
 print('\nRemoving:')
 # remove any links that aren't in the list
 # print(len(os.listdir(phone_folder)))
+links_removed = []
 for folder in os.listdir(phone_folder):
     full_path = os.path.join(phone_folder, folder)
     if os.path.isdir(full_path) and folder not in link_list:
         print(folder)
+        links_removed.append(folder)
         os.unlink(full_path)
+
+toast = ''
+if len(links_added) > 0:
+    toast += 'Added: ' + ', '.join(links_added) + '\n'
+if len(links_removed) > 0:
+    toast += 'Removed: ' + ', '.join(links_removed)
+if toast > '':
+    ToastNotifier().show_toast('Update phone music', toast, duration=30)
