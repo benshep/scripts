@@ -146,7 +146,8 @@ while True:  # breaks out when total_size > max_size
     try:
         CreateJunction(folder, os.path.join(phone_folder, link_folder))
         print(link_folder)
-        links_added.append(link_folder)
+        reason = 'newest' if get_newest else 'most plays'
+        links_added.append(f'{link_folder} (from {reason} list)')
     except FileExistsError:  # already created this link
         pass
     link_list.append(link_folder)
