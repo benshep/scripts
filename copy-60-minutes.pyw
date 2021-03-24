@@ -38,10 +38,10 @@ for file in sorted(os.listdir(oldest)):
         played_count += 1
 print(f'Played {played_count} tracks')
 
-if played_count > 3:
+if test_mode or played_count > 3:
     if not test_mode:
         send2trash(oldest)
-    toast = f'Deleted {oldest}'
+    toast = '❌ ' + oldest[len(copy_folder)+12:]  # skip yyyy-mm-dd bit for readability
 else:
     print('Not ready to copy new album.')
     exit()
@@ -63,7 +63,7 @@ else:
 
 files = albums[album]
 print(files)
-toast += f', copied {album_filename}'
+toast += '\n✔️ ' + album_filename
 folder_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
 full_folder_name = os.path.join(copy_folder, folder_name)
 if not test_mode:
