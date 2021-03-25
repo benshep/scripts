@@ -146,8 +146,7 @@ while True:  # breaks out when total_size > max_size
     try:
         CreateJunction(folder, os.path.join(phone_folder, link_folder))
         print(link_folder)
-        reason = 'newest' if get_newest else 'most plays'
-        links_added.append(f'{link_folder} (from {reason} list)')
+        links_added.append(('🌟 ' if get_newest else '🔥 ') + link_folder)
     except FileExistsError:  # already created this link
         pass
     link_list.append(link_folder)
@@ -161,13 +160,13 @@ for folder in os.listdir(phone_folder):
     full_path = os.path.join(phone_folder, folder)
     if os.path.isdir(full_path) and folder not in link_list:
         print(folder)
-        links_removed.append(folder)
+        links_removed.append('🗑️ ' + folder)
         os.unlink(full_path)
 
 toast = ''
 if len(links_added) > 0:
-    toast += 'Added: ' + ', '.join(links_added) + '\n'
+    toast += '\n'.join(links_added) + '\n'
 if len(links_removed) > 0:
-    toast += 'Removed: ' + ', '.join(links_removed)
+    toast += '\n'.join(links_removed)
 if toast > '':
     ToastNotifier().show_toast('Update phone music', toast, duration=30)
