@@ -6,7 +6,8 @@ from lastfm import lastfm
 import pickle  # to save state
 from datetime import datetime
 from shutil import copy2  # to copy files
-from win10toast import ToastNotifier  # to show pop-up notification
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
 
 test_mode = False  # don't change anything!
@@ -63,7 +64,7 @@ else:
 
 files = albums[album]
 print(files)
-toast += '\n✔️ ' + album_filename
+toast += '\n✔ ️' + album_filename
 folder_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
 full_folder_name = os.path.join(copy_folder, folder_name)
 if not test_mode:
@@ -86,6 +87,7 @@ for file in files.keys():
         copy2(old_filename, new_filename)
 
 if not test_mode:
-    open(list_filename, 'w', encoding='utf-8').write('\n'.join(albums_60[:-1]) + '\n')  # remove the last one from the list
+    # remove the last one from the list
+    open(list_filename, 'w', encoding='utf-8').write('\n'.join(albums_60[:-1]) + '\n')
 
-ToastNotifier().show_toast('Commute Music' + (' (Test Mode)' if test_mode else ''), toast)
+Pushbullet(api_key).push_note('🎵 Commute Music' + (' (Test Mode)' if test_mode else ''), toast)

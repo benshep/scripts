@@ -8,7 +8,8 @@ from datetime import datetime
 from collections import OrderedDict
 from send2trash import send2trash
 from contextlib import contextmanager
-from win10toast import ToastNotifier  # to show pop-up notification
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 
 def get_track_title(media):
@@ -169,4 +170,4 @@ if len(links_added) > 0:
 if len(links_removed) > 0:
     toast += '\n'.join(links_removed)
 if toast > '':
-    ToastNotifier().show_toast('Update phone music', toast, duration=30)
+    Pushbullet(api_key).push_note('🎧 Update phone music', toast)
