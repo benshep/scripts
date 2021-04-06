@@ -56,8 +56,10 @@ for file in sorted(radio_files):
             if not test_mode:
                 tags.save()
 
+toast = ''
 print('\nTo delete:')
 for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
+    toast += '🗑️ ' + file + '\n'
     print(file)
     if not test_mode:
         send2trash(file)
@@ -119,7 +121,6 @@ cd_folders = OrderedDict(sorted(cd_folders.items(), key=lambda x: x[1][0], rever
 total_size = 0
 link_list = []
 get_newest = False
-toast = ''
 os.chdir(phone_folder)
 while True:  # breaks out when total_size > max_size
     get_newest = not get_newest  # alternate between newest and top
@@ -133,7 +134,7 @@ while True:  # breaks out when total_size > max_size
         while True:
             folder, tracks_played, n_tracks = top_albums.pop(next(iter(top_albums.keys())))  # remove 1st one from list
             if folder in cd_folders.keys():
-                suffix = f', {tracks_played / n_tracks:.1f} plays\n'
+                suffix = f', {tracks_played / n_tracks:.1f} plays'
                 break
     oldest, size = cd_folders.pop(folder)  # remove from the list
     total_size += size
@@ -144,7 +145,7 @@ while True:  # breaks out when total_size > max_size
     if not os.path.exists(link_folder):
         if not test_mode:
             CreateJunction(folder, link_folder)
-        toast += ('🌟 ' if get_newest else '🔥 ') + link_folder + suffix
+        toast += ('🌟 ' if get_newest else '🔥 ') + link_folder + suffix + '\n'
     link_list.append(link_folder)
 
 # remove any links that aren't in the list
