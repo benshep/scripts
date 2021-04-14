@@ -6,7 +6,7 @@ import pickle  # to save state
 from shutil import get_terminal_size  # to copy files
 
 user_folder = os.environ['UserProfile']
-music_folders = [os.path.join(user_folder, 'Music'), r'\\Ksv86254dell\d\My Music']
+music_folders = [os.path.join(user_folder, 'Music'), r'\\Ksv86254dell.dl.ac.uk\d\My Music']
 media_exts = ('.mp3', '.m4a', '.ogg', '.flac')
 db_filename = 'python_albums.db'
 list_filename = '60-minutes.txt'
