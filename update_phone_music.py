@@ -1,6 +1,7 @@
 #!python3
 # -*- coding: utf-8 -*-
 import os
+from math import log10
 from _winapi import CreateJunction
 import phrydy  # for media file tagging
 import pylast
@@ -13,12 +14,14 @@ from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 
-def human_format(num):
-    magnitude = 0
-    while abs(num) >= 1000:
-        magnitude += 1
-        num /= 1000.0
-    return '{}{}'.format('{:1.1f}'.format(num), ['', 'K', 'M', 'B', 'T'][magnitude])
+def human_format(num, precision=0):
+    """Convert a number into a human-readable format, with k, M, B, T suffixes for
+    thousands, millions, billions, trillions respectively."""
+    mag = log10(abs(num)) if num else 0  # zero magnitude when num == 0
+    precision += max(0, int(-23 - mag))  # add more precision for very tiny numbers: 1.23e-28 => 0.0001y
+    mag = max(-8, min(8, mag // 3))  # clip within limits of SI prefixes
+    si_prefixes = dict(zip(range(-8, 9), 'y,z,a,f,p,n,µ,m,,k,M,B,T,P,E,Z,Y'.split(',')))  # strictly should be G not B
+    return f'{num / 10 ** (3 * mag):.{precision}f}{si_prefixes[mag]}'
 
 
 class Album:
