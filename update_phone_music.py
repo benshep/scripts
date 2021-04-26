@@ -38,17 +38,17 @@ class Album:
         return self.age_score + self.listen_score + self.popularity_score
 
     def toast(self):
-        scores = (self.age_score, self.listen_score, self.popularity_score)
-        if self.age_score == max(scores):
-            icon = '🌟 '
-            suffix = datetime.fromtimestamp(self.date).strftime(', %b %Y')
-        elif self.listen_score == max(scores):
-            icon = '🔥 '
-            suffix = f', {self.my_listens:.1f} plays'
+        max_score = max(self.age_score, self.listen_score, self.popularity_score)
+        if self.age_score == max_score:
+            icon = '🌟'
+            suffix = datetime.fromtimestamp(self.date).strftime('%b %Y')
+        elif self.listen_score == max_score:
+            icon = '🔥'
+            suffix = f'{self.my_listens:.1f} plays'
         else:
-            icon = '🌍 '
-            suffix = f', {human_format(self.global_listens)} global plays'
-        return icon + self.artist + ' - ' + self.title + suffix
+            icon = '🌍'
+            suffix = f'{human_format(self.global_listens)} global plays'
+        return f'{icon} {self.artist} - {self.title},  {suffix}'
 
 
 def get_track_title(media):
