@@ -52,9 +52,7 @@ class Album:
 
 
 def get_track_title(media):
-    title = media.title
-    artist = media.artist
-    return f'{artist} - {title}'
+    return f'{media.artist} - {media.title}'
 
 
 test_mode = False  # don't change anything!
