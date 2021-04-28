@@ -17,7 +17,7 @@ for folder, folder_list, file_list in os.walk(music_folder):
         cd_folders.append(name)
 
 folder = choice(cd_folders)
-os.system(f'title {folder}')  # set title of window
+os.system(f'title {folder.replace("&", "^&")}')  # set title of window
 print(folder)
 start_time = int(time())
 os.chdir(os.path.join(music_folder, folder))
