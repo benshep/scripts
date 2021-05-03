@@ -175,6 +175,11 @@ link_list = []
 get_newest = False
 os.chdir(phone_folder)
 for album in albums:  # breaks out when total_size > max_size
+    is_compilation = 'Various' in album.artist
+    # recently played? if so, don't link to it after all (to increase turnover)
+    if len(set(track.track.title for track in played_tracks if track.album.lower() == album.title.lower() and (
+            album.artist.lower() == track.track.artist.name.lower() or is_compilation))) >= 0.5 * album.track_count:
+        continue
     total_size += album.size
     if total_size > max_size:
         break
@@ -196,4 +201,5 @@ for folder in os.listdir():
 
 if toast:
     print(toast)
-    Pushbullet(api_key).push_note('🎧 Update phone music', toast)
+    if not test_mode:
+        Pushbullet(api_key).push_note('🎧 Update phone music', toast)
