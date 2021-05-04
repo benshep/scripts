@@ -53,7 +53,7 @@ class Album:
         else:
             icon = '🌍'
             suffix = f'{human_format(self.global_listens)} global plays'
-        return f'{icon} {self.artist} - {self.title},  {suffix}'
+        return f'{icon} {self.artist} - {self.title}, {suffix}'
 
 
 def get_track_title(media):
@@ -62,10 +62,6 @@ def get_track_title(media):
 
 test_mode = False  # don't change anything!
 user_profile = os.environ['UserProfile']
-music_folder = os.path.join(user_profile, 'Music')
-phone_folder = os.path.join(user_profile, 'Music for phone')
-radio_folder = os.path.join(user_profile, 'Radio')
-commute_folder = os.path.join(user_profile, 'Commute')
 
 # get recently played tracks (as reported by Last.fm)
 user = lastfm.get_user('ning')
@@ -73,7 +69,7 @@ played_tracks = user.get_recent_tracks(limit=400)
 scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
 scrobbled_radio = []
-os.chdir(radio_folder)
+os.chdir(os.path.join(user_profile, 'Radio'))
 radio_files = os.listdir()
 # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
 checking_scrobbles = True
@@ -108,12 +104,13 @@ for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not ha
         send2trash(file)
 
 # update size of radio folder
-radio_files = os.listdir(radio_folder)
+radio_files = os.listdir()
 radio_total = sum([os.path.getsize(file) for file in radio_files])
 sd_capacity = 32_006_713_344  # 29.8 GB, as reported by Windows
 max_size = sd_capacity * 0.43 - radio_total
 print('\nSpace for {:.1f} GB of music'.format(max_size / 1024**3))
 
+music_folder = os.path.join(user_profile, 'Music')
 root_len = len(music_folder) + 1
 
 # Find Last.fm top albums. Here weight is number of tracks played. Third list item will be number of tracks per album.
@@ -178,7 +175,7 @@ albums = sorted(albums, key=lambda album: album.get_total_score(), reverse=True)
 total_size = 0
 link_list = []
 get_newest = False
-os.chdir(phone_folder)
+os.chdir(os.path.join(user_profile, 'Music for phone'))
 for album in albums:  # breaks out when total_size > max_size
     # recently played? if so, don't link to it after all (to increase turnover)
     if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
