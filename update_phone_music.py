@@ -24,6 +24,11 @@ def human_format(num, precision=0):
     return f'{num / 10 ** (3 * mag):.{precision}f}{si_prefixes[mag]}'
 
 
+def match(a: str, b: str):
+    """Case-insensitive string comparison."""
+    return a.lower() == b.lower()
+
+
 class Album:
     def __init__(self, artist, title, folder, date, size, track_count):
         self.artist = artist
@@ -64,7 +69,7 @@ commute_folder = os.path.join(user_profile, 'Commute')
 
 # get recently played tracks (as reported by Last.fm)
 user = lastfm.get_user('ning')
-played_tracks = user.get_recent_tracks(limit=200)
+played_tracks = user.get_recent_tracks(limit=400)
 scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
 scrobbled_radio = []
@@ -175,10 +180,9 @@ link_list = []
 get_newest = False
 os.chdir(phone_folder)
 for album in albums:  # breaks out when total_size > max_size
-    is_compilation = 'Various' in album.artist
     # recently played? if so, don't link to it after all (to increase turnover)
-    if len(set(track.track.title for track in played_tracks if track.album.lower() == album.title.lower() and (
-            album.artist.lower() == track.track.artist.name.lower() or is_compilation))) >= 0.5 * album.track_count:
+    if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
+            match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
         continue
     total_size += album.size
     if total_size > max_size:
