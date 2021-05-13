@@ -7,7 +7,7 @@ from shutil import get_terminal_size  # to copy files
 
 user_folder = os.environ['UserProfile']
 music_folders = [os.path.join(user_folder, 'Music'), r'\\Ksv86254dell.dl.ac.uk\d\My Music']
-media_exts = ('.mp3', '.m4a', '.ogg', '.flac')
+media_exts = ('.mp3', '.m4a', '.ogg', '.flac', '.opus')
 db_filename = 'python_albums.db'
 list_filename = '60-minutes.txt'
 min_length = 55 * 60 * 1000
