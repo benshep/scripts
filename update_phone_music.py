@@ -26,7 +26,7 @@ def human_format(num, precision=0):
 
 def match(a: str, b: str):
     """Case-insensitive string comparison."""
-    return a.lower() == b.lower()
+    return (a or '').lower() == (b or '').lower()  # replace None with blank string
 
 
 class Album:
