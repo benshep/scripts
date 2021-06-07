@@ -98,7 +98,7 @@ for file in sorted(radio_files):
 toast = ''
 print('\nTo delete:')
 for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
-    toast += '🗑️ ' + file + '\n'
+    toast += '🗑️ ' + os.path.splitext(file)[0] + '\n'  # hide the file extension
     print(file)
     if not test_mode:
         send2trash(file)
