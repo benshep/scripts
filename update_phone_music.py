@@ -49,7 +49,7 @@ class Album:
             suffix = datetime.fromtimestamp(self.date).strftime('%b %Y')
         elif self.listen_score == max_score:
             icon = '🔥'
-            suffix = f'{self.my_listens:.1f} plays'
+            suffix = f'{self.my_listens:.0f} plays'
         else:
             icon = '🌍'
             suffix = f'{human_format(self.global_listens)} global plays'
