@@ -69,11 +69,13 @@ folder_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
 full_folder_name = os.path.join(copy_folder, folder_name)
 if not test_mode:
     os.mkdir(full_folder_name)
+duration = 0
 for file in files.keys():
     filename, ext = os.path.splitext(file)
     media_info = MediaFile(os.path.join(folder, file))
     track_num = media_info.track
     track_title = media_info.title
+    duration += media_info.length
 
     try:
         copy_filename = '{:02d} {}{}'.format(int(track_num), track_title, ext)
@@ -85,6 +87,7 @@ for file in files.keys():
     new_filename = os.path.join(full_folder_name, copy_filename)
     if not test_mode:
         copy2(old_filename, new_filename)
+os.rename(full_folder_name, f'{full_folder_name} [{duration / 60:.0f}]')
 
 if not test_mode:
     # remove the last one from the list
