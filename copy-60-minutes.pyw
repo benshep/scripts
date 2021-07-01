@@ -18,13 +18,12 @@ db_filename = 'python_albums.db'
 list_filename = '60-minutes.txt'
 min_length = 55 * 60 * 1000
 max_length = 70 * 60 * 1000
-illegal_chars = '*?/\\<>:|"'
+illegal_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})
 
 albums = pickle.load(open(db_filename, 'rb'))[0]
 
 # get recently played tracks (as reported by Last.fm)
-user = lastfm.get_user('ning')
-played_tracks = user.get_recent_tracks(limit=200)
+played_tracks = lastfm.get_user('ning').get_recent_tracks(limit=200)
 scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
 # delete the oldest if it's been played (assumes files have yyyy-mm-dd prefix)
@@ -54,17 +53,11 @@ artist = None if artist == 'None' else artist
 title = None if title == 'None' else title
 album = (folder, artist, title)
 
-if title is None:  # get from folder instead
-    album_filename = album_name = os.path.basename(folder)
-else:
-    album_name = title if artist in (None, '', 'Various', 'Various Artists') else (artist + ' - ' + title)
-    album_filename = album_name
-    for c in illegal_chars:
-        album_filename = album_filename.replace(c, ' ')
+no_artist = (None, '', 'Various', 'Various Artists')
+album_filename = (title if artist in no_artist else f'{artist} - {title}'.translate(illegal_chars)) if title else os.path.basename(folder)
 
 files = albums[album]
-print(files)
-toast += '\n✔ ️' + album_filename
+toast += '\n✔  ️' + album_filename
 folder_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
 full_folder_name = os.path.join(copy_folder, folder_name)
 if not test_mode:
@@ -73,20 +66,14 @@ duration = 0
 for file in files.keys():
     filename, ext = os.path.splitext(file)
     media_info = MediaFile(os.path.join(folder, file))
-    track_num = media_info.track
-    track_title = media_info.title
     duration += media_info.length
 
     try:
-        copy_filename = '{:02d} {}{}'.format(int(track_num), track_title, ext)
-        for c in illegal_chars:
-            copy_filename = copy_filename.replace(c, ' ')
+        copy_filename = f'{int(media_info.track):02d} {media_info.title}{ext}'.translate(illegal_chars)
     except ValueError:  # e.g. couldn't get track name
         copy_filename = file  # fall back to original name
-    old_filename = os.path.join(folder, file)
-    new_filename = os.path.join(full_folder_name, copy_filename)
     if not test_mode:
-        copy2(old_filename, new_filename)
+        copy2(os.path.join(folder, file), os.path.join(full_folder_name, copy_filename))
 os.rename(full_folder_name, f'{full_folder_name} [{duration / 60:.0f}]')
 
 if not test_mode:
