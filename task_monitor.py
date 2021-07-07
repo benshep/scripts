@@ -1,4 +1,5 @@
 import win32com.client
+from platform import node
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
@@ -8,4 +9,4 @@ toast = '\n'.join(f'{task.Name}, result {hex(task.LastTaskResult & (2 ** 32 - 1)
                   scheduler.GetFolder('Monitored').GetTasks(0) if task.LastTaskResult)
 
 if toast:
-    Pushbullet(api_key).push_note('👁️ Task Monitor', toast)
+    Pushbullet(api_key).push_note(f'👁️ Task Monitor {node()}', toast)
