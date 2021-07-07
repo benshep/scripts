@@ -71,7 +71,7 @@ if on_windows and lockscreen:
     except:
         pass  # ignore error
     if b'ESTABLISHED' in output:
-        raise NotImplementedError('on Remote Desktop, not changing lockscreen')
+        exit()  # raise NotImplementedError('on Remote Desktop, not changing lockscreen')
 
 # Get EXIF orientation and transpose the image accordingly
 # http://stackoverflow.com/questions/4228530/pil-thumbnail-is-rotating-my-image
