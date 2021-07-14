@@ -111,7 +111,7 @@ def apply_orientation(im):
 
 # figure out monitor geometry
 if for_phone:
-    width, height = 800, 1280
+    width, height = 800, 1560
     monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height),
                 screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
 else:
