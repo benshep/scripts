@@ -14,13 +14,40 @@ from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 
+# REWRITE:
+# Database class to store music
+# add_file(filename): scan file and add to database
+#
+# first walk through music folder
+# for each file:
+# (album, album artist, folder) is key
+# store file size, mtime, track number, duration too
+# remove short 'albums' with 1 or 2 tracks
+#
+# for each album:
+# get total size, duration, number of tracks
+# get my play count
+# get earliest last modified date
+#
+# remove recently-played albums
+# delete folders from Commute with recently-played albums
+# copy (or link?) albums of given length to Commute and 40 minutes
+# remove albums that are in Commute and 40 minutes
+#
+# now create links for Music for phone folder
+# don't assign global score yet - just use a mid-value (0.5)
+# work from highest to lowest scoring, add up total size, set threshold
+# for albums around the threshold, check global plays
+# need to repeat process to fine-tune?
+
+
 def human_format(num, precision=0):
-    """Convert a number into a human-readable format, with k, M, B, T suffixes for
+    """Convert a number into a human-readable format, with k, M, G, T suffixes for
     thousands, millions, billions, trillions respectively."""
     mag = log10(abs(num)) if num else 0  # zero magnitude when num == 0
     precision += max(0, int(-23 - mag))  # add more precision for very tiny numbers: 1.23e-28 => 0.0001y
     mag = max(-8, min(8, mag // 3))  # clip within limits of SI prefixes
-    si_prefixes = dict(zip(range(-8, 9), 'y,z,a,f,p,n,µ,m,,k,M,B,T,P,E,Z,Y'.split(',')))  # strictly should be G not B
+    si_prefixes = dict(zip(range(-8, 9), 'y,z,a,f,p,n,µ,m,,k,M,G,T,P,E,Z,Y'.split(',')))
     return f'{num / 10 ** (3 * mag):.{precision}f}{si_prefixes[mag]}'
 
 
@@ -62,6 +89,8 @@ def get_track_title(media):
 
 test_mode = False  # don't change anything!
 user_profile = os.environ['UserProfile']
+copy_folder_list = [(os.path.join(user_profile, 'Commute'), 55, 70),
+                    (os.path.join(user_profile, '40 minutes'), 35, 40)]
 
 # get recently played tracks (as reported by Last.fm)
 user = lastfm.get_user('ning')
@@ -104,11 +133,14 @@ for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not ha
         send2trash(file)
 
 # update size of radio folder
-radio_files = os.listdir()
-radio_total = sum([os.path.getsize(file) for file in radio_files])
-sd_capacity = 32_006_713_344  # 29.8 GB, as reported by Windows
-max_size = sd_capacity * 0.43 - radio_total
-print('\nSpace for {:.1f} GB of music'.format(max_size / 1024**3))
+used_total = sum([os.path.getsize(file) for file in os.listdir()]) + \
+    sum(sum(sum(os.path.getsize(os.path.join(folder_name, file)) for file in file_list)
+            for folder_name, folder_list, file_list in os.walk(copy_folder))
+        for copy_folder, min_length, max_length in copy_folder_list)
+GB = 1024 ** 3
+sd_capacity = (32 - 3) * GB  # leave a bit of space
+max_size = sd_capacity - used_total
+print(f'\nSpace for {human_format(max_size)}B of music')
 
 music_folder = os.path.join(user_profile, 'Music')
 root_len = len(music_folder) + 1
@@ -175,30 +207,23 @@ albums = sorted(albums, key=lambda album: album.get_total_score(), reverse=True)
 total_size = 0
 link_list = []
 get_newest = False
-os.chdir(os.path.join(user_profile, 'Music for phone'))
+os.chdir(music_folder)
+# Instead of linking, add a # to the end of folders NOT to sync
 for album in albums:  # breaks out when total_size > max_size
     # recently played? if so, don't link to it after all (to increase turnover)
-    if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
-            match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
-        continue
+    # if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
+    #         match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
+    #     continue
     total_size += album.size
-    if total_size > max_size:
-        break
     name = album.folder[root_len:]
-    link_folder = name.replace(os.path.sep, ' - ')
-    if not os.path.exists(link_folder):
-        if not test_mode:
-            CreateJunction(album.folder, link_folder)
+    excluded = name.endswith('#')
+    if total_size > max_size:  # already done everything we can fit - exclude everything else
+        if not excluded:
+            os.rename(name, name + "#")
+            toast += '🗑️ ' + name + '\n'
+    elif excluded:  # was previously excluded
+        os.rename(name, name.rstrip("#"))
         toast += album.toast() + '\n'
-    link_list.append(link_folder)
-
-# remove any links that aren't in the list
-for folder in os.listdir():
-    if os.path.isdir(folder) and folder not in link_list:
-        # print(folder)
-        toast += '🗑️ ' + folder + '\n'
-        if not test_mode:
-            os.unlink(folder)
 
 if toast:
     print(toast)
