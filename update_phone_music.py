@@ -14,33 +14,6 @@ from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 
-# REWRITE:
-# Database class to store music
-# add_file(filename): scan file and add to database
-#
-# first walk through music folder
-# for each file:
-# (album, album artist, folder) is key
-# store file size, mtime, track number, duration too
-# remove short 'albums' with 1 or 2 tracks
-#
-# for each album:
-# get total size, duration, number of tracks
-# get my play count
-# get earliest last modified date
-#
-# remove recently-played albums
-# delete folders from Commute with recently-played albums
-# copy (or link?) albums of given length to Commute and 40 minutes
-# remove albums that are in Commute and 40 minutes
-#
-# now create links for Music for phone folder
-# don't assign global score yet - just use a mid-value (0.5)
-# work from highest to lowest scoring, add up total size, set threshold
-# for albums around the threshold, check global plays
-# need to repeat process to fine-tune?
-
-
 def human_format(num, precision=0):
     """Convert a number into a human-readable format, with k, M, G, T suffixes for
     thousands, millions, billions, trillions respectively."""
@@ -204,6 +177,15 @@ for album in albums:
 print('')
 albums = sorted(albums, key=lambda album: album.get_total_score(), reverse=True)
 
+
+def rename_folder(old):
+    """Add or remove a # character from the end of a folder name.
+    If the new folder exists, copy everything from the old to the new folder."""
+    new = old.rstrip('#') if old.endswith('#') else old + '#'
+    os.makedirs(new, exist_ok=True)
+    [os.replace(os.path.join(old, filename), os.path.join(new, filename)) for filename in os.listdir(old)]
+    os.rmdir(old)
+
 total_size = 0
 link_list = []
 get_newest = False
@@ -219,11 +201,26 @@ for album in albums:  # breaks out when total_size > max_size
     excluded = name.endswith('#')
     if total_size > max_size:  # already done everything we can fit - exclude everything else
         if not excluded:
-            os.rename(name, name + "#")
+            rename_folder(name)
             toast += '🗑️ ' + name + '\n'
     elif excluded:  # was previously excluded
-        os.rename(name, name.rstrip("#"))
+        rename_folder(name)
         toast += album.toast() + '\n'
+
+    # link_folder = name.replace(os.path.sep, ' - ')
+    # if not os.path.exists(link_folder):
+    #     if not test_mode:
+    #         CreateJunction(album.folder, link_folder)
+    #     toast += album.toast() + '\n'
+    # link_list.append(link_folder)
+
+# remove any links that aren't in the list
+# for folder in os.listdir():
+#     if os.path.isdir(folder) and folder not in link_list:
+#         # print(folder)
+#         toast += '🗑️ ' + folder + '\n'
+#         if not test_mode:
+#             os.unlink(folder)
 
 if toast:
     print(toast)
