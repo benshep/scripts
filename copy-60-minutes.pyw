@@ -108,14 +108,12 @@ def copy_album(album, files, existing_folder=None):
         os.rename(existing_folder, copied_name)
         n = len(os.listdir(copied_name))
     os.chdir(copied_name)
-    j = 0
-    for f in files.keys():
-        j += 1
+    for j, f in enumerate(files.keys(), start=1):
         media_info = phrydy.MediaFile(os.path.join(folder, f))
         try:
             copy_filename = f'{int(media_info.track) + n:02d} {media_info.title}{ext}'.translate(bad_chars)
         except (ValueError, TypeError):  # e.g. couldn't get track name or number
-            copy_filename = f'{j + n:02d} {f}'  # fall back to original name
+            copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
         copy2(os.path.join(folder, f), copy_filename)
     os.chdir('..')
     return copied_name
