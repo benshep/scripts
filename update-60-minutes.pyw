@@ -63,10 +63,15 @@ for music_folder in music_folders:
                         albums[key] = album_file_list = {}
                     album_file_list[file] = duration
 
+# updated_albums = {album: sum(albums[album].values()) for album in updated_albums}
+# print(updated_albums)
+# exit()
+
 f = open(list_filename, 'a', encoding='utf-8')
 for album in updated_albums:
     file_list = albums[album]
-    if min_length < sum(file_list.values()) < max_length and album not in albums_60:
+    duration = sum(file_list.values())
+    if min_length < duration < max_length and album not in albums_60:
         f.write('{}\t{}\t{}\n'.format(*album))
 f.close()
 

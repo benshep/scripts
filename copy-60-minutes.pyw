@@ -33,10 +33,14 @@ def find_with_length(albums, low, high):
 def copy_album(album, files, existing_folder=None):
     """Copy a given album to the copy folder."""
     bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use these in filenames
+
+    def remove_bad_chars(filename: str):
+        return filename.translate(bad_chars)
+
     folder, artist, title = album
     if title:
         no_artist = artist in (None, '', 'Various', 'Various Artists')
-        album_filename = (title if no_artist else f'{artist} - {title}').translate(bad_chars)
+        album_filename = remove_bad_chars(title if no_artist else f'{artist} - {title}')
     else:
         album_filename = os.path.basename(folder)
     if existing_folder is None:  # making a new folder
@@ -52,7 +56,7 @@ def copy_album(album, files, existing_folder=None):
         media_info = phrydy.MediaFile(os.path.join(folder, f))
         name, ext = os.path.splitext(f)
         try:
-            copy_filename = f'{int(media_info.track) + n:02d} {media_info.title}{ext}'.translate(bad_chars)
+            copy_filename = remove_bad_chars(f'{int(media_info.track) + n:02d} {media_info.title}{ext}')
         except (ValueError, TypeError):  # e.g. couldn't get track name or number
             copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
         copy2(os.path.join(folder, f), copy_filename)

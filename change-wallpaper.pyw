@@ -48,7 +48,7 @@ pics_folder = os.path.join(user_home, 'Pictures')
 # in case it's a symlink
 try:
     pics_folder = os.readlink(pics_folder)
-except:
+except OSError:
     pass  # not a link!
 pf_len = len(pics_folder) + 1
 print(pics_folder)
@@ -98,11 +98,8 @@ def apply_orientation(im):
     """
 
     try:
-        if (e := im._getexif()) is not None:
-            # log.info('EXIF data found: %r', e)
-            orientation = e[0x0112]  # orientation tag number
-            f = orientation_funcs[orientation]
-            return f(im)
+        if (exif := im._getexif()) is not None:
+            return orientation_funcs[exif[0x0112]](im)  # orientation tag number
     except:
         # We'd be here with an invalid orientation value or some random error?
         pass  # log.exception("Error applying EXIF Orientation tag")

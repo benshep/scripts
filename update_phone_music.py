@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import os
 from math import log10
-from _winapi import CreateJunction
 import phrydy  # for media file tagging
 import pylast
 
@@ -12,6 +11,33 @@ from collections import OrderedDict
 from send2trash import send2trash
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
+
+
+# REWRITE:
+# Database class to store music
+# add_file(filename): scan file and add to database
+#
+# first walk through music folder
+# for each file:
+# (album, album artist, folder) is key
+# store file size, mtime, track number, duration too
+# remove short 'albums' with 1 or 2 tracks
+#
+# for each album:
+# get total size, duration, number of tracks
+# get my play count
+# get earliest last modified date
+#
+# remove recently-played albums
+# delete folders from Commute with recently-played albums
+# copy (or link?) albums of given length to Commute and 40 minutes
+# remove albums that are in Commute and 40 minutes
+#
+# now create links for Music for phone folder
+# don't assign global score yet - just use a mid-value (0.5)
+# work from highest to lowest scoring, add up total size, set threshold
+# for albums around the threshold, check global plays
+# need to repeat process to fine-tune?
 
 
 def human_format(num, precision=0):
@@ -60,169 +86,156 @@ def get_track_title(media):
     return f'{media.artist} - {media.title}'
 
 
-test_mode = False  # don't change anything!
-user_profile = os.environ['UserProfile']
-copy_folder_list = [(os.path.join(user_profile, 'Commute'), 55, 70),
-                    (os.path.join(user_profile, '40 minutes'), 35, 40)]
+def update_phone_music():
+    test_mode = False  # don't change anything!
+    user_profile = os.environ['UserProfile']
+    copy_folder_list = [(os.path.join(user_profile, 'Commute'), 55, 70),
+                        (os.path.join(user_profile, '40 minutes'), 35, 40)]
 
-# get recently played tracks (as reported by Last.fm)
-user = lastfm.get_user('ning')
-played_tracks = user.get_recent_tracks(limit=400)
-scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
+    # get recently played tracks (as reported by Last.fm)
+    user = lastfm.get_user('ning')
+    played_tracks = user.get_recent_tracks(limit=400)
+    scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
-scrobbled_radio = []
-os.chdir(os.path.join(user_profile, 'Radio'))
-radio_files = os.listdir()
-# loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
-checking_scrobbles = True
-for file in sorted(radio_files):
-    try:
-        d = datetime.strptime(file[:10], '%Y-%m-%d')
-    except ValueError:
-        continue  # not a date-based filename
+    scrobbled_radio = []
+    os.chdir(os.path.join(user_profile, 'Radio'))
+    radio_files = os.listdir()
+    # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
+    checking_scrobbles = True
+    for file in sorted(radio_files):
+        try:
+            d = datetime.strptime(file[:10], '%Y-%m-%d')
+        except ValueError:
+            continue  # not a date-based filename
 
-    tags = phrydy.MediaFile(file)
-    if checking_scrobbles:
-        track_title = get_track_title(tags)
-        if track_title.lower() in scrobbled_titles:
-            print(f'Found: {track_title}')
-            scrobbled_radio.append(file)
-        else:
-            print(f'Not found: {track_title}')
-            checking_scrobbles = False  # stop here - don't keep searching
-    else:
-        if tags.title in ('', 'Untitled Episode', None):
+        tags = phrydy.MediaFile(file)
+        if checking_scrobbles:
+            track_title = get_track_title(tags)
+            if track_title.lower() in scrobbled_titles:
+                print(f'Found: {track_title}')
+                scrobbled_radio.append(file)
+            else:
+                print(f'Not found: {track_title}')
+                checking_scrobbles = False  # stop here - don't keep searching
+        elif tags.title in ('', 'Untitled Episode', None):
             print(f'Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             if not test_mode:
                 tags.save()
 
-toast = ''
-print('\nTo delete:')
-for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
-    toast += '🗑️ ' + os.path.splitext(file)[0] + '\n'  # hide the file extension
-    print(file)
-    if not test_mode:
-        send2trash(file)
+    toast = ''
+    print('\nTo delete:')
+    for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
+        toast += '🗑️ ' + os.path.splitext(file)[0] + '\n'  # hide the file extension
+        print(file)
+        if not test_mode:
+            send2trash(file)
 
-# update size of radio folder
-used_total = sum([os.path.getsize(file) for file in os.listdir()]) + \
-    sum(sum(sum(os.path.getsize(os.path.join(folder_name, file)) for file in file_list)
-            for folder_name, folder_list, file_list in os.walk(copy_folder))
-        for copy_folder, min_length, max_length in copy_folder_list)
-GB = 1024 ** 3
-sd_capacity = (32 - 3) * GB  # leave a bit of space
-max_size = sd_capacity - used_total
-print(f'\nSpace for {human_format(max_size)}B of music')
+    # update size of radio folder
+    used_total = sum(os.path.getsize(file) for file in os.listdir()) + sum(
+        sum(
+            sum(
+                os.path.getsize(os.path.join(folder_name, file))
+                for file in file_list
+            )
+            for folder_name, folder_list, file_list in os.walk(copy_folder)
+        )
+        for copy_folder, min_length, max_length in copy_folder_list
+    )
 
-music_folder = os.path.join(user_profile, 'Music')
-root_len = len(music_folder) + 1
+    GB = 1024 ** 3
+    sd_capacity = (32 - 4) * GB  # leave a bit of space
+    max_size = sd_capacity - used_total
+    print(f'\nSpace for {human_format(max_size)}B of music')
 
-# Find Last.fm top albums. Here weight is number of tracks played. Third list item will be number of tracks per album.
-top_albums = OrderedDict((f'{album.item.artist.name} - {album.item.title}'.lower(), [None, int(album.weight), 1])
-                         for album in user.get_top_albums(limit=300))
+    music_folder = os.path.join(user_profile, 'Music')
+    root_len = len(music_folder) + 1
 
-# search through music folders - get all the most recent ones
-os.chdir(music_folder)
-exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n'))
-albums = []
-for folder, folder_list, file_list in os.walk(music_folder):
-    # use all files in the folder to detect the oldest...
-    file_list = [os.path.join(folder, file) for file in file_list]
-    # ...but filter this down to media files to look for tags
-    media_files = [file for file in file_list if file.lower().endswith(('mp3', 'm4a', 'wma', 'opus'))]
-    for file in media_files:
-        try:
-            tags = phrydy.MediaFile(file)
-            break
-        except phrydy.mediafile.FileTypeError:
-            print(f'No media info for {file_list[0]}')
-    else:  # no media info for any (or empty list)
-        continue
-    # use album artist (if available) so we can compare 'Various Artist' albums
-    artist = tags.albumartist if tags.albumartist else tags.artist
-    if artist is None:
-        continue  # can't recognise this file, nothing to do here
-    title = str('' or tags.album)  # use empty string if album is None
-    name = folder[root_len:]
-    # Valid album names: Athlete - Tourist, Elastica\The Menace, The Best Of Bowie
-    name_ok = any(part in name.lower() for part in (' - ', os.path.sep, 'best of'))
-    if not name.startswith(exclude_prefixes) and name_ok and len(file_list) > 0:
-        oldest = min([os.path.getmtime(file) for file in file_list])
-        total_size = sum([os.path.getsize(file) for file in file_list])
-        album = Album(artist, title, folder, oldest, total_size, len(file_list))
-        albums.append(album)
-        album_name = (artist + ' - ' + title).lower()
-        if album_name in top_albums.keys():  # is it in the top albums? store a reference to it
-            album.my_listens = top_albums[album_name][1] / album.track_count
-            top_albums[album_name][0] = folder
-            top_albums[album_name][2] = len(media_files)
-        # Get the global popularity of each album, to give 'classic' albums a boost in the list
-        # This requires one network request per album so is a bit slow. Just set to 1 to disable.
-        try:
-            album.global_listens = lastfm.get_album(artist, title).get_playcount() / album.track_count
-        except (pylast.MalformedResponseError, pylast.WSError):  # API issue
-            pass
-        print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
+    # Find Last.fm top albums. Here weight is number of tracks played. Third list item will be number of tracks per album.
+    top_albums = OrderedDict((f'{album.item.artist.name} - {album.item.title}'.lower(), [None, int(album.weight), 1])
+                             for album in user.get_top_albums(limit=300))
 
-oldest = min(album.date for album in albums)
-newest = max(album.date for album in albums)
-most_plays_me = max(album.my_listens for album in albums)
-most_plays_global = max(album.global_listens for album in albums)
-for album in albums:
-    album.age_score = (album.date - oldest)**2 / (newest - oldest)**2
-    album.listen_score = album.my_listens / most_plays_me
-    album.popularity_score = album.global_listens / most_plays_global
+    # search through music folders - get all the most recent ones
+    os.chdir(music_folder)
+    exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n'))
+    albums = []
+    for folder, folder_list, file_list in os.walk(music_folder):
+        # use all files in the folder to detect the oldest...
+        file_list = [os.path.join(folder, file) for file in file_list]
+        # ...but filter this down to media files to look for tags
+        media_files = [file for file in file_list if file.lower().endswith(('mp3', 'm4a', 'wma', 'opus'))]
+        for file in media_files:
+            try:
+                tags = phrydy.MediaFile(file)
+                break
+            except phrydy.mediafile.FileTypeError:
+                print(f'No media info for {file_list[0]}')
+        else:  # no media info for any (or empty list)
+            continue
+        # use album artist (if available) so we can compare 'Various Artist' albums
+        artist = tags.albumartist or tags.artist
+        if artist is None:
+            continue  # can't recognise this file, nothing to do here
+        title = str('' or tags.album)  # use empty string if album is None
+        name = folder[root_len:]
+        # Valid album names: Athlete - Tourist, Elastica\The Menace, The Best Of Bowie
+        name_ok = any(part in name.lower() for part in (' - ', os.path.sep, 'best of'))
+        if not name.startswith(exclude_prefixes) and name_ok and file_list:
+            oldest = min(os.path.getmtime(file) for file in file_list)
+            total_size = sum(os.path.getsize(file) for file in file_list)
+            album = Album(artist, title, folder, oldest, total_size, len(file_list))
+            albums.append(album)
+            album_name = (artist + ' - ' + title).lower()
+            if album_name in top_albums.keys():  # is it in the top albums? store a reference to it
+                album.my_listens = top_albums[album_name][1] / album.track_count
+                top_albums[album_name][0] = folder
+                top_albums[album_name][2] = len(media_files)
+            # Get the global popularity of each album, to give 'classic' albums a boost in the list
+            # This requires one network request per album so is a bit slow. Just set to 1 to disable.
+            try:
+                album.global_listens = lastfm.get_album(artist, title).get_playcount() / album.track_count
+            except (pylast.MalformedResponseError, pylast.WSError):  # API issue
+                pass
+            print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
 
-print('')
-albums = sorted(albums, key=lambda album: album.get_total_score(), reverse=True)
+    oldest = min(album.date for album in albums)
+    newest = max(album.date for album in albums)
+    most_plays_me = max(album.my_listens for album in albums)
+    most_plays_global = max(album.global_listens for album in albums)
+    for album in albums:
+        album.age_score = (album.date - oldest) ** 2 / (newest - oldest) ** 2
+        album.listen_score = album.my_listens / most_plays_me
+        album.popularity_score = album.global_listens / most_plays_global
+
+    print('')
+    albums = sorted(albums, key=lambda album: album.get_total_score(), reverse=True)
+
+    total_size = 0
+    link_list = []
+    get_newest = False
+    os.chdir(music_folder)
+    # Instead of linking, add a # to the end of folders NOT to sync
+    for album in albums:  # breaks out when total_size > max_size
+        # recently played? if so, don't link to it after all (to increase turnover)
+        # if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
+        #         match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
+        #     continue
+        total_size += album.size
+        name = album.folder[root_len:]
+        excluded = name.endswith('#')
+        if total_size > max_size:  # already done everything we can fit - exclude everything else
+            if not excluded:
+                os.rename(name, name + "#")
+                toast += '🗑️ ' + name + '\n'
+        elif excluded:  # was previously excluded
+            os.rename(name, name.rstrip("#"))
+            toast += album.toast() + '\n'
+
+    if toast:
+        print(toast)
+        if not test_mode:
+            Pushbullet(api_key).push_note('🎧 Update phone music', toast)
 
 
-def rename_folder(old):
-    """Add or remove a # character from the end of a folder name.
-    If the new folder exists, copy everything from the old to the new folder."""
-    new = old.rstrip('#') if old.endswith('#') else old + '#'
-    os.makedirs(new, exist_ok=True)
-    [os.replace(os.path.join(old, filename), os.path.join(new, filename)) for filename in os.listdir(old)]
-    os.rmdir(old)
-
-total_size = 0
-link_list = []
-get_newest = False
-os.chdir(music_folder)
-# Instead of linking, add a # to the end of folders NOT to sync
-for album in albums:  # breaks out when total_size > max_size
-    # recently played? if so, don't link to it after all (to increase turnover)
-    # if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
-    #         match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
-    #     continue
-    total_size += album.size
-    name = album.folder[root_len:]
-    excluded = name.endswith('#')
-    if total_size > max_size:  # already done everything we can fit - exclude everything else
-        if not excluded:
-            rename_folder(name)
-            toast += '🗑️ ' + name + '\n'
-    elif excluded:  # was previously excluded
-        rename_folder(name)
-        toast += album.toast() + '\n'
-
-    # link_folder = name.replace(os.path.sep, ' - ')
-    # if not os.path.exists(link_folder):
-    #     if not test_mode:
-    #         CreateJunction(album.folder, link_folder)
-    #     toast += album.toast() + '\n'
-    # link_list.append(link_folder)
-
-# remove any links that aren't in the list
-# for folder in os.listdir():
-#     if os.path.isdir(folder) and folder not in link_list:
-#         # print(folder)
-#         toast += '🗑️ ' + folder + '\n'
-#         if not test_mode:
-#             os.unlink(folder)
-
-if toast:
-    print(toast)
-    if not test_mode:
-        Pushbullet(api_key).push_note('🎧 Update phone music', toast)
+if __name__ == '__main__':
+    update_phone_music()
