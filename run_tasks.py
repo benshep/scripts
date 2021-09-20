@@ -16,41 +16,53 @@ from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
 
 
-def run_tasks():
-    # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
-    sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
+# Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
+sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
+sheet_name = 'Sheet1'
 
-    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range='Sheet1!A:E').execute()
+
+def update_cell(row, col, string):
+    google_sheets.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
+
+
+def run_tasks():
+    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:E').execute()
     data = response['values']
     assert data[0] == ['Function name', 'Parameters', 'Period', 'Last run', 'Last result']
 
     time_format = "%d/%m/%Y %H:%M"
+    seconds_per_day = 24 * 60 * 60
     for i, values in enumerate(data[1:]):
-        function_name = values[0]
-        parameters = values[1]
+        n_values = len(values)
+        last_run_str = values[3] if n_values > 3 else None
+        last_result = values[4] if n_values > 4 else None
+        check_when_run = last_run_str and last_result == 'Success'
         now = datetime.now()
-        last_run_str = values[3] if len(values) > 3 else None
-        last_result = values[4] if len(values) > 4 else None
-        if last_run_str and last_result == 'Success':
+        if check_when_run:
             last_run = datetime.strptime(last_run_str, time_format)
             time_since_run = now - last_run
-            days_since_run = time_since_run.total_seconds() / (24 * 60 * 60)
+            seconds_since_run = time_since_run.total_seconds()
+            days_since_run = seconds_since_run / seconds_per_day
             period = float(values[2])
             time_to_run = days_since_run > period
-        else:  # never been run
+        else:  # never been run, or failed last time
             time_to_run = True
         if not time_to_run:
             continue
 
-        google_sheets.update_cell(sheet_id, 'Sheet1', f'D{i + 2}', now.strftime(time_format))
+        now_str = now.strftime(time_format)
+        update_cell(i + 2, 'D', now_str)
+        function_name = values[0]
+        parameters = values[1]
         print(function_name, parameters)
         try:
             exec(f'{function_name}({parameters})')
             result = 'Success'
         except Exception:
-            result = '\n'.join(format_exc().split('\n')[4:])
+            error_lines = format_exc().split('\n')
+            result = '\n'.join(error_lines[4:])
         print(result)
-        google_sheets.update_cell(sheet_id, 'Sheet1', f'E{i + 2}', result)
+        update_cell(i + 2, 'E', result)
 
 
 if __name__ == '__main__':
