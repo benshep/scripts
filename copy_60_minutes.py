@@ -160,6 +160,7 @@ def copy_60_minutes():
     copy_folder_list = [(os.path.join(user_folder, 'Commute'), 55, 70),
                         (os.path.join(user_folder, '40 minutes'), 35, 40)]
 
+    # toast = ''
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
