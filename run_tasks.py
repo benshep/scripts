@@ -2,6 +2,7 @@ import sys
 import os
 from traceback import format_exc
 from datetime import datetime
+from platform import node
 import google_sheets
 
 from change_wallpaper import change_wallpaper
@@ -26,9 +27,9 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:E').execute()
+    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:F').execute()
     data = response['values']
-    assert data[0] == ['Function name', 'Parameters', 'Period', 'Last run', 'Last result']
+    assert data[0] == ['Function name', 'Parameters', 'Period', 'Last run', 'Machine', 'Last result']
 
     time_format = "%d/%m/%Y %H:%M"
     seconds_per_day = 24 * 60 * 60
@@ -52,6 +53,8 @@ def run_tasks():
 
         now_str = now.strftime(time_format)
         update_cell(i + 2, 'D', now_str)
+        update_cell(i + 2, 'E', node())
+        update_cell(i + 2, 'F', 'Running')
         function_name = values[0]
         parameters = values[1]
         print(function_name, parameters)
@@ -62,7 +65,7 @@ def run_tasks():
             error_lines = format_exc().split('\n')
             result = '\n'.join(error_lines[4:])
         print(result)
-        update_cell(i + 2, 'E', result)
+        update_cell(i + 2, 'F', result)
 
 
 if __name__ == '__main__':
