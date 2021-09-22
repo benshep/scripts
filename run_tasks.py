@@ -27,16 +27,24 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:F').execute()
+    column_names = ['Function name', 'Parameters', 'Period', 'Last run', 'Machine', 'Last result']
+
+    def get_column(name):
+        return google_sheets.get_column(column_names.index(name) + 1)
+
+    last_col = google_sheets.get_column(len(column_names))
+    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
     data = response['values']
-    assert data[0] == ['Function name', 'Parameters', 'Period', 'Last run', 'Machine', 'Last result']
+    assert data[0] == column_names
 
     time_format = "%d/%m/%Y %H:%M"
     seconds_per_day = 24 * 60 * 60
     for i, values in enumerate(data[1:]):
         n_values = len(values)
-        last_run_str = values[3] if n_values > 3 else None
-        last_result = values[4] if n_values > 4 else None
+        col_index = column_names.index('Last run')
+        last_run_str = values[col_index] if n_values > col_index else None
+        col_index = column_names.index('Last result')
+        last_result = values[col_index] if n_values > col_index else None
         check_when_run = last_run_str and last_result == 'Success'
         now = datetime.now()
         if check_when_run:
@@ -52,9 +60,9 @@ def run_tasks():
             continue
 
         now_str = now.strftime(time_format)
-        update_cell(i + 2, 'D', now_str)
-        update_cell(i + 2, 'E', node())
-        update_cell(i + 2, 'F', 'Running')
+        update_cell(i + 2, get_column('Last run'), now_str)
+        update_cell(i + 2, get_column('Machine'), node())
+        update_cell(i + 2, get_column('Last result'), 'Running')
         function_name = values[0]
         parameters = values[1]
         print(function_name, parameters)
