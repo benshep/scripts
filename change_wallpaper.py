@@ -119,6 +119,8 @@ def change_wallpaper(for_phone=False):
             monitors = monitors[:1] if len(primaries) == 0 else primaries
 
     print(monitors)
+    if not monitors:
+        raise NotImplementedError('No monitors found.')
     lMin = min([m.x for m in monitors])
     rMax = max([m.x + m.width for m in monitors])
     tMin = min([m.y for m in monitors])
