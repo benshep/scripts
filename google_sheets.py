@@ -37,3 +37,9 @@ def update_cells(workbook_id, sheet_name, cell_range, values):
     """Update a cell range in a specified sheet with the given values."""
     cells = {'range': f'{sheet_name}!{cell_range}', 'values': values}
     sheets.batchUpdate(spreadsheetId=workbook_id, body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute()
+
+
+def get_column(i):
+    """Return a column label A-Z for i in the range 1-26."""
+    assert i in range(1, 27)
+    return chr(64 + i)
