@@ -103,7 +103,7 @@ def change_wallpaper(for_phone=False):
         except:
             pass  # ignore error
         if b'ESTABLISHED' in output:
-            raise NotImplementedError('on Remote Desktop, not changing lockscreen')
+            return
 
     # figure out monitor geometry
     if for_phone:
@@ -120,7 +120,7 @@ def change_wallpaper(for_phone=False):
 
     print(monitors)
     if not monitors:
-        raise NotImplementedError('No monitors found.')
+        return
     lMin = min([m.x for m in monitors])
     rMax = max([m.x + m.width for m in monitors])
     tMin = min([m.y for m in monitors])
