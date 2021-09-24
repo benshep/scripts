@@ -121,16 +121,25 @@ def update_phone_music():
         excluded = name.endswith('#')
         if total_size > max_size:  # already done everything we can fit - exclude everything else
             if not excluded:
-                os.rename(name, name + "#")
+                rename_folder(name)
                 toast += '🗑️ ' + name + '\n'
         elif excluded:  # was previously excluded
-            os.rename(name, name.rstrip("#"))
+            rename_folder(name)
             toast += album.toast() + '\n'
 
     if toast:
         print(toast)
         if not test_mode:
             Pushbullet(api_key).push_note('🎧 Update phone music', toast)
+
+
+def rename_folder(old):
+    """Add or remove a # character from the end of a folder name.
+    If the new folder exists, copy everything from the old to the new folder."""
+    new = old.rstrip('#') if old.endswith('#') else old + '#'
+    os.makedirs(new, exist_ok=True)
+    [os.replace(os.path.join(old, filename), os.path.join(new, filename)) for filename in os.listdir(old)]
+    os.rmdir(old)
 
 
 def get_albums(user, music_folder):
