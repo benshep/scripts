@@ -73,7 +73,7 @@ def run_tasks():
             error_lines = format_exc().split('\n')
             result = '\n'.join(error_lines[4:])
         print(result)
-        update_cell(i + 2, 'F', result)
+        update_cell(i + 2, get_column('Last result'), result)
 
 
 if __name__ == '__main__':
