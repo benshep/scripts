@@ -5,6 +5,7 @@ from math import log10
 import phrydy  # for media file tagging
 import pylast
 
+import media
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime
 from collections import OrderedDict
@@ -85,16 +86,6 @@ class Album:
         return f'{icon} {self.artist} - {self.title}, {suffix}'
 
 
-def get_track_title(media):
-    """Return the track title in artist - title format."""
-    return f'{media.artist} - {media.title}'
-
-
-def is_media_file(filename):
-    """Returns True if a filename ends with a known media extension."""
-    return filename.lower().endswith(('mp3', 'm4a', 'wma', 'opus'))
-
-
 def folder_size(folder):
     """Return the size of a folder under the user's home directory."""
     return sum(sum(os.path.getsize(os.path.join(folder_name, file)) for file in file_list)
@@ -156,7 +147,7 @@ def get_albums(user, music_folder):
         # use all files in the folder to detect the oldest...
         file_list = [os.path.join(folder, file) for file in file_list]
         # ...but filter this down to media files to look for tags
-        media_files = list(filter(is_media_file, file_list))
+        media_files = list(filter(media.is_media_file, file_list))
         artist, title = get_album_info(media_files)
         if artist is None:
             continue
@@ -227,7 +218,7 @@ def check_radio_files(lastfm_user):
 
         tags = phrydy.MediaFile(file)
         if checking_scrobbles:
-            track_title = get_track_title(tags)
+            track_title = media.artist_title(tags)
             if track_title.lower() in scrobbled_titles:
                 print(f'Found: {track_title}')
                 scrobbled_radio.append(file)
