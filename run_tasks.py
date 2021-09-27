@@ -4,6 +4,8 @@ from traceback import format_exc
 from datetime import datetime
 from platform import node
 import google_sheets
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
@@ -38,7 +40,9 @@ def run_tasks():
     assert data[0] == column_names
 
     time_format = "%d/%m/%Y %H:%M"
-    seconds_per_day = 24 * 60 * 60
+    minutes_per_day = 24 * 60
+    failures = []
+    toast = ''
     for i, values in enumerate(data[1:]):
         n_values = len(values)
         col_index = column_names.index('Last run')
@@ -51,9 +55,10 @@ def run_tasks():
             last_run = datetime.strptime(last_run_str, time_format)
             time_since_run = now - last_run
             seconds_since_run = time_since_run.total_seconds()
-            days_since_run = seconds_since_run / seconds_per_day
+            minutes_since_run = int(seconds_since_run / 60)
             period = float(values[2])
-            time_to_run = days_since_run > period
+            period_mins = int(period * minutes_per_day)
+            time_to_run = minutes_since_run >= period_mins
         else:  # never been run, or failed last time
             time_to_run = True
         if not time_to_run:
@@ -72,8 +77,14 @@ def run_tasks():
         except Exception:
             error_lines = format_exc().split('\n')
             result = '\n'.join(error_lines[4:])
+            failures.append(function_name)
+            toast = ', '.join(failures) if len(failures) > 1 else f'{function_name}: {result}'
+
         print(result)
         update_cell(i + 2, get_column('Last result'), result)
+
+    if toast:
+        Pushbullet(api_key).push_note(f'👁️ Failed tasks {node()}', toast)
 
 
 if __name__ == '__main__':
