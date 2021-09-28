@@ -19,6 +19,7 @@ import datetime
 import os
 import subprocess
 import sys
+import time
 from itertools import accumulate
 from math import ceil  # calculation of mosaic dimensions
 from random import randint, choice
@@ -335,7 +336,17 @@ def change_wallpaper(for_phone=False):
 
     if not for_phone:
         if not lockscreen:
-            canvas.save(wallpaper_filename)
+            for _ in range(5):
+                try:
+                    canvas.save(wallpaper_filename)
+                    break
+                except OSError as error:
+                    # sometimes get 'Invalid argument' error - is the file locked?
+                    if error.errno != 22:
+                        raise  # something else went wrong instead!
+                    time.sleep(5)
+            else:  # tried 5 times and failed
+                raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
 
         if lockscreen:  # save as lockscreen filename - symlinked from C:\Windows\System32\oobe\INFO\backgrounds (Windows 7)
             os.chdir(wallpaper_dir)
