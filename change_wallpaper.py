@@ -72,7 +72,9 @@ def getFilesInPath(folder):
     return filename_list
 
 
-def change_wallpaper(for_phone=False):
+def change_wallpaper(target='desktop'):
+    """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
+    target can be desktop, lockscreen or phone."""
     print('\nWallpaper Changer')
 
     # find user's "My Documents" dir
@@ -87,7 +89,8 @@ def change_wallpaper(for_phone=False):
     pf_len = len(pics_folder) + 1
     print(pics_folder)
 
-    lockscreen = 'lockscreen' in sys.argv
+    lockscreen = target == 'lockscreen'
+    for_phone = target == 'phone'
     wallpaper_dir = os.path.join(user_home, 'phone-pics' if for_phone else 'lockscreen' if lockscreen else 'wallpaper')
     os.makedirs(wallpaper_dir, exist_ok=True)
     wallpaper_filename = os.path.join(wallpaper_dir, 'wallpaper.jpg')
@@ -367,4 +370,8 @@ def change_wallpaper(for_phone=False):
 
 
 if __name__ == '__main__':
-    change_wallpaper('phone' in sys.argv)
+    if len(sys.argv) <= 1:  # argument supplied?
+        change_wallpaper()
+    else:
+        change_wallpaper(sys.argv[1])
+
