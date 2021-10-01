@@ -17,6 +17,7 @@ from get_budget_data import get_budget_data
 from enter_otl_timecard import enter_otl_timecard
 from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
+from check_on_site_support import check_on_site_support
 
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
