@@ -7,10 +7,18 @@ import random
 from datetime import datetime
 from shutil import copy2  # to copy files
 from pushbullet import Pushbullet  # to show notifications
-
-import media
 from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
+
+
+def is_media_file(filename):
+    return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus'))
+
+
+def artist_title(filename):
+    """Return {artist} - {title} string for a given file."""
+    media_info = phrydy.MediaFile(filename)
+    return f'{media_info.artist} - {media_info.title}'.lower()
 
 
 def find_with_length(albums, low, high):
@@ -70,7 +78,7 @@ def scan_music_folder(music_folder):
         show_progress = len(albums) % 30 == 0
         if show_progress:
             print(folder)
-        for file in filter(media.is_media_file, file_list):
+        for file in filter(is_media_file, file_list):
             filename = os.path.join(folder, file)
             try:
                 tags = phrydy.MediaFile(filename)
@@ -83,12 +91,8 @@ def scan_music_folder(music_folder):
             # some buggy mp3s - assume 128kbps
             duration = tags.length / 60 if tags.length else os.path.getsize(filename) * bytes_to_minutes
             key = (folder, artist, album_name)
-            got_album = key in albums
-            if got_album:
-                album_file_list = albums[key]
-            else:
-                albums[key] = album_file_list = {}
-            album_file_list[file] = duration
+            # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
+            albums.setdefault(key, {})[file] = duration
     # remove albums with only one track
     return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
 
@@ -110,7 +114,7 @@ def check_folder_list(copy_folder_list):
         except ValueError:  # no subfolders!
             continue
         print(f'Oldest dir: {oldest}')
-        played_count = len([f for f in sorted(os.listdir(oldest)) if media.artist_title(os.path.join(oldest, f)) in scrobbles])
+        played_count = len([f for f in sorted(os.listdir(oldest)) if artist_title(os.path.join(oldest, f)) in scrobbles])
         print(f'Played {played_count} tracks')
 
         if played_count > 3:
