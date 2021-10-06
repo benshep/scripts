@@ -4,6 +4,7 @@ import os
 import phrydy  # to get media data
 from lastfm import lastfm
 import random
+from collections import namedtuple
 from datetime import datetime
 from shutil import copy2  # to copy files
 from pushbullet import Pushbullet  # to show notifications
@@ -12,7 +13,7 @@ from send2trash import send2trash
 
 
 def is_media_file(filename):
-    return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus'))
+    return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma'))
 
 
 def artist_title(filename):
@@ -43,6 +44,7 @@ def copy_album(album, files, existing_folder=None):
         album_filename = remove_bad_chars(title if no_artist else f'{artist} - {title}')
     else:
         album_filename = os.path.basename(folder)
+    album_filename = album_filename[:60]  # shorten path names (Windows limit: 260 chars)
     if existing_folder is None:  # making a new folder
         copied_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
         os.mkdir(copied_name)
@@ -105,56 +107,68 @@ def check_folder_list(copy_folder_list):
 
     toast = ''
     for i in reversed(range(len(copy_folder_list))):
-        copy_folder = copy_folder_list[i][0]
-        # delete the oldest if it's been played (assumes files have yyyy-mm-dd prefix)
-        folder_walk = list(os.walk(copy_folder))
-        hidden_files = os.path.join(copy_folder, '.')  # don't count hidden folders (like .stfolder)
-        try:
-            oldest = min(root for root, d, f in folder_walk if not root.startswith(hidden_files) and root != copy_folder)
-        except ValueError:  # no subfolders!
+        copy_folder = copy_folder_list[i].address
+        os.chdir(copy_folder)
+        # delete the oldest if it's been played (assumes files have 20yy-mm-dd prefix)
+        subfolders = get_subfolders()
+        if not subfolders:  # empty list
             continue
+        oldest = min(subfolders)
         print(f'Oldest dir: {oldest}')
-        played_count = len([f for f in sorted(os.listdir(oldest)) if artist_title(os.path.join(oldest, f)) in scrobbles])
-        print(f'Played {played_count} tracks')
+        os.chdir(oldest)
+        files = os.listdir()
+        print(files)
+        played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
+        file_count = len(files)
+        print(f'Played {played_count}/{file_count} tracks')
 
-        if played_count > 3:
+        if played_count >= file_count / 2:
             send2trash(oldest)
-            toast += '❌ ' + oldest[len(copy_folder)+12:]  # skip yyyy-mm-dd bit for readability
-        else:
+            toast += '❌ ' + oldest[12:]  # skip yyyy-mm-dd bit for readability
+            subfolders.remove(oldest)
+        if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
             del copy_folder_list[i]
     return toast, copy_folder_list
+
+
+def get_subfolders():
+    """Return the subfolders in a folder that have a date prefix."""
+    return [folder for folder in os.listdir() if folder.startswith('20')]
 
 
 def copy_albums(copy_folder_list, albums):
     """Select random albums up to the given length for each folder."""
     toast = ''
-    for copy_folder, min_length, max_length in copy_folder_list:
-        os.chdir(copy_folder)
-        while True:  # break out when we're done
-            key = random.choice(list(albums.keys()))
-            file_list = albums.pop(key)
-            duration = sum(file_list.values())
-            if min_length <= duration <= max_length:  # length that we're looking for?
-                folder_name = copy_album(key, file_list)
-                break
-            elif duration < min_length:  # less than we want? look for another one to fill the rest of the time
-                second_key = find_with_length(albums, min_length - duration, max_length - duration)
-                if second_key is None:  # none to be found, try again
-                    continue
-                second_file_list = albums.pop(second_key)
-                duration += sum(second_file_list.values())
-                folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))  # do first one first!
-                break
-
-        os.rename(folder_name, f'{folder_name} [{duration:.0f}]')  # rename with the total length
-        toast += '\n✔ ' + folder_name[11:]  # skip [YYYY-MM-DD] part
+    for copy_folder in copy_folder_list:
+        os.chdir(copy_folder.address)
+        folder_count = len(get_subfolders())
+        while folder_count < copy_folder.min_count:
+            while True:  # break out when we're done
+                key = random.choice(list(albums.keys()))
+                file_list = albums.pop(key)
+                duration = sum(file_list.values())
+                if copy_folder.min_length <= duration <= copy_folder.max_length:  # length that we're looking for?
+                    folder_name = copy_album(key, file_list)
+                    break
+                elif duration < copy_folder.min_length:  # less than we want? look for another one to fill the rest of the time
+                    second_key = find_with_length(albums, copy_folder.min_length - duration, copy_folder.max_length - duration)
+                    if second_key is None:  # none to be found, try again
+                        continue
+                    second_file_list = albums.pop(second_key)
+                    duration += sum(second_file_list.values())
+                    folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))  # do first one first!
+                    break
+            folder_count += 1
+            os.rename(folder_name, f'{folder_name} [{duration:.0f}]')  # rename with the total length
+            toast += '\n✔ ' + folder_name[11:]  # skip [YYYY-MM-DD] part
     return toast
 
 
 def copy_60_minutes():
     user_folder = os.environ['UserProfile']
-    copy_folder_list = [(os.path.join(user_folder, 'Commute'), 55, 70),
-                        (os.path.join(user_folder, '40 minutes'), 35, 40)]
+    Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
+    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55, 70, 4),
+                        Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
 
     # toast = ''
     toast, copy_folder_list = check_folder_list(copy_folder_list)
