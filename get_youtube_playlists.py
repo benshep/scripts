@@ -41,7 +41,7 @@ def get_youtube_playlists():
                  Playlist(('_Compilations', 'Emma', 'Me'), 'https://www.youtube.com/playlist?list=PLpw2OjrHadPW9gYyB0GpZkcsXdxEoJ_1R',
                           'Various Artists', 'Me')]
     user_profile = os.environ['UserProfile']
-    music_folder = os.path.join(user_profile, 'MusicTest')
+    music_folder = os.path.join(user_profile, 'Music')
 
     for playlist in playlists:
         folder = os.path.join(music_folder, *playlist.folder)
