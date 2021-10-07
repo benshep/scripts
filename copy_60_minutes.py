@@ -121,10 +121,11 @@ def check_folder_list(copy_folder_list):
         played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
         file_count = len(files)
         print(f'Played {played_count}/{file_count} tracks')
+        os.chdir('..')
 
         if played_count >= file_count / 2:
             send2trash(oldest)
-            toast += '❌ ' + oldest[12:]  # skip yyyy-mm-dd bit for readability
+            toast += '❌ ' + oldest[11:]  # skip yyyy-mm-dd bit for readability
             subfolders.remove(oldest)
         if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
             del copy_folder_list[i]
