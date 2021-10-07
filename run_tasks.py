@@ -11,6 +11,7 @@ from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
+from get_youtube_playlists import get_youtube_playlists
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
 from oracle_otl_check import oracle_otl_check
 from get_budget_data import get_budget_data
