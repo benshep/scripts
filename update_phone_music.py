@@ -138,12 +138,12 @@ def rename_folder(old):
     If the new folder exists, copy everything from the old to the new folder."""
     new = old.rstrip('#') if old.endswith('#') else old + '#'
     os.makedirs(new, exist_ok=True)
-    for filename in os.listdir(old):
-        try:
+    try:
+        for filename in os.listdir(old):
             os.replace(os.path.join(old, filename), os.path.join(new, filename))
-        except FileNotFoundError:
-            pass  # maybe it got moved in the meantime by a sync operation
-    os.rmdir(old)
+        os.rmdir(old)
+    except FileNotFoundError:  # maybe it got moved in the meantime by a sync operation
+        pass
 
 
 def get_albums(user, music_folder):
