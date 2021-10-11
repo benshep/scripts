@@ -248,7 +248,7 @@ def check_radio_files(lastfm_user):
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
         toast += '🗑️ ' + os.path.splitext(file)[0] + '\n'  # hide the file extension
         print(file)
-        if not test_mode:
+        if not test_mode and os.path.exists(file):
             send2trash(file)
     return toast
 
