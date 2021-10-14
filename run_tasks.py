@@ -13,7 +13,7 @@ from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
-from oracle_otl_check import oracle_otl_check
+from oracle_staff_check import otl_check, annual_leave_check
 from get_budget_data import get_budget_data
 from enter_otl_timecard import enter_otl_timecard
 from check_leave_dates import check_leave_dates
