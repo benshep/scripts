@@ -176,7 +176,8 @@ def change_wallpaper(target='desktop'):
 
     for mon in monitors:
         # Want a seasonal image? (one that was taken in the same month)
-        seasonal = choice((True, False))
+        # Only do this in holiday periods
+        seasonal = today.month in (4, 5, 8, 10, 12)  # choice((True, False))
 
         print('\nmonitor', mon)
         # portrait or landscape?
