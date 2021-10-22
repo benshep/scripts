@@ -1,8 +1,12 @@
 import sys
 import os
+from time import sleep
 from traceback import format_exc
-from datetime import datetime
+from datetime import datetime, timedelta
 from platform import node
+
+import psutil
+
 import google_sheets
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
@@ -37,56 +41,64 @@ def run_tasks():
         return google_sheets.get_column(column_names.index(name) + 1)
 
     last_col = google_sheets.get_column(len(column_names))
-    response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
-    data = response['values']
-    assert data[0] == column_names
-
     time_format = "%d/%m/%Y %H:%M"
-    minutes_per_day = 24 * 60
     failures = []
-    toast = ''
-    for i, values in enumerate(data[1:]):
-        n_values = len(values)
-        col_index = column_names.index('Last run')
-        last_run_str = values[col_index] if n_values > col_index else None
-        col_index = column_names.index('Last result')
-        last_result = values[col_index] if n_values > col_index else None
-        check_when_run = last_run_str and last_result == 'Success'
-        now = datetime.now()
-        if check_when_run:
-            last_run = datetime.strptime(last_run_str, time_format)
-            time_since_run = now - last_run
-            seconds_since_run = time_since_run.total_seconds()
-            minutes_since_run = int(seconds_since_run / 60)
-            period = float(values[2])
-            period_mins = int(period * minutes_per_day)
-            time_to_run = minutes_since_run >= period_mins
-        else:  # never been run, or failed last time
-            time_to_run = True
-        if not time_to_run:
-            continue
+    period_col = column_names.index('Period')
+    while True:
+        response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
+        data = response['values']
+        assert data[0] == column_names
+        min_period = min(float(row[period_col]) for row in data[1:])
+        toast = ''
+        next_task_time = datetime.now() + timedelta(days=min_period)
+        battery = psutil.sensors_battery()
+        if battery and not battery.power_plugged:
+            continue  # don't run anything if not plugged in
+        for i, values in enumerate(data[1:]):
+            n_values = len(values)
+            col_index = column_names.index('Last run')
+            last_run_str = values[col_index] if n_values > col_index else None
+            col_index = column_names.index('Last result')
+            last_result = values[col_index] if n_values > col_index else None
+            check_when_run = last_run_str and last_result == 'Success'
+            now = datetime.now()
+            if check_when_run:
+                last_run = datetime.strptime(last_run_str, time_format)
+                period = float(values[period_col])
+                next_run_time = last_run + timedelta(days=period)
+                time_to_run = next_run_time <= now
+            else:  # never been run, or failed last time
+                time_to_run = True
+            if not time_to_run:
+                next_task_time = min(next_task_time, next_run_time)
+                continue
 
-        now_str = now.strftime(time_format)
-        update_cell(i + 2, get_column('Last run'), now_str)
-        update_cell(i + 2, get_column('Machine'), node())
-        update_cell(i + 2, get_column('Last result'), 'Running')
-        function_name = values[0]
-        parameters = values[1]
-        print(function_name, parameters)
-        try:
-            exec(f'{function_name}({parameters})')
-            result = 'Success'
-        except Exception:
-            error_lines = format_exc().split('\n')
-            result = '\n'.join(error_lines[4:])
-            failures.append(function_name)
-            toast = ', '.join(failures) if len(failures) > 1 else f'{function_name}: {result}'
+            now_str = now.strftime(time_format)
+            update_cell(i + 2, get_column('Last run'), now_str)
+            update_cell(i + 2, get_column('Machine'), node())
+            update_cell(i + 2, get_column('Last result'), 'Running')
+            function_name = values[0]
+            parameters = values[1]
+            os.system(f'title ➡️ {function_name}')  # set title of window
+            print(function_name, parameters)
+            try:
+                exec(f'{function_name}({parameters})')
+                result = 'Success'
+            except Exception:
+                error_lines = format_exc().split('\n')
+                result = '\n'.join(error_lines[4:])
+                failures.append(function_name)
+                toast = ', '.join(failures) if len(failures) > 1 else f'{function_name}: {result}'
 
-        print(result)
-        update_cell(i + 2, get_column('Last result'), result)
+            print(result)
+            update_cell(i + 2, get_column('Last result'), result)
 
-    if toast:
-        Pushbullet(api_key).push_note(f'👁️ Failed tasks {node()}', toast)
+        if toast:
+            Pushbullet(api_key).push_note(f'👁️ Failed tasks {node()}', toast)
+
+        sleep_duration = (next_task_time - datetime.now()).total_seconds()
+        os.system(f'title ⌛️ {next_task_time.strftime("%H:%M")}')  # set title of window
+        sleep(sleep_duration)
 
 
 if __name__ == '__main__':
