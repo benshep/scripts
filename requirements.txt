@@ -1,0 +1,8 @@
+setuptools
+phrydy
+pylast
+requests
+send2trash
+screeninfo
+pillow
+pandas
