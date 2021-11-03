@@ -1,12 +1,12 @@
 import sys
 import os
 from time import sleep
+from random import randint
 from traceback import format_exc
 from datetime import datetime, timedelta
 from platform import node
 
 import psutil
-
 import google_sheets
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
@@ -98,7 +98,8 @@ def run_tasks():
         else:
             print('On battery, not running any tasks')
 
-        sleep_duration = max(0.0, (next_task_time - datetime.now()).total_seconds())
+        # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
+        sleep_duration = max(0.0, (next_task_time - datetime.now()).total_seconds() + randint(0, 300))
         os.system(f'title ⌛️ {next_task_time.strftime("%H:%M")}')  # set title of window
         sleep(sleep_duration)
 
