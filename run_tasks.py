@@ -45,14 +45,19 @@ def run_tasks():
     period_col = column_names.index('Period')
     while True:
         print('Fetching data from spreadsheet')
-        response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
-        data = response['values']
+        try:
+            response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
+            data = response['values']
+        except ConnectionResetError:
+            print('Failed to get spreadsheet data: retrying in 1 minute')
+            sleep(60)
+            continue
         assert data[0] == column_names
         min_period = min(float(row[period_col]) for row in data[1:])
-        toast = ''
         next_task_time = datetime.now() + timedelta(days=min_period)
         battery = psutil.sensors_battery()
         if battery is None or battery.power_plugged:
+            toast = ''
             for i, values in enumerate(data[1:]):
                 n_values = len(values)
                 col_index = column_names.index('Last run')
