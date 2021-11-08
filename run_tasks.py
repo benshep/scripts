@@ -84,7 +84,8 @@ def run_tasks():
                 function_name = values[0]
                 parameters = values[1]
                 os.system(f'title ➡️ {function_name}')  # set title of window
-                print(function_name, parameters)
+                print('')
+                print(now_str, function_name, parameters)
                 try:
                     exec(f'{function_name}({parameters})')
                     result = 'Success'
@@ -103,8 +104,11 @@ def run_tasks():
             print('On battery, not running any tasks')
 
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
-        sleep_duration = max(0.0, (next_task_time - datetime.now()).total_seconds() + hash(node()) % 300)
-        os.system(f'title ⌛️ {next_task_time.strftime("%H:%M")}')  # set title of window
+        next_task_time += timedelta(seconds=hash(node()) % 300)
+        sleep_duration = max(0.0, (next_task_time - datetime.now()).total_seconds())
+        next_time_str = next_task_time.strftime("%H:%M")
+        print(f'Waiting until {next_time_str}')
+        os.system(f'title ⌛️ {next_time_str}')  # set title of window
         sleep(sleep_duration)
 
 
