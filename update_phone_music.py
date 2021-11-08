@@ -13,6 +13,8 @@ from send2trash import send2trash
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
+import socket
+socket.setdefaulttimeout(2)  # in case of a slow network!
 
 # REWRITE:
 # Database class to store music
@@ -183,8 +185,9 @@ def get_albums(user, music_folder):
             # This requires one network request per album so is a bit slow. Just set to 1 to disable.
             try:
                 album.global_listens = lastfm.get_album(artist, title).get_playcount() / album.track_count
-            except (pylast.MalformedResponseError, pylast.WSError):  # API issue
-                pass
+            except (pylast.MalformedResponseError, pylast.WSError, pylast.NetworkError):
+                # API issue, or network timeout (we deliberately set the timeout to a small value)
+                album.global_listens = 1
             print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
     oldest = min(album.date for album in albums)
     newest = max(album.date for album in albums)
