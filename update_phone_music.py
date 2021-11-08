@@ -14,7 +14,6 @@ from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 import socket
-socket.setdefaulttimeout(2)  # in case of a slow network!
 
 # REWRITE:
 # Database class to store music
@@ -158,6 +157,7 @@ def get_albums(user, music_folder):
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n'))
     albums = []
+    socket.setdefaulttimeout(2)  # in case of a slow network!
     for folder, _, file_list in os.walk(music_folder):
         # use all files in the folder to detect the oldest...
         file_list = [os.path.join(folder, file) for file in file_list]
@@ -189,6 +189,7 @@ def get_albums(user, music_folder):
                 # API issue, or network timeout (we deliberately set the timeout to a small value)
                 album.global_listens = 1
             print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
+    socket.setdefaulttimeout(None)  # back to normal behaviour
     oldest = min(album.date for album in albums)
     newest = max(album.date for album in albums)
     most_plays_me = max(album.my_listens for album in albums)
