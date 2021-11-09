@@ -105,11 +105,11 @@ def run_tasks():
 
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
         next_task_time += timedelta(seconds=hash(node()) % 300)
-        sleep_duration = max(0.0, (next_task_time - datetime.now()).total_seconds())
         next_time_str = next_task_time.strftime("%H:%M")
         print(f'Waiting until {next_time_str}')
         os.system(f'title ⌛️ {next_time_str}')  # set title of window
-        sleep(sleep_duration)
+        while datetime.now() < next_task_time:
+            sleep(60)
 
 
 if __name__ == '__main__':
