@@ -188,7 +188,8 @@ def get_albums(user, music_folder):
             except (pylast.MalformedResponseError, pylast.WSError, pylast.NetworkError):
                 # API issue, or network timeout (we deliberately set the timeout to a small value)
                 album.global_listens = 1
-            print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
+            if len(albums) % 30 == 0:
+                print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
     socket.setdefaulttimeout(None)  # back to normal behaviour
     oldest = min(album.date for album in albums)
     newest = max(album.date for album in albums)
