@@ -6,3 +6,6 @@ send2trash
 screeninfo
 pillow
 pandas
+psutil
+rich
+pushbullet
