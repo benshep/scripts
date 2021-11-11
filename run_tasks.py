@@ -9,6 +9,12 @@ import psutil
 import google_sheets
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
+try:
+    from rich import print  # rich-text printing
+    from rich.traceback import install  # rich tracebacks
+    install()
+except ImportError:
+    pass  # revert to standard print
 
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
@@ -48,7 +54,7 @@ def run_tasks():
         try:
             response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
             data = response['values']
-        except ConnectionResetError:
+        except ConnectionError:
             print('Failed to get spreadsheet data: retrying in 1 minute')
             sleep(60)
             continue
