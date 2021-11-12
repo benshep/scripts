@@ -31,12 +31,16 @@ def pick_random_cd():
         num_tracks = input('Scrobble up to track [auto]: ')
         num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
 
+        scrobbled = False
         for media in track_list:
             if start_time + media.length > time() or int(media.track) > num_tracks:
                 break
             lastfm.scrobble(artist=media.artist, title=media.title, album=media.album, timestamp=start_time)
+            scrobbled = True
             print(f'{media.artist} - {media.title}')
             start_time += media.length
+        if scrobbled:
+            os.startfile('.')  # open Explorer in folder
         print('\n')
 
 
