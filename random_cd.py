@@ -6,7 +6,7 @@ from lastfm import lastfm  # contains secrets, so don't show them here
 from phrydy import MediaFile  # to get media data
 from time import time
 
-from media import is_media_file
+from media import is_media_file, is_album_folder
 
 
 def pick_random_cd():
@@ -17,7 +17,7 @@ def pick_random_cd():
 
     for folder, folder_list, file_list in os.walk(music_folder):
         name = folder[root_len:]
-        if not name.startswith(exclude_prefixes) and (' - ' in name or os.path.sep in name or 'best of' in name.lower()):
+        if not name.startswith(exclude_prefixes) and is_album_folder(name):
             cd_folders.append(name)
 
     while True:

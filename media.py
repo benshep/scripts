@@ -1,5 +1,5 @@
+import os
 import phrydy
-
 # Functions for working with media files
 
 
@@ -13,3 +13,8 @@ def artist_title(file):
     Pass file as a filename or a MediaFile object from phrydy."""
     media_info = phrydy.MediaFile(file) if isinstance(file, str) else file
     return f'{media_info.artist} - {media_info.title}'.lower()
+
+
+def is_album_folder(name: str):
+    """Returns True if the given name looks like an album folder."""
+    return ' - ' in name or os.path.sep in name or 'best of' in name.lower()
