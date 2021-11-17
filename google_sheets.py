@@ -30,13 +30,13 @@ sheets = build('sheets', 'v4', credentials=creds).spreadsheets().values()
 def update_cell(sheet_id, sheet_name, cell, value):
     """Update a cell in a specified sheet with the given value."""
     payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': f'{sheet_name}!{cell}'}
-    sheets.update(spreadsheetId=sheet_id, range=f'{sheet_name}!{cell}', valueInputOption='USER_ENTERED', body=payload).execute()
+    sheets.update(spreadsheetId=sheet_id, range=f'{sheet_name}!{cell}', valueInputOption='USER_ENTERED', body=payload).execute(num_retries=5)
 
 
 def update_cells(workbook_id, sheet_name, cell_range, values):
     """Update a cell range in a specified sheet with the given values."""
     cells = {'range': f'{sheet_name}!{cell_range}', 'values': values}
-    sheets.batchUpdate(spreadsheetId=workbook_id, body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute()
+    sheets.batchUpdate(spreadsheetId=workbook_id, body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute(num_retries=5)
 
 
 def get_column(i):

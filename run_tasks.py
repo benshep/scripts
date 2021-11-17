@@ -51,13 +51,8 @@ def run_tasks():
     period_col = column_names.index('Period')
     while True:
         print('Fetching data from spreadsheet')
-        try:
-            response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
-            data = response['values']
-        except ConnectionError:
-            print('Failed to get spreadsheet data: retrying in 1 minute')
-            sleep(60)
-            continue
+        response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
+        data = response['values']
         assert data[0] == column_names
         min_period = min(float(row[period_col]) for row in data[1:])
         next_task_time = datetime.now() + timedelta(days=min_period)
