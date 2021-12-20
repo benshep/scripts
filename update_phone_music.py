@@ -172,6 +172,7 @@ def get_albums(user, music_folder):
         name_excluded = name.startswith(exclude_prefixes)
         if not name_excluded and media.is_album_folder(name) and file_list:
             oldest = min(os.path.getmtime(file) for file in file_list)
+            oldest = min(oldest, os.path.getmtime(folder), os.path.getctime(folder))
             total_size = sum(os.path.getsize(file) for file in file_list)
             album = Album(artist, title, folder, oldest, total_size, len(file_list))
             albums.append(album)
