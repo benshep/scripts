@@ -4,6 +4,10 @@ from youtube_dl import YoutubeDL
 from phrydy import MediaFile
 
 
+class BadDownload(Exception):
+    pass
+
+
 class TagAdder:
     """Add tags to a post-processed file."""
     def __init__(self, album, artist):
@@ -32,6 +36,21 @@ class TagAdder:
         pass
 
 
+def reject_large(info_dict):
+    """Don't download songs longer than 10 minutes."""
+    if info_dict['duration'] < 600:
+        return None
+    message = f"Too long - skipping {info_dict['title']}"
+    print(message)
+    return message
+
+
+def show_status(progress):
+    """Show downloading status."""
+    if progress['status'] == 'downloading':
+        print(f'{progress["_eta_str"]} {progress["filename"]}')  # , end='\r')
+
+
 def get_youtube_playlists():
     Playlist = namedtuple('Playlist', ['folder', 'url', 'artist', 'album'])
     playlists = [Playlist(('Rob Peacock', ), 'https://www.youtube.com/channel/UCbdNnpqhT8VyrsI8GCxYapw',
@@ -45,6 +64,7 @@ def get_youtube_playlists():
 
     for playlist in playlists:
         folder = os.path.join(music_folder, *playlist.folder)
+        print(folder)
         os.makedirs(folder, exist_ok=True)
         os.chdir(folder)
 
@@ -54,7 +74,7 @@ def get_youtube_playlists():
                    'format': 'bestaudio/best',
                    'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",  # https://github.com/ytdl-org/youtube-dl/blob/master/README.md#output-template
                    'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'}],
-                   'logger': tag_adder}
+                   'logger': tag_adder, 'match_filter': reject_large, 'progress_hooks': [show_status]}
         YoutubeDL(options).download([playlist.url])
 
 
