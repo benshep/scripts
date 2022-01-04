@@ -1,5 +1,5 @@
 import os
-from collections import namedtuple
+import json
 from youtube_dl import YoutubeDL
 from phrydy import MediaFile
 
@@ -52,30 +52,32 @@ def show_status(progress):
 
 
 def get_youtube_playlists():
-    Playlist = namedtuple('Playlist', ['folder', 'url', 'artist', 'album'])
-    playlists = [Playlist(('Rob Peacock', ), 'https://www.youtube.com/channel/UCbdNnpqhT8VyrsI8GCxYapw',
-                          'Rob Peacock', 'YouTube'),
-                 Playlist(('_Compilations', 'Emma', 'Good Vibes'), 'https://www.youtube.com/playlist?list=PLpw2OjrHadPUQvEHRKy5Iniw7MNmRMn43',
-                          'Various Artists', 'Good Vibes'),
-                 Playlist(('_Compilations', 'Emma', 'Me'), 'https://www.youtube.com/playlist?list=PLpw2OjrHadPW9gYyB0GpZkcsXdxEoJ_1R',
-                          'Various Artists', 'Me')]
     user_profile = os.environ['UserProfile']
     music_folder = os.path.join(user_profile, 'Music')
-
-    for playlist in playlists:
-        folder = os.path.join(music_folder, *playlist.folder)
+    info_file = 'download.txt'  # info file contained in each folder
+    for folder, _, files in os.walk(music_folder):
+        if info_file not in files:
+            continue
         print(folder)
-        os.makedirs(folder, exist_ok=True)
         os.chdir(folder)
+        info = open(info_file).read()
+        if '{' in info:
+            playlist = json.loads(info)  # dict with keys: url, artist, album
+        elif info.startswith('https://www.youtube.com/'):  # just the url?
+            playlist = {'url': info.strip()}
+        else:
+            continue  # can't process info
+        print(playlist)
 
-        tag_adder = TagAdder(playlist.album, playlist.artist)
+        tag_adder = TagAdder(playlist.get('album', os.path.split(folder)[-1]),  # default to folder name
+                             playlist.get('artist', 'Various Artists'))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
-                   'playlistreverse': 'channel' in playlist.url,  # reverse order for channels (otherwise new videos will always be track 1)
+                   'playlistreverse': 'channel' in playlist['url'],  # reverse order for channels (otherwise new videos will always be track 1)
                    'format': 'bestaudio/best',
                    'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",  # https://github.com/ytdl-org/youtube-dl/blob/master/README.md#output-template
                    'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'}],
                    'logger': tag_adder, 'match_filter': reject_large, 'progress_hooks': [show_status]}
-        YoutubeDL(options).download([playlist.url])
+        YoutubeDL(options).download([playlist['url']])
 
 
 if __name__ == '__main__':
