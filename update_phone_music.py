@@ -228,13 +228,21 @@ def check_radio_files(lastfm_user):
     radio_files = os.listdir()
     # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
     checking_scrobbles = True
+    file_count = 0
+    min_date = None
+    total_hours = 0
     for file in sorted(radio_files):
         try:
-            datetime.strptime(file[:10], '%Y-%m-%d')
+            file_date = datetime.strptime(file[:10], '%Y-%m-%d')
         except ValueError:
             continue  # not a date-based filename
 
+        file_count += 1
+        min_date = min_date or file_date  # set to first one
+        weeks = (file_date - min_date).days // 7
+
         tags = phrydy.MediaFile(file)
+        total_hours += tags.length / 3600
         if checking_scrobbles:
             track_title = media.artist_title(tags)
             if track_title.lower() in scrobbled_titles:
@@ -255,6 +263,7 @@ def check_radio_files(lastfm_user):
         print(file)
         if not test_mode and os.path.exists(file):
             send2trash(file)
+    toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
     return toast
 
 
