@@ -27,6 +27,10 @@ if not creds or not creds.valid:
 sheets = build('sheets', 'v4', credentials=creds).spreadsheets().values()
 
 
+def get_data(sheet_id, sheet_name, data_range):
+    """Fetch a range of data from a specified workbook and worksheet."""
+    return sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!{data_range}').execute()['values']
+
 def update_cell(sheet_id, sheet_name, cell, value):
     """Update a cell in a specified sheet with the given value."""
     payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': f'{sheet_name}!{cell}'}
