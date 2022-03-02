@@ -9,6 +9,7 @@ from energy_credentials import mac_address
 from openweather import api_key
 
 base_url = 'https://consumer-api.data.n3rgy.com'
+today = pandas.to_datetime('today').to_period('d').start_time
 
 
 def dmy(date, time=True):
@@ -37,20 +38,25 @@ def get_usage_data():
     new_data_row = len(column_a) + 1  # one-based when using update_cell function - this is the first empty row
     fill_top_row = 3  # zero-based when we use the autoFill function - this is the first row of data
     start_date = max(pandas.to_datetime(column_a[fill_top_row:], dayfirst=True)) + pandas.to_timedelta(1, 'd')
+    if start_date >= today:  # no need to collect more data
+        return
 
     sheet = google_sheets.spreadsheets.get(spreadsheetId=sheet_id).execute()
-    grid_id = next(grid['properties']['sheetId'] for grid in sheet['sheets'] if grid['properties']['title'] == sheet_name)
+    grid_id = next(
+        grid['properties']['sheetId'] for grid in sheet['sheets'] if grid['properties']['title'] == sheet_name)
+
     def fill_request(start_column, column_count, row_count):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
         print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
         return {'autoFill': {'useAlternateSeries': False,
-                                   'sourceAndDestination': {
-                                       'source': {'sheetId': grid_id,
-                                           'startRowIndex': fill_top_row,
-                                           'endRowIndex': fill_top_row + 1,  # half-open
-                                           'startColumnIndex': start_column,
-                                           'endColumnIndex': start_column + column_count,
-                                       }, 'dimension': 'ROWS', 'fillLength': row_count}}}
+                             'sourceAndDestination': {
+                                 'source': {'sheetId': grid_id,
+                                            'startRowIndex': fill_top_row,
+                                            'endRowIndex': fill_top_row + 1,  # half-open
+                                            'startColumnIndex': start_column,
+                                            'endColumnIndex': start_column + column_count,
+                                            }, 'dimension': 'ROWS', 'fillLength': row_count}}}
+
     fill_requests = []
     for fuel in 'gas', 'electricity':
         fuel_column = columns.index(fuel.title()) + 1
@@ -79,11 +85,13 @@ def get_usage_data():
 def get_fuel_data(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} usage data beginning {dmy(start_date)}')
-    last_date = pandas.to_datetime('today')
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': mac_address}  # AUTH is my MAC code
-    params = {'start': ymdhm(start_date), 'end': ymdhm(last_date)}
-    response = requests.get(f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}', headers=headers)
+    params = {'start': ymdhm(start_date), 'end': ymdhm(today)}
+    url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
+    print(url)
+    response = requests.get(url, headers=headers)
+    print(response.json())
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
     return pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value').dropna()
@@ -92,7 +100,6 @@ def get_fuel_data(start_date, fuel):
 def get_temp_data():
     """Use the OpenWeather API to fetch the last five days' worth of hourly temperatures."""
     temp_data = {}
-    today = pandas.to_datetime('today').to_period('d').start_time
     for date in pandas.date_range(today - pandas.to_timedelta(5, 'd'), today - pandas.to_timedelta(1, 'd')):
         params = {'lat': 53.460, 'lon': -2.766, 'dt': int(date.timestamp()), 'appid': api_key, 'units': 'metric'}
         url = f'https://api.openweathermap.org/data/2.5/onecall/timemachine?{urllib.parse.urlencode(params)}'
@@ -105,8 +112,7 @@ def get_temp_data():
 
 def get_co2_data(start_date):
     """Use the Carbon Intensity API to fetch CO₂ intensity data."""
-    end_date = pandas.to_datetime('today')
-    url = f'https://api.carbonintensity.org.uk/intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z'
+    url = f'https://api.carbonintensity.org.uk/intensity/{ymd(start_date)}T00:30Z/{ymd(today)}T00:00Z'
     df = pandas.json_normalize(requests.get(url).json(), record_path='data')
     df['from'] = pandas.to_datetime(df['from'])
     df['intensity'] = df['intensity.actual'].fillna(df['intensity.forecast'])
