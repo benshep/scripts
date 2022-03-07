@@ -42,6 +42,8 @@ def pick_random_cd():
         # if this was a CD and not in Opus format, open in Explorer in preparation for re-ripping
         if scrobbled and all(os.path.splitext(media.path)[1].lower() != '.opus' for media in track_list):
             os.startfile('.')  # open Explorer in folder
+        else:
+            print('Already ripped to Opus format')
         print('\n')
 
 
