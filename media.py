@@ -8,11 +8,11 @@ def is_media_file(filename: str):
     return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma'))
 
 
-def artist_title(file):
+def artist_title(file, separator=' - '):
     """Return {artist} - {title} string for a given file, converted to lowercase for easy comparison.
     Pass file as a filename or a MediaFile object from phrydy."""
     media_info = phrydy.MediaFile(file) if isinstance(file, str) else file
-    return f'{media_info.artist} - {media_info.title}'.lower()
+    return f'{media_info.artist}{separator}{media_info.title}'.lower()
 
 
 def is_album_folder(name: str):
