@@ -21,6 +21,7 @@ from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
+from get_energy_usage import get_usage_data
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
 from oracle_staff_check import otl_check, annual_leave_check
 from get_budget_data import get_budget_data
@@ -47,17 +48,21 @@ def run_tasks():
 
     last_col = google_sheets.get_column(len(column_names))
     time_format = "%d/%m/%Y %H:%M"
-    failures = []
     period_col = column_names.index('Period')
     while True:
         print('Fetching data from spreadsheet')
-        response = google_sheets.sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!A:{last_col}').execute()
-        data = response['values']
+        try:
+            data = google_sheets.get_data(sheet_id, sheet_name, f'A:{last_col}')
+        except Exception as e:
+            print(e)
+            sleep(60)
+            continue
         assert data[0] == column_names
         min_period = min(float(row[period_col]) for row in data[1:])
         next_task_time = datetime.now() + timedelta(days=min_period)
         battery = psutil.sensors_battery()
         if battery is None or battery.power_plugged:
+            failures = []
             toast = ''
             for i, values in enumerate(data[1:]):
                 n_values = len(values)
