@@ -24,7 +24,8 @@ if not creds or not creds.valid:
     open(token_file, 'w').write(creds.to_json())
 
 # Call the Sheets API
-sheets = build('sheets', 'v4', credentials=creds).spreadsheets().values()
+spreadsheets = build('sheets', 'v4', credentials=creds).spreadsheets()
+sheets = spreadsheets.values()
 
 
 def get_data(sheet_id, sheet_name, data_range):
@@ -34,16 +35,37 @@ def get_data(sheet_id, sheet_name, data_range):
 def update_cell(sheet_id, sheet_name, cell, value):
     """Update a cell in a specified sheet with the given value."""
     payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': f'{sheet_name}!{cell}'}
-    sheets.update(spreadsheetId=sheet_id, range=f'{sheet_name}!{cell}', valueInputOption='USER_ENTERED', body=payload).execute(num_retries=5)
-
+    sheets.update(spreadsheetId=sheet_id, range=f'{sheet_name}!{cell}',
+                  valueInputOption='USER_ENTERED', body=payload).execute(num_retries=5)
 
 def update_cells(workbook_id, sheet_name, cell_range, values):
     """Update a cell range in a specified sheet with the given values."""
     cells = {'range': f'{sheet_name}!{cell_range}', 'values': values}
-    sheets.batchUpdate(spreadsheetId=workbook_id, body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute(num_retries=5)
+    sheets.batchUpdate(spreadsheetId=workbook_id,
+                       body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute(num_retries=5)
 
+def fill_down(sheet_id, grid_id, start_column, column_count, from_row, fill_row_count):
+    """Fill a range down from a starting row. Rows and columns are zero-based."""
+    request_body = {'requests': [{'autoFill': {'useAlternateSeries': False,
+                                   'sourceAndDestination': {
+                                       'source': {'sheetId': grid_id,
+                                           'startRowIndex': from_row,
+                                           'endRowIndex': from_row + 1,  # half-open
+                                           'startColumnIndex': start_column,
+                                           'endColumnIndex': start_column + column_count - 1,
+                                       }, 'dimension': 'ROWS', 'fillLength': fill_row_count}}}]}
+    spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
 
-def get_column(i):
-    """Return a column label A-Z for i in the range 1-26."""
-    assert i in range(1, 27)
-    return chr(64 + i)
+def get_column(col):
+    """Return a column label A-Z for i in the range 1-26, or AA-ZZ for i in the range 27-702."""
+    # https://stackoverflow.com/questions/19153462/get-excel-style-column-names-from-column-number
+    column_name = ''
+    div = col
+    while div:
+        div, mod = divmod(div - 1, 26)  # will return (x, 0 .. 25)
+        column_name = chr(mod + 65) + column_name
+    return column_name
+
+def get_range_spec(first_col, first_row, last_col, last_row):
+    """Return a range spec like A1:E5. Rows and columns are 1-based."""
+    return f'{get_column(first_col)}{first_row}:{get_column(last_col)}{last_row}'
