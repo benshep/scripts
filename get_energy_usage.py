@@ -9,7 +9,10 @@ from energy_credentials import mac_address
 from openweather import api_key
 
 base_url = 'https://consumer-api.data.n3rgy.com'
-today = pandas.to_datetime('today').to_period('d').start_time
+
+
+def today():
+    return pandas.to_datetime('today').to_period('d').start_time  # + pandas.to_timedelta(1, 'd')
 
 
 def dmy(date, time=True):
@@ -38,7 +41,7 @@ def get_usage_data():
     new_data_row = len(column_a) + 1  # one-based when using update_cell function - this is the first empty row
     fill_top_row = 3  # zero-based when we use the autoFill function - this is the first row of data
     start_date = max(pandas.to_datetime(column_a[fill_top_row:], dayfirst=True)) + pandas.to_timedelta(1, 'd')
-    if start_date >= today:  # no need to collect more data
+    if start_date >= today():  # no need to collect more data
         return
 
     sheet = google_sheets.spreadsheets.get(spreadsheetId=sheet_id).execute()
@@ -73,7 +76,7 @@ def get_usage_data():
     co2_data = get_co2_data(start_date)
     assert len(co2_data) == len(fuel_data)
     data_column = columns.index('Carbon intensity [gCO₂e/kWh]') + 1
-    fill_requests.append(fill_request(data_column + 47, 52, last_row - fill_top_row - 1))
+    fill_requests.append(fill_request(data_column + 47, 53, last_row - fill_top_row - 1))
     update_range = google_sheets.get_range_spec(data_column, new_data_row, data_column + 47, last_row)
     google_sheets.update_cells(sheet_id, sheet_name, update_range, co2_data.values.tolist())
 
@@ -87,7 +90,7 @@ def get_fuel_data(start_date, fuel):
     print(f'Fetching {fuel} usage data beginning {dmy(start_date)}')
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': mac_address}  # AUTH is my MAC code
-    params = {'start': ymdhm(start_date), 'end': ymdhm(today)}
+    params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
     print(url)
     response = requests.get(url, headers=headers)
@@ -100,7 +103,7 @@ def get_fuel_data(start_date, fuel):
 def get_temp_data():
     """Use the OpenWeather API to fetch the last five days' worth of hourly temperatures."""
     temp_data = {}
-    for date in pandas.date_range(today - pandas.to_timedelta(5, 'd'), today - pandas.to_timedelta(1, 'd')):
+    for date in pandas.date_range(today() - pandas.to_timedelta(5, 'd'), today() - pandas.to_timedelta(1, 'd')):
         params = {'lat': 53.460, 'lon': -2.766, 'dt': int(date.timestamp()), 'appid': api_key, 'units': 'metric'}
         url = f'https://api.openweathermap.org/data/2.5/onecall/timemachine?{urllib.parse.urlencode(params)}'
         hourly_data = json.loads(requests.get(url).text)['hourly']
@@ -112,7 +115,7 @@ def get_temp_data():
 
 def get_co2_data(start_date):
     """Use the Carbon Intensity API to fetch CO₂ intensity data."""
-    url = f'https://api.carbonintensity.org.uk/intensity/{ymd(start_date)}T00:30Z/{ymd(today)}T00:00Z'
+    url = f'https://api.carbonintensity.org.uk/intensity/{ymd(start_date)}T00:30Z/{ymd(today())}T00:00Z'
     df = pandas.json_normalize(requests.get(url).json(), record_path='data')
     df['from'] = pandas.to_datetime(df['from'])
     df['intensity'] = df['intensity.actual'].fillna(df['intensity.forecast'])
