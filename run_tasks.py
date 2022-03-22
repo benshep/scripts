@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass  # revert to standard print
 
-from change_wallpaper import change_wallpaper
+from change_wallpaper import change_wallpaper, Target
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
@@ -30,7 +30,10 @@ from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
 from check_on_site_support import check_on_site_support
 
-
+# for name, module in list(locals().items()):
+#     if callable(module):
+#         print(name)
+#         print(getfile(module))
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
 sheet_name = 'Sheet1'
