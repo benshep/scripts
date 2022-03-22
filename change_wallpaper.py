@@ -131,7 +131,7 @@ def change_wallpaper(target='desktop'):
     bottom = max([m.y + m.height for m in monitors])
     # print(f'{left=}, {right=}, {top=}, {bottom=}')
     canvas_width, canvas_height = right - left, bottom - top
-    print(f'Canvas size: {canvas_width}x{canvas_height}')
+    # print(f'Canvas size: {canvas_width}x{canvas_height}')
     canvas = Image.new('RGB', (canvas_width, canvas_height), 'black')
 
     # weight by sum of size and date:
@@ -183,7 +183,7 @@ def change_wallpaper(target='desktop'):
         # print('monitor', mon)
         # portrait or landscape?
         mon_landscape = mon.width > mon.height
-        print(f"{mon.width}x{mon.height}, {mon_landscape=}")
+        print(f"{mon.width}x{mon.height}")
         if for_phone:  # separate canvases for each phone 'monitor' (landscape and portrait)
             canvas = Image.new('RGB', (mon.width, mon.height), 'black')
 
@@ -197,15 +197,15 @@ def change_wallpaper(target='desktop'):
             # full_name = r"C:\Users\bjs54\Pictures\WhatsApp\IMG-20190225-WA0003.jpg"
             # seasonal = False
 
-            print(f"{full_name[len(pics_folder) + 1:]}: {weight_index:,d}")
+            # print(f"{full_name[len(pics_folder) + 1:]}: {weight_index:,d}")
             if any(exc in full_name for exc in exclude_list):
-                print(' On excluded list')
+                # print(' On excluded list')
                 continue
 
             if seasonal:
                 file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
                 diff = abs(file_date.replace(year=today.year) - today)
-                print(f' {diff.days=:}')
+                # print(f' {diff.days=:}')
                 if datetime.timedelta(days=30) < diff < datetime.timedelta(days=335):
                     continue
 
@@ -213,7 +213,7 @@ def change_wallpaper(target='desktop'):
 
             im_width, im_height = image.size
             im_landscape = im_width > im_height
-            print(f" {im_width}x{im_height}, {im_landscape=}")
+            # print(f" {im_width}x{im_height}, {im_landscape=}")
 
             # calculate factor to scale larger images down - is 1 if image is smaller
             # just use height for phone - chop off left/right borders if necessary
@@ -221,7 +221,7 @@ def change_wallpaper(target='desktop'):
             height_sf = 1 if (for_phone and im_landscape) else (mon.height / im_height)
             scale_factor = min(width_sf, height_sf, 1)
             eff_width, eff_height = int(im_width * scale_factor), int(im_height * scale_factor)
-            print(f" Scaled image size: {eff_width}x{eff_height}")
+            # print(f" Scaled image size: {eff_width}x{eff_height}")
 
             if im_width < mon.width and im_height < mon.height:
                 num_across, num_down = int(ceil(mon.width / eff_width)), int(ceil(mon.height / eff_height))
@@ -238,18 +238,18 @@ def change_wallpaper(target='desktop'):
             scale_factor = min(width_sf, height_sf, 1)
             mosaic_width, mosaic_height = int(scale_factor * mosaic_width), int(scale_factor * mosaic_height)
             eff_width, eff_height = int(eff_width * scale_factor), int(eff_height * scale_factor)
-            print(f" Rescaled image size: {eff_width}x{eff_height}")
+            # print(f" Rescaled image size: {eff_width}x{eff_height}")
 
-            print(f" Mosaic dimensions: {mosaic_width}x{mosaic_height}")
-            print(f" Number of images: {num_across}x{num_down}")
+            # print(f" Mosaic dimensions: {mosaic_width}x{mosaic_height}")
+            # print(f" Number of images: {num_across}x{num_down}")
             num_in_mosaic = num_across * num_down
             if for_phone and num_in_mosaic > 1:
-                print(' Only one image wanted for phone screen!')
+                # print(' Only one image wanted for phone screen!')
                 continue
 
             file_path, filename = os.path.split(full_name)
-            if num_in_mosaic > 1:
-                print(f" Looking for {num_in_mosaic} images with dimensions {im_width}x{im_height}")
+            # if num_in_mosaic > 1:
+            #     print(f" Looking for {num_in_mosaic} images with dimensions {im_width}x{im_height}")
 
             dir_files = [os.path.basename(name) for name, fsize in image_list if os.path.dirname(name) == file_path]
             dir_indices = [dir_files.index(filename)]
@@ -267,15 +267,15 @@ def change_wallpaper(target='desktop'):
                 new_im = apply_orientation(Image.open(os.path.join(file_path, dir_files[i])))
                 new_im_width, new_im_height = new_im.size
                 if new_im_width == im_width and new_im_height == im_height:
-                    print(f" Adding {dir_files[i]} {new_im_width}x{new_im_height}")
+                    # print(f" Adding {dir_files[i]} {new_im_width}x{new_im_height}")
                     dir_indices.insert(0 if direction == -1 else len(dir_indices), i)
 
             if direction == 0:  # didn't find enough
-                print(f' Only found {len(dir_indices)}, needed {num_in_mosaic}')
+                # print(f' Only found {len(dir_indices)}, needed {num_in_mosaic}')
                 continue
 
             found_correct_ornt = True
-            print(f" Resizing images to {eff_width}x{eff_height}")
+            print(f" Resizing {num_in_mosaic} images to {eff_width}x{eff_height} each")
             mosaic_left = mon.x + (mon.width - mosaic_width) // 2 - left
             mosaic_top = mon.y + (mon.height - mosaic_height) // 2 - top
             for i, index in enumerate(dir_indices):
@@ -286,7 +286,7 @@ def change_wallpaper(target='desktop'):
 
                 image_x = mosaic_left + eff_width * (i % num_across)
                 image_y = mosaic_top + eff_height * (i // num_across)
-                print(f' Placing image {i} at {image_x}, {image_y}')
+                # print(f' Placing image {i} at {image_x}, {image_y}')
                 canvas.paste(image, (image_x, image_y))
             # don't show the root folder name
             # replace slashes with middle dots - they look nicer
