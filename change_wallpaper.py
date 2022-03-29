@@ -45,6 +45,10 @@ orientation_funcs = [None, lambda x: x, flip_horizontal, rotate_180,
                      flip_vertical, transpose, rotate_270, transverse, rotate_90]
 
 
+class Target:
+    desktop, lockscreen, phone = range(3)
+
+
 def apply_orientation(im):
     """
     Extract the orientation EXIF tag from the image, which should be a PIL Image instance,
@@ -72,90 +76,27 @@ def get_image_files(folder):
     return filename_list
 
 
-def change_wallpaper(target='desktop'):
+def change_wallpaper(target=Target.desktop):
     """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
     target can be desktop, lockscreen or phone."""
     print(f'Wallpaper Changer, {target=}')
 
-    # find user's "My Documents" dir
-    user_home = os.environ['UserProfile' if on_windows else 'HOME']
-    # where pictures are kept
-    pics_folder = os.path.join(user_home, 'Pictures')
-    # in case it's a symlink
-    try:
-        pics_folder = os.readlink(pics_folder)
-    except OSError:
-        pass  # not a link!
+    pics_folder, wallpaper_dir = get_folders(target)
     pf_len = len(pics_folder) + 1
-    # print(pics_folder)
 
-    lockscreen = target == 'lockscreen'
-    for_phone = target == 'phone'
-    wallpaper_dir = os.path.join(user_home, 'phone-pics' if for_phone else 'lockscreen' if lockscreen else 'wallpaper')
-    os.makedirs(wallpaper_dir, exist_ok=True)
-    wallpaper_filename = os.path.join(wallpaper_dir, 'wallpaper.jpg')
-    # print(wallpaper_filename)
+    if on_windows and target is Target.lockscreen and on_remote_desktop():
+        return
 
-    if on_windows and lockscreen:
-        # Check if we are on Remote Desktop - not interested in changing the lockscreen
-        # (it will look weird when you come back)
-        output = b''
-        try:
-            # shell=True makes sure the netstat command doesn't show a console window
-            # 3389 is the Remote Desktop port
-            output = subprocess.Popen('netstat -n | find ":3389"', shell=True, stdout=subprocess.PIPE).stdout.read()
-        except:
-            pass  # ignore error
-        if b'ESTABLISHED' in output:
-            return
-
-    # figure out monitor geometry
-    if for_phone:
-        width, height = 800, 1560
-        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height),
-                    screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
-    else:
-        monitors = screeninfo.get_monitors()  # 'windows' if on_windows else 'drm')
-        if lockscreen:
-            # primary monitor has coordinates (0,0)
-            primaries = [mon for mon in monitors if mon.x == mon.y == 0]
-            # fallback in case none have these coordinates
-            monitors = monitors[:1] if len(primaries) == 0 else primaries
-
+    monitors = get_monitors(target)
     # print(monitors)
     if not monitors:
         return
-    left = min([m.x for m in monitors])
-    right = max([m.x + m.width for m in monitors])
-    top = min([m.y for m in monitors])
-    bottom = max([m.y + m.height for m in monitors])
-    # print(f'{left=}, {right=}, {top=}, {bottom=}')
-    canvas_width, canvas_height = right - left, bottom - top
-    # print(f'Canvas size: {canvas_width}x{canvas_height}')
-    canvas = Image.new('RGB', (canvas_width, canvas_height), 'black')
+    canvas, left, top = create_canvas(monitors)
 
-    # weight by sum of size and date:
-    # bigger files (likely to be better quality) get a higher weighting
-    # as do more recent files (we've already seen older ones quite a lot, so they get a lower weighting)
-    file_list = get_image_files(pics_folder)
-    sizes = [os.path.getsize(f) for f in file_list]
-    dates = [os.path.getmtime(f) for f in file_list]
-    min_date = min(dates)
-    # for date, weighting is (minutes since first pic) - this gives a comparable number to size in bytes
-    # e.g. 2019 photos will get a size weighting of order 8 million
-    weights = [s + (d - min_date) / 60 for s, d in zip(sizes, dates)]
-    # half-weighting for photos in girls' folders (lower quality control standards!)
-    bad_quality_folders = tuple(os.path.join(pics_folder, name) for name in ('Emma', 'Jess'))
-    weights = [w / 2 if f.startswith(bad_quality_folders) else w for f, w in zip(file_list, weights)]
-    cumulative_weight = list(accumulate(weights))
-    image_list = list(zip(file_list, cumulative_weight))
-    total_weight = int(cumulative_weight[-1])
-    # print('total size: {:.1f} GB ({:,d} bytes)'.format(total_weight / 1024**3, total_weight))
-    # with open('file_size_date_list.csv', 'w') as f:
-    #     [f.write('"{}",{},{}\n'.format(n, s, d)) for n, s, d in zip(file_list, sizes, dates)]
+    image_list = find_images(pics_folder)
 
     # font: Segoe UI, as on Windows logon screen, or Roboto for phone screen, or Ubuntu
-    font_name = 'Roboto-Regular' if for_phone else 'segoeui' if on_windows else 'Ubuntu-R'
+    font_name = 'Roboto-Regular' if target is Target.phone else 'segoeui' if on_windows else 'Ubuntu-R'
     font = ImageFont.truetype(f'{font_name}.ttf', 24)
 
     def write_caption(im, text, x, y, align_right=False):
@@ -168,10 +109,7 @@ def change_wallpaper(target='desktop'):
         draw.text((x + 1, y + 1), text, 'black', font=font)
         draw.text((x, y), text, 'white', font=font)
 
-    # read in exclude list
-    exclude_list = [line.rstrip('\n') for line in open(os.path.join(pics_folder, 'exclude.txt'), 'r')]
-    # ensure each item with a path separator uses the correct one for this OS
-    exclude_list = [item.replace('\\', os.sep).replace('/', os.sep) for item in exclude_list]
+    exclude_list = get_exclude_list(pics_folder)
 
     today = datetime.date.today()
 
@@ -184,30 +122,23 @@ def change_wallpaper(target='desktop'):
         # portrait or landscape?
         mon_landscape = mon.width > mon.height
         print(f"{mon.width}x{mon.height}")
-        if for_phone:  # separate canvases for each phone 'monitor' (landscape and portrait)
+        if target is Target.phone:  # separate canvases for each phone 'monitor' (landscape and portrait)
             canvas = Image.new('RGB', (mon.width, mon.height), 'black')
 
-        found_correct_ornt = False
-
-        while not found_correct_ornt:
-            weight_index = randint(0, total_weight)
-            full_name = next(name for name, csize in image_list if csize >= weight_index)
+        while True:  # loop until break
+            full_name = get_random_image(image_list)
 
             # for debugging!
             # full_name = r"C:\Users\bjs54\Pictures\WhatsApp\IMG-20190225-WA0003.jpg"
             # seasonal = False
 
-            # print(f"{full_name[len(pics_folder) + 1:]}: {weight_index:,d}")
+            # print(f"{full_name[len(pics_folder) + 1:]}")
             if any(exc in full_name for exc in exclude_list):
                 # print(' On excluded list')
                 continue
 
-            if seasonal:
-                file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
-                diff = abs(file_date.replace(year=today.year) - today)
-                # print(f' {diff.days=:}')
-                if datetime.timedelta(days=30) < diff < datetime.timedelta(days=335):
-                    continue
+            if seasonal and is_out_of_season(full_name, today):
+                continue
 
             image = apply_orientation(Image.open(full_name))
 
@@ -217,8 +148,8 @@ def change_wallpaper(target='desktop'):
 
             # calculate factor to scale larger images down - is 1 if image is smaller
             # just use height for phone - chop off left/right borders if necessary
-            width_sf = 1 if (for_phone and not im_landscape) else (mon.width / im_width)
-            height_sf = 1 if (for_phone and im_landscape) else (mon.height / im_height)
+            width_sf = 1 if (target is Target.phone and not im_landscape) else (mon.width / im_width)
+            height_sf = 1 if (target is Target.phone and im_landscape) else (mon.height / im_height)
             scale_factor = min(width_sf, height_sf, 1)
             eff_width, eff_height = int(im_width * scale_factor), int(im_height * scale_factor)
             # print(f" Scaled image size: {eff_width}x{eff_height}")
@@ -233,8 +164,8 @@ def change_wallpaper(target='desktop'):
                 num_across, num_down = 1, 1
             mosaic_width, mosaic_height = num_across * eff_width, num_down * eff_height
             # just use height for phone - chop off left/right borders if necessary
-            width_sf = 1 if (for_phone and not im_landscape) else (mon.width / mosaic_width)
-            height_sf = 1 if (for_phone and im_landscape) else (mon.height / mosaic_height)
+            width_sf = 1 if (target is Target.phone and not im_landscape) else (mon.width / mosaic_width)
+            height_sf = 1 if (target is Target.phone and im_landscape) else (mon.height / mosaic_height)
             scale_factor = min(width_sf, height_sf, 1)
             mosaic_width, mosaic_height = int(scale_factor * mosaic_width), int(scale_factor * mosaic_height)
             eff_width, eff_height = int(eff_width * scale_factor), int(eff_height * scale_factor)
@@ -243,46 +174,23 @@ def change_wallpaper(target='desktop'):
             # print(f" Mosaic dimensions: {mosaic_width}x{mosaic_height}")
             # print(f" Number of images: {num_across}x{num_down}")
             num_in_mosaic = num_across * num_down
-            if for_phone and num_in_mosaic > 1:
+            if target is Target.phone and num_in_mosaic > 1:
                 # print(' Only one image wanted for phone screen!')
                 continue
 
-            file_path, filename = os.path.split(full_name)
-            # if num_in_mosaic > 1:
-            #     print(f" Looking for {num_in_mosaic} images with dimensions {im_width}x{im_height}")
-
-            dir_files = [os.path.basename(name) for name, fsize in image_list if os.path.dirname(name) == file_path]
-            dir_indices = [dir_files.index(filename)]
-            i = dir_indices[0]
-            direction = 1
-            while len(dir_indices) < num_in_mosaic and not direction == 0:
-                i += direction
-                if i == len(dir_files):
-                    direction = -1
-                    i = dir_indices[0]
-                    continue
-                elif i == -1:
-                    direction = 0
-                    break
-                new_im = apply_orientation(Image.open(os.path.join(file_path, dir_files[i])))
-                new_im_width, new_im_height = new_im.size
-                if new_im_width == im_width and new_im_height == im_height:
-                    # print(f" Adding {dir_files[i]} {new_im_width}x{new_im_height}")
-                    dir_indices.insert(0 if direction == -1 else len(dir_indices), i)
-
-            if direction == 0:  # didn't find enough
-                # print(f' Only found {len(dir_indices)}, needed {num_in_mosaic}')
+            dir_files = find_mosaic_images(full_name, image.size, image_list, num_in_mosaic)
+            if dir_files is None:
                 continue
 
-            found_correct_ornt = True
             print(f" Resizing {num_in_mosaic} images to {eff_width}x{eff_height} each")
             mosaic_left = mon.x + (mon.width - mosaic_width) // 2 - left
             mosaic_top = mon.y + (mon.height - mosaic_height) // 2 - top
-            for i, index in enumerate(dir_indices):
-                image = apply_orientation(Image.open(os.path.join(file_path, dir_files[index])))
+            file_path, _ = os.path.split(full_name)
+            for i, name in enumerate(dir_files):
+                image = apply_orientation(Image.open(os.path.join(file_path, name)))
                 image = image.resize((eff_width, eff_height))
                 if num_in_mosaic > 1:  # label individual pics
-                    write_caption(image, dir_files[index], 20, 20)
+                    write_caption(image, name, 20, 20)
 
                 image_x = mosaic_left + eff_width * (i % num_across)
                 image_y = mosaic_top + eff_height * (i // num_across)
@@ -292,13 +200,14 @@ def change_wallpaper(target='desktop'):
             # replace slashes with middle dots - they look nicer
             caption = (file_path if num_in_mosaic > 1 else full_name)[pf_len:].replace(os.path.sep, ' · ')
             # replace months with short names
-            if for_phone:
+            if target is Target.phone:
                 for long, short in [datetime.date(2016, m + 1, 1).strftime('%B %b').split(' ') for m in range(12)]:
                     caption = caption.replace(long, short)
 
-            caption_x, caption_y = (108, 60) if for_phone else (mosaic_left + 20, mosaic_top + mosaic_height - 60)
+            caption_x, caption_y = (108, 60) if target is Target.phone else (
+            mosaic_left + 20, mosaic_top + mosaic_height - 60)
             write_caption(canvas, caption, caption_x, caption_y)
-            if for_phone:  # save each time rather than one big mosaic - want separate portrait/landscape images
+            if target is Target.phone:  # save each time rather than one big mosaic - want separate portrait/landscape images
                 # Also write the date and time into the image
                 now = datetime.datetime.now()
                 caption = now.strftime('%d/%m %H:%M')
@@ -325,9 +234,11 @@ def change_wallpaper(target='desktop'):
 
                 print(f' Saving as {wallpaper_filename}')
                 canvas.save(wallpaper_filename)
+            break
 
-    if not for_phone:
-        if not lockscreen:
+    if target is not Target.phone:
+        wallpaper_filename = os.path.join(wallpaper_dir, 'wallpaper.jpg')
+        if target is Target.desktop:
             for _ in range(5):
                 try:
                     canvas.save(wallpaper_filename)
@@ -340,7 +251,7 @@ def change_wallpaper(target='desktop'):
             else:  # tried 5 times and failed
                 raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
 
-        if lockscreen:  # save as lockscreen filename
+        if target is Target.lockscreen:  # save as lockscreen filename
             os.chdir(wallpaper_dir)
             canvas.save('00.jpg')
             canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
@@ -349,9 +260,133 @@ def change_wallpaper(target='desktop'):
             ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper_filename, 3)
 
 
+def find_mosaic_images(full_name, image_size, image_list, num_in_mosaic):
+    file_path, filename = os.path.split(full_name)
+    if num_in_mosaic == 1:
+        return [filename]
+    #     print(f" Looking for {num_in_mosaic} images with dimensions {image_size}")
+    dir_files = [os.path.basename(name) for name, _ in image_list if os.path.dirname(name) == file_path]
+    # Fetch files from list starting with the chosen one and working outwards
+    index = dir_files.index(filename)
+    indices = sorted(range(len(dir_files)), key=lambda j: abs(index - j))
+    if len(indices) < num_in_mosaic:
+        # print(f'Only {len(indices)} files in {file_path}, needed {num_in_mosaic} for mosaic')
+        return None
+
+    return_list = []
+    for i in indices:
+        new_im = apply_orientation(Image.open(os.path.join(file_path, dir_files[i])))
+        if new_im.size == image_size:
+            return_list.append(i)
+            if len(return_list) == num_in_mosaic:
+                break
+    else:
+        # print(f'Only found {len(return_list)} files in {file_path} with size {image_size}, needed {num_in_mosaic} for mosaic')
+        return None
+
+    return [dir_files[i] for i in sorted(return_list)]
+
+
+def get_random_image(image_list):
+    _, total_weight = image_list[-1]
+    weight_index = randint(0, int(total_weight))
+    return next(name for name, csize in image_list if csize >= weight_index)
+
+
+def is_out_of_season(full_name, today):
+    file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
+    diff = abs(file_date.replace(year=today.year) - today)
+    # print(f' {diff.days=:}')
+    return datetime.timedelta(days=30) < diff < datetime.timedelta(days=335)
+
+
+def get_exclude_list(pics_folder):
+    # read in exclude list
+    exclude_list = [line.rstrip('\n') for line in open(os.path.join(pics_folder, 'exclude.txt'), 'r')]
+    # ensure each item with a path separator uses the correct one for this OS
+    exclude_list = [item.replace('\\', os.sep).replace('/', os.sep) for item in exclude_list]
+    return exclude_list
+
+
+def find_images(pics_folder):
+    # weight by sum of size and date:
+    # bigger files (likely to be better quality) get a higher weighting
+    # as do more recent files (we've already seen older ones quite a lot, so they get a lower weighting)
+    file_list = get_image_files(pics_folder)
+    sizes = [os.path.getsize(f) for f in file_list]
+    dates = [os.path.getmtime(f) for f in file_list]
+    min_date = min(dates)
+    # for date, weighting is (minutes since first pic) - this gives a comparable number to size in bytes
+    # e.g. 2019 photos will get a size weighting of order 8 million
+    weights = [s + (d - min_date) / 60 for s, d in zip(sizes, dates)]
+    # half-weighting for photos in girls' folders (lower quality control standards!)
+    bad_quality_folders = tuple(os.path.join(pics_folder, name) for name in ('Emma', 'Jess'))
+    weights = [w / 2 if f.startswith(bad_quality_folders) else w for f, w in zip(file_list, weights)]
+    # print('total size: {:.1f} GB ({:,d} bytes)'.format(total_weight / 1024**3, total_weight))
+    # with open('file_size_date_list.csv', 'w') as f:
+    #     [f.write('"{}",{},{}\n'.format(n, s, d)) for n, s, d in zip(file_list, sizes, dates)]
+    return list(zip(file_list, accumulate(weights)))
+
+
+def create_canvas(monitors):
+    left = min(m.x for m in monitors)
+    right = max(m.x + m.width for m in monitors)
+    top = min(m.y for m in monitors)
+    bottom = max(m.y + m.height for m in monitors)
+    # print(f'{left=}, {right=}, {top=}, {bottom=}')
+    canvas_width, canvas_height = right - left, bottom - top
+    # print(f'Canvas size: {canvas_width}x{canvas_height}')
+    canvas = Image.new('RGB', (canvas_width, canvas_height), 'black')
+    return canvas, left, top
+
+
+def get_monitors(target):
+    """Figure out monitor geometry."""
+    if target is Target.phone:
+        width, height = 800, 1560
+        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height),
+                    screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
+    else:
+        monitors = screeninfo.get_monitors()  # 'windows' if on_windows else 'drm')
+        if target is Target.lockscreen:
+            # primary monitor has coordinates (0,0)
+            primaries = [mon for mon in monitors if mon.x == mon.y == 0]
+            # fallback in case none have these coordinates
+            monitors = primaries or monitors[:1]
+    return monitors
+
+
+def on_remote_desktop():
+    """Check if we are on Remote Desktop - not interested in changing the lockscreen
+    (it will look weird when you come back)."""
+    output = b''
+    try:
+        # shell=True makes sure the netstat command doesn't show a console window
+        # 3389 is the Remote Desktop port
+        output = subprocess.Popen('netstat -n | find ":3389"', shell=True, stdout=subprocess.PIPE).stdout.read()
+    except:
+        pass  # ignore error
+    return b'ESTABLISHED' in output
+
+
+def get_folders(target):
+    # find user's "My Documents" dir
+    user_home = os.environ['UserProfile' if on_windows else 'HOME']
+    # where pictures are kept
+    pics_folder = os.path.join(user_home, 'Pictures')
+    # in case it's a symlink
+    try:
+        pics_folder = os.readlink(pics_folder)
+    except OSError:
+        pass  # not a link!
+    # print(pics_folder)
+    wallpaper_dir = os.path.join(user_home, ('wallpaper', 'lockscreen', 'phone-pics')[target])
+    os.makedirs(wallpaper_dir, exist_ok=True)
+    return pics_folder, wallpaper_dir
+
+
 if __name__ == '__main__':
     if len(sys.argv) <= 1:  # argument supplied?
         change_wallpaper()
     else:
-        change_wallpaper(sys.argv[1])
-
+        change_wallpaper(getattr(Target, sys.argv[1]))
