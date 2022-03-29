@@ -23,10 +23,15 @@ def pick_random_cd():
     while True:
         folder = cd_folders.pop(randrange(len(cd_folders)))  # remove from list
         os.system(f'title {folder.replace("&", "^&")}')  # set title of window
-        print(folder)
+        path = os.path.join(music_folder, folder)
+        if not os.path.exists(path):
+            continue
         start_time = int(time())
-        os.chdir(os.path.join(music_folder, folder))
+        os.chdir(path)
         track_list = sorted([MediaFile(f) for f in os.listdir() if is_media_file(f)], key=lambda media: int(media.track))
+        if not track_list:
+            continue
+        print(folder)
         [print(f'{media.track:2d}. {media.title}') for media in track_list]
         num_tracks = input('Scrobble up to track [auto]: ')
         num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
@@ -40,10 +45,11 @@ def pick_random_cd():
             print(f'{media.artist} - {media.title}')
             start_time += media.length
         # if this was a CD and not in Opus format, open in Explorer in preparation for re-ripping
-        if scrobbled and all(os.path.splitext(media.path)[1].lower() != '.opus' for media in track_list):
-            os.startfile('.')  # open Explorer in folder
-        else:
-            print('Already ripped to Opus format')
+        if scrobbled:
+            if any(os.path.splitext(media.path)[1].lower() == '.opus' for media in track_list):
+                print('Already ripped to Opus format')
+            else:
+                os.startfile('.')  # open Explorer in folder
         print('\n')
 
 
