@@ -123,7 +123,7 @@ def update_phone_music():
         if total_size > max_size:  # already done everything we can fit - exclude everything else
             if not excluded:
                 rename_folder(name)
-                toast += '🗑️ ' + name + '\n'
+                toast += f'🗑️ {name}\n'
         elif excluded:  # was previously excluded
             rename_folder(name)
             toast += album.toast() + '\n'
@@ -137,7 +137,7 @@ def update_phone_music():
 def rename_folder(old):
     """Add or remove a # character from the end of a folder name.
     If the new folder exists, copy everything from the old to the new folder."""
-    new = old.rstrip('#') if old.endswith('#') else old + '#'
+    new = old.rstrip('#') if old.endswith('#') else f'{old}#'
     os.makedirs(new, exist_ok=True)
     try:
         for filename in os.listdir(old):
@@ -176,7 +176,7 @@ def get_albums(user, music_folder):
             total_size = sum(os.path.getsize(file) for file in file_list)
             album = Album(artist, title, folder, oldest, total_size, len(file_list))
             albums.append(album)
-            album_name = (artist + ' - ' + title).lower()
+            album_name = f'{artist} - {title}'.lower()
             if album_name in top_albums.keys():  # is it in the top albums? store a reference to it
                 album.my_listens = top_albums[album_name][1] / album.track_count
                 top_albums[album_name][0] = folder
@@ -242,6 +242,7 @@ def check_radio_files(lastfm_user):
         weeks = (file_date - min_date).days // 7
 
         tags = phrydy.MediaFile(file)
+        tags_changed = False
         total_hours += tags.length / 3600
         if checking_scrobbles:
             track_title = media.artist_title(tags)
@@ -251,15 +252,20 @@ def check_radio_files(lastfm_user):
             else:
                 print(f'Not found: {track_title}')
                 checking_scrobbles = False  # stop here - don't keep searching
-        elif tags.title in ('', 'Untitled Episode', None):
+        if tags.title in ('', 'Untitled Episode', None):
             print(f'Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
-            if not test_mode:
-                tags.save()
+            tags_changed = True
+        if not tags.albumartist:
+            print(f'Set {file} album artist to {tags.artist}')
+            tags.albumartist = tags.artist
+            tags_changed = True
+        if tags_changed and not test_mode:
+            tags.save()
     toast = ''
     print('\nTo delete:')
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
-        toast += '🗑️ ' + os.path.splitext(file)[0] + '\n'  # hide the file extension
+        toast += f'🗑️ {os.path.splitext(file)[0]}\n'
         print(file)
         if not test_mode and os.path.exists(file):
             send2trash(file)
