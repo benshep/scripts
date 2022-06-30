@@ -7,6 +7,8 @@ import requests
 import google_sheets
 from energy_credentials import mac_address
 from openweather import api_key
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 base_url = 'https://consumer-api.data.n3rgy.com'
 
@@ -64,6 +66,7 @@ def get_usage_data():
     for fuel in 'gas', 'electricity':
         fuel_column = columns.index(fuel.title()) + 1
         fuel_data = get_fuel_data(start_date, fuel)
+        assert fuel_data.size % 48 == 0  # we want a whole number of days (i.e. 48 half-hourly points)
         last_row = new_data_row + len(fuel_data) - 1
         update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
         google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
@@ -84,6 +87,11 @@ def get_usage_data():
     request_body = {'requests': [fill_requests]}
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
 
+    summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
+    print(summary)
+    if today().dayofweek == 1:  # notify once a week, on Tuesdays
+        Pushbullet(api_key).push_note('⚡ Energy usage', summary)
+
 
 def get_fuel_data(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
@@ -94,7 +102,7 @@ def get_fuel_data(start_date, fuel):
     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
     print(url)
     response = requests.get(url, headers=headers)
-    print(response.json())
+    # print(response.json())
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
     return pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value').dropna()
