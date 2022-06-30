@@ -48,7 +48,7 @@ def reject_large(info_dict):
 def show_status(progress):
     """Show downloading status."""
     if progress['status'] == 'downloading':
-        print(f'{progress["_eta_str"]} {progress["filename"]}')  # , end='\r')
+        print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
 
 
 def get_youtube_playlists():

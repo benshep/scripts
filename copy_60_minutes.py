@@ -1,6 +1,7 @@
 #!python3
 # -*- coding: utf-8 -*-
 import os
+import pickle
 import phrydy  # to get media data
 from lastfm import lastfm
 import random
@@ -85,7 +86,7 @@ def scan_music_folder(music_folder):
             try:
                 tags = phrydy.MediaFile(filename)
             except Exception:
-                print(f'No media info for {file_list[0]}')
+                print(f'No media info for {file}')
                 continue
             # use album artist (if available) so we can compare 'Various Artist' albums
             artist = tags.albumartist or tags.artist
@@ -125,7 +126,7 @@ def check_folder_list(copy_folder_list):
 
         if played_count >= file_count / 2:
             send2trash(oldest)
-            toast += '❌ ' + oldest[11:]  # skip yyyy-mm-dd bit for readability
+            toast += f'❌ {oldest[11:]}'
             subfolders.remove(oldest)
         if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
             del copy_folder_list[i]
