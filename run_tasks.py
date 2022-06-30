@@ -95,7 +95,7 @@ def run_tasks():
                 try:
                     parameters = float(values[1])
                 except ValueError:  # it's not a float, assume string
-                    parameters = f'"{values[1]}"'  # wrap in quotes to send to function
+                    parameters = f'"{values[1]}"' if values[1] else ''  # wrap in quotes to send to function
                 os.system(f'title ➡️ {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
