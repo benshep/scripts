@@ -45,10 +45,6 @@ orientation_funcs = [None, lambda x: x, flip_horizontal, rotate_180,
                      flip_vertical, transpose, rotate_270, transverse, rotate_90]
 
 
-class Target:
-    desktop, lockscreen, phone = range(3)
-
-
 def apply_orientation(im):
     """
     Extract the orientation EXIF tag from the image, which should be a PIL Image instance,
@@ -76,7 +72,7 @@ def get_image_files(folder):
     return filename_list
 
 
-def change_wallpaper(target=Target.desktop):
+def change_wallpaper(target='desktop'):
     """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
     target can be desktop, lockscreen or phone."""
     print(f'Wallpaper Changer, {target=}')
@@ -84,7 +80,7 @@ def change_wallpaper(target=Target.desktop):
     pics_folder, wallpaper_dir = get_folders(target)
     pf_len = len(pics_folder) + 1
 
-    if on_windows and target is Target.lockscreen and on_remote_desktop():
+    if on_windows and target == 'lockscreen' and on_remote_desktop():
         return
 
     monitors = get_monitors(target)
@@ -96,7 +92,7 @@ def change_wallpaper(target=Target.desktop):
     image_list = find_images(pics_folder)
 
     # font: Segoe UI, as on Windows logon screen, or Roboto for phone screen, or Ubuntu
-    font_name = 'Roboto-Regular' if target is Target.phone else 'segoeui' if on_windows else 'Ubuntu-R'
+    font_name = 'Roboto-Regular' if target == 'phone' else 'segoeui' if on_windows else 'Ubuntu-R'
     font = ImageFont.truetype(f'{font_name}.ttf', 24)
 
     def write_caption(im, text, x, y, align_right=False):
@@ -122,7 +118,7 @@ def change_wallpaper(target=Target.desktop):
         # portrait or landscape?
         mon_landscape = mon.width > mon.height
         print(f"{mon.width}x{mon.height}")
-        if target is Target.phone:  # separate canvases for each phone 'monitor' (landscape and portrait)
+        if target == 'phone':  # separate canvases for each phone 'monitor' (landscape and portrait)
             canvas = Image.new('RGB', (mon.width, mon.height), 'black')
 
         while True:  # loop until break
@@ -148,8 +144,8 @@ def change_wallpaper(target=Target.desktop):
 
             # calculate factor to scale larger images down - is 1 if image is smaller
             # just use height for phone - chop off left/right borders if necessary
-            width_sf = 1 if (target is Target.phone and not im_landscape) else (mon.width / im_width)
-            height_sf = 1 if (target is Target.phone and im_landscape) else (mon.height / im_height)
+            width_sf = 1 if (target == 'phone' and not im_landscape) else (mon.width / im_width)
+            height_sf = 1 if (target == 'phone' and im_landscape) else (mon.height / im_height)
             scale_factor = min(width_sf, height_sf, 1)
             eff_width, eff_height = int(im_width * scale_factor), int(im_height * scale_factor)
             # print(f" Scaled image size: {eff_width}x{eff_height}")
@@ -164,8 +160,8 @@ def change_wallpaper(target=Target.desktop):
                 num_across, num_down = 1, 1
             mosaic_width, mosaic_height = num_across * eff_width, num_down * eff_height
             # just use height for phone - chop off left/right borders if necessary
-            width_sf = 1 if (target is Target.phone and not im_landscape) else (mon.width / mosaic_width)
-            height_sf = 1 if (target is Target.phone and im_landscape) else (mon.height / mosaic_height)
+            width_sf = 1 if (target == 'phone' and not im_landscape) else (mon.width / mosaic_width)
+            height_sf = 1 if (target == 'phone' and im_landscape) else (mon.height / mosaic_height)
             scale_factor = min(width_sf, height_sf, 1)
             mosaic_width, mosaic_height = int(scale_factor * mosaic_width), int(scale_factor * mosaic_height)
             eff_width, eff_height = int(eff_width * scale_factor), int(eff_height * scale_factor)
@@ -174,7 +170,7 @@ def change_wallpaper(target=Target.desktop):
             # print(f" Mosaic dimensions: {mosaic_width}x{mosaic_height}")
             # print(f" Number of images: {num_across}x{num_down}")
             num_in_mosaic = num_across * num_down
-            if target is Target.phone and num_in_mosaic > 1:
+            if target == 'phone' and num_in_mosaic > 1:
                 # print(' Only one image wanted for phone screen!')
                 continue
 
@@ -200,14 +196,14 @@ def change_wallpaper(target=Target.desktop):
             # replace slashes with middle dots - they look nicer
             caption = (file_path if num_in_mosaic > 1 else full_name)[pf_len:].replace(os.path.sep, ' · ')
             # replace months with short names
-            if target is Target.phone:
+            if target == 'phone':
                 for long, short in [datetime.date(2016, m + 1, 1).strftime('%B %b').split(' ') for m in range(12)]:
                     caption = caption.replace(long, short)
 
-            caption_x, caption_y = (108, 60) if target is Target.phone else (
+            caption_x, caption_y = (108, 60) if target == 'phone' else (
             mosaic_left + 20, mosaic_top + mosaic_height - 60)
             write_caption(canvas, caption, caption_x, caption_y)
-            if target is Target.phone:  # save each time rather than one big mosaic - want separate portrait/landscape images
+            if target == 'phone':  # save each time rather than one big mosaic - want separate portrait/landscape images
                 # Also write the date and time into the image
                 now = datetime.datetime.now()
                 caption = now.strftime('%d/%m %H:%M')
@@ -236,9 +232,9 @@ def change_wallpaper(target=Target.desktop):
                 canvas.save(wallpaper_filename)
             break
 
-    if target is not Target.phone:
+    if target != 'phone':
         wallpaper_filename = os.path.join(wallpaper_dir, 'wallpaper.jpg')
-        if target is Target.desktop:
+        if target == 'desktop':
             for _ in range(5):
                 try:
                     canvas.save(wallpaper_filename)
@@ -251,7 +247,7 @@ def change_wallpaper(target=Target.desktop):
             else:  # tried 5 times and failed
                 raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
 
-        if target is Target.lockscreen:  # save as lockscreen filename
+        if target == 'lockscreen':  # save as lockscreen filename
             os.chdir(wallpaper_dir)
             canvas.save('00.jpg')
             canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
@@ -342,13 +338,13 @@ def create_canvas(monitors):
 
 def get_monitors(target):
     """Figure out monitor geometry."""
-    if target is Target.phone:
+    if target == 'phone':
         width, height = 800, 1560
         monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height),
                     screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
     else:
         monitors = screeninfo.get_monitors()  # 'windows' if on_windows else 'drm')
-        if target is Target.lockscreen:
+        if target == 'lockscreen':
             # primary monitor has coordinates (0,0)
             primaries = [mon for mon in monitors if mon.x == mon.y == 0]
             # fallback in case none have these coordinates
@@ -380,7 +376,8 @@ def get_folders(target):
     except OSError:
         pass  # not a link!
     # print(pics_folder)
-    wallpaper_dir = os.path.join(user_home, ('wallpaper', 'lockscreen', 'phone-pics')[target])
+    subfolder = {'desktop': 'wallpaper', 'lockscreen': 'lockscreen', 'phone': 'phone-pics'}[target]
+    wallpaper_dir = os.path.join(user_home, subfolder)
     os.makedirs(wallpaper_dir, exist_ok=True)
     return pics_folder, wallpaper_dir
 
@@ -389,4 +386,4 @@ if __name__ == '__main__':
     if len(sys.argv) <= 1:  # argument supplied?
         change_wallpaper()
     else:
-        change_wallpaper(getattr(Target, sys.argv[1]))
+        change_wallpaper(sys.argv[1])
