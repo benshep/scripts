@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass  # revert to standard print
 
-from change_wallpaper import change_wallpaper, Target
+from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
@@ -29,6 +29,7 @@ from enter_otl_timecard import enter_otl_timecard
 from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
 from check_on_site_support import check_on_site_support
+from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
 
 # for name, module in list(locals().items()):
 #     if callable(module):
@@ -91,7 +92,10 @@ def run_tasks():
                 update_cell(i + 2, get_column('Machine'), node())
                 update_cell(i + 2, get_column('Last result'), 'Running')
                 function_name = values[0]
-                parameters = values[1]
+                try:
+                    parameters = float(values[1])
+                except ValueError:  # it's not a float, assume string
+                    parameters = f'"{values[1]}"'  # wrap in quotes to send to function
                 os.system(f'title ➡️ {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
