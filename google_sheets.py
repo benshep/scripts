@@ -34,13 +34,14 @@ def get_data(sheet_id, sheet_name, data_range):
 
 def update_cell(sheet_id, sheet_name, cell, value):
     """Update a cell in a specified sheet with the given value."""
-    payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': f'{sheet_name}!{cell}'}
-    sheets.update(spreadsheetId=sheet_id, range=f'{sheet_name}!{cell}',
+    range_spec = f'{sheet_name}!{cell}' if sheet_name else cell
+    payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': range_spec}
+    sheets.update(spreadsheetId=sheet_id, range=range_spec,
                   valueInputOption='USER_ENTERED', body=payload).execute(num_retries=5)
 
 def update_cells(workbook_id, sheet_name, cell_range, values):
     """Update a cell range in a specified sheet with the given values."""
-    cells = {'range': f'{sheet_name}!{cell_range}', 'values': values}
+    cells = {'range': f'{sheet_name}!{cell_range}' if sheet_name else cell_range, 'values': values}
     sheets.batchUpdate(spreadsheetId=workbook_id,
                        body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute(num_retries=5)
 
