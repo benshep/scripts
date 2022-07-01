@@ -116,6 +116,9 @@ def run_tasks():
         else:
             print('On battery, not running any tasks')
 
+        print('Updating online status')
+        set_pc_unlocked_flag()
+
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
         next_task_time += timedelta(seconds=hash(node()) % 300)
         next_time_str = next_task_time.strftime("%H:%M")
