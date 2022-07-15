@@ -1,9 +1,11 @@
 import os
 import requests
 import json
+import subprocess
 import media
 import phrydy
 from time import sleep
+from send2trash import send2trash
 
 
 def explicit_songs(files):
@@ -50,7 +52,7 @@ def fix_tags(fix_function):
             started = True
         elif not started:
             continue
-        print(folder)
+        # print(folder)
         open(log_file, 'w', encoding='utf-8').write(folder)
         os.chdir(folder)
         files = list(filter(media.is_media_file, files))
@@ -94,5 +96,22 @@ def album_artist(files):
         print(unique_artists)
 
 
+def find_320k_mp3s(files):
+    """Convert MP3 files with 320kbps bitrate to Opus with 96kbps."""
+    for file in files:
+        old_size = os.path.getsize(file)
+        basename, ext = os.path.splitext(file)
+        if ext.lower() != '.mp3':
+            continue
+        tags = phrydy.MediaFile(file)
+        if tags.bitrate >= 320000:
+            opus_file = f"{basename}.opus"
+            command = ['ffmpeg.exe', '-i', file, '-acodec', 'libopus', opus_file]
+            subprocess.call(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            new_size = os.path.getsize(opus_file)
+            print(f'{old_size / 1024**2:.02f}', f'{new_size / 1024**2:.02f}', file, sep='\t')
+            send2trash(file)
+
+
 if __name__ == '__main__':
-    fix_tags(album_artist)
+    fix_tags(find_320k_mp3s)
