@@ -26,6 +26,14 @@ class TagAdder:
         media.albumartist = self.artist
         media.album = self.album
         media.track = int(filename[:2])
+        basename, _ = os.path.splitext(filename)
+        art_filename = f'{basename}.jpg'
+        try:
+            media.art = open(art_filename, 'rb').read()
+            print(f'Saved thumbnail from {art_filename}')
+            os.remove(art_filename)
+        except FileNotFoundError:
+            print(f'No thumbnail found for {filename}')
         media.save()
         print('Downloaded', filename)
 
@@ -48,7 +56,7 @@ def reject_large(info_dict):
 def show_status(progress):
     """Show downloading status."""
     if progress['status'] == 'downloading':
-        print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
+        print(f'{progress["_eta_str"]} {progress["filename"]}')#, end='\r')
 
 
 def get_youtube_playlists():
@@ -72,10 +80,15 @@ def get_youtube_playlists():
         tag_adder = TagAdder(playlist.get('album', os.path.split(folder)[-1]),  # default to folder name
                              playlist.get('artist', 'Various Artists'))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
-                   'playlistreverse': 'channel' in playlist['url'],  # reverse order for channels (otherwise new videos will always be track 1)
+                   # reverse order for channels (otherwise new videos will always be track 1)
+                   'writethumbnail': True,
+                   'playlistreverse': 'channel' in playlist['url'],
                    'format': 'bestaudio/best',
-                   'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",  # https://github.com/ytdl-org/youtube-dl/blob/master/README.md#output-template
-                   'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'}],
+                   # https://github.com/ytdl-org/youtube-dl/blob/master/README.md#output-template
+                   'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
+                   'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
+                                      # {'key': 'EmbedThumbnail'}  # not supported on Opus yet - do it ourselves
+                                      ],
                    'logger': tag_adder, 'match_filter': reject_large, 'progress_hooks': [show_status]}
         YoutubeDL(options).download([playlist['url']])
 
