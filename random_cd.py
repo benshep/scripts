@@ -32,7 +32,8 @@ def pick_random_cd(cd_mode=True):
         start_time = int(time())
         os.chdir(path)
         files = os.listdir()
-        if cd_mode and any(is_opus(file) for file in files):
+        nocd = 'nocd'
+        if cd_mode and (nocd in files or any(is_opus(file) for file in files)):
             continue  # already ripped to Opus
         track_list = sorted([MediaFile(f) for f in files if is_media_file(f)], key=lambda media: int(media.track))
         if not track_list:
@@ -42,6 +43,9 @@ def pick_random_cd(cd_mode=True):
         [print(f'{media.track:2d}. {media.title}') for media in track_list]
         if cd_mode:
             num_tracks = input('Scrobble up to track [auto]: ')
+            if nocd.startswith(num_tracks):  # record the lack of CD, so we don't have to ask again ('n' is sufficient)
+                open(nocd, 'w').close()
+                continue
             num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
 
             scrobbled = False
