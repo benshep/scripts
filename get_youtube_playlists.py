@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 from youtube_dl import YoutubeDL
 from phrydy import MediaFile
 
@@ -27,12 +28,12 @@ class TagAdder:
         media.album = self.album
         media.track = int(filename[:2])
         basename, _ = os.path.splitext(filename)
-        art_filename = f'{basename}.jpg'
         try:
+            art_filename = next(f'{basename}.{ext}' for ext in ('jpg', 'webp') if os.path.exists(f'{basename}.{ext}'))
             media.art = open(art_filename, 'rb').read()
             print(f'Saved thumbnail from {art_filename}')
             os.remove(art_filename)
-        except FileNotFoundError:
+        except StopIteration:
             print(f'No thumbnail found for {filename}')
         media.save()
         print('Downloaded', filename)
@@ -71,6 +72,11 @@ def get_youtube_playlists():
         info = open(info_file).read()
         if '{' in info:
             playlist = json.loads(info)  # dict with keys: url, artist, album
+        elif 'playlists' in info:  # playlists page
+            if not get_playlist_info(info):
+                continue
+            get_youtube_playlists()  # restart, since directory structure has changed
+            break
         elif info.startswith('https://www.youtube.com/'):  # just the url?
             playlist = {'url': info.strip()}
         else:
@@ -81,6 +87,7 @@ def get_youtube_playlists():
                              playlist.get('artist', 'Various Artists'))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
                    # reverse order for channels (otherwise new videos will always be track 1)
+                   'ignoreerrors': True,
                    'writethumbnail': True,
                    'playlistreverse': 'channel' in playlist['url'],
                    'format': 'bestaudio/best',
@@ -91,6 +98,27 @@ def get_youtube_playlists():
                                       ],
                    'logger': tag_adder, 'match_filter': reject_large, 'progress_hooks': [show_status]}
         YoutubeDL(options).download([playlist['url']])
+
+
+def get_playlist_info(url):
+    """Given a playlist page, download all the playlists contained there, creating subdirs if necessary."""
+    output = subprocess.run(['youtube-dl', '-i', '--extract-audio',
+                             '--output', '"%(playlist_id)s.%(playlist)s.%(ext)s"', '--get-filename', url],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    lines = output.stdout.decode('utf-8').split('\n')
+    lines = filter(None, lines)  # remove blanks
+    split = [line.split('.') for line in lines]
+    playlists = {list_id: name for list_id, name, _ in split}  # remove duplicates, ignore extensions
+    got_new = False
+    for list_id, name in playlists.items():
+        if not os.path.exists(name):
+            os.mkdir(name)
+            os.chdir(name)
+            open('download.txt', 'w').write('https://www.youtube.com/playlist?list=' + list_id.lstrip('#'))
+            print(f'Created folder for {name}')
+            os.chdir('..')
+            got_new = True
+    return got_new
 
 
 if __name__ == '__main__':
