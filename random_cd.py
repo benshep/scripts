@@ -43,7 +43,7 @@ def pick_random_cd(cd_mode=True):
         [print(f'{media.track:2d}. {media.title}') for media in track_list]
         if cd_mode:
             num_tracks = input('Scrobble up to track [auto]: ')
-            if nocd.startswith(num_tracks):  # record the lack of CD, so we don't have to ask again ('n' is sufficient)
+            if num_tracks and nocd.startswith(num_tracks):  # record the lack of CD, so we don't have to ask again ('n' is sufficient)
                 open(nocd, 'w').close()
                 continue
             num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
@@ -64,8 +64,10 @@ def pick_random_cd(cd_mode=True):
                 os.startfile('.')  # open Explorer in folder
             print('\n')
         else:
-            subprocess.call([r'C:\Program Files (x86)\MusicBee\MusicBee.exe'] +
-                            [os.path.join(path, media.path) for media in track_list])
+            music_bee_exe = r'C:\Program Files (x86)\MusicBee\MusicBee.exe'
+            # open first, then queue the rest - otherwise order will be wrong
+            subprocess.Popen([music_bee_exe, os.path.join(path, track_list[0].path)])
+            subprocess.Popen([music_bee_exe, '/QueueNext'] + [os.path.join(path, media.path) for media in track_list[1:]])
             sleep(10)
             break
 
