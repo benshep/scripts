@@ -158,6 +158,7 @@ def get_albums(user, music_folder):
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n'))
     albums = []
     socket.setdefaulttimeout(2)  # in case of a slow network!
+    line_len = 0
     for folder, _, file_list in os.walk(music_folder):
         # use all files in the folder to detect the oldest...
         file_list = [os.path.join(folder, file) for file in file_list]
@@ -188,8 +189,12 @@ def get_albums(user, music_folder):
             except (pylast.MalformedResponseError, pylast.WSError, pylast.NetworkError):
                 # API issue, or network timeout (we deliberately set the timeout to a small value)
                 album.global_listens = 1
-            if len(albums) % 30 == 0:
-                print(f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}')
+            if len(albums) % 10 == 0:
+                output = f'{album.artist} - {album.title}: {album.my_listens:.0f}; {human_format(album.global_listens)}'
+                output += (line_len - len(output)) * ' '  # pad to length of previous output
+                line_len = len(output)
+                print(output, end='\r')  # keep on same line
+    print('')  # next line
     socket.setdefaulttimeout(None)  # back to normal behaviour
     oldest = min(album.date for album in albums)
     newest = max(album.date for album in albums)

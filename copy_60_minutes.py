@@ -77,10 +77,13 @@ def scan_music_folder(music_folder):
         return not folder_name[len(music_folder) + 1:].startswith(exclude_prefixes)
 
     albums = {}
+    line_len = 0
     for folder, folder_list, file_list in filter(is_included, os.walk(music_folder)):
-        show_progress = len(albums) % 30 == 0
-        if show_progress:
-            print(folder)
+        if len(albums) % 10 == 0:
+            output = folder[len(music_folder) + 1:]
+            output += (line_len - len(output)) * ' '  # pad to length of previous output
+            line_len = len(output)
+            print(output, end='\r')  # keep on same line
         for file in filter(is_media_file, file_list):
             filename = os.path.join(folder, file)
             try:
@@ -96,6 +99,7 @@ def scan_music_folder(music_folder):
             key = (folder, artist, album_name)
             # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
             albums.setdefault(key, {})[file] = duration
+    print('')  # next line
     # remove albums with only one track
     return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
 
@@ -150,14 +154,21 @@ def copy_albums(copy_folder_list, albums):
                 file_list = albums.pop(key)
                 duration = sum(file_list.values())
                 if copy_folder.min_length <= duration <= copy_folder.max_length:  # length that we're looking for?
+                    print(key, int(duration))
                     folder_name = copy_album(key, file_list)
                     break
                 elif duration < copy_folder.min_length:  # less than we want? look for another one to fill the rest of the time
-                    second_key = find_with_length(albums, copy_folder.min_length - duration, copy_folder.max_length - duration)
+                    print(key, int(duration))
+                    gap_min_length = copy_folder.min_length - duration
+                    gap_max_length = copy_folder.max_length - duration
+                    second_key = find_with_length(albums, gap_min_length, gap_max_length)
                     if second_key is None:  # none to be found, try again
+                        print(f'No albums with length between {gap_min_length:.0f} and {gap_max_length:.0f} minutes')
                         continue
                     second_file_list = albums.pop(second_key)
-                    duration += sum(second_file_list.values())
+                    new_duration = sum(second_file_list.values())
+                    print(second_key, int(new_duration))
+                    duration += new_duration
                     folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))  # do first one first!
                     break
             folder_count += 1
