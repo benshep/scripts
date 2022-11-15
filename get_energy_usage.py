@@ -41,7 +41,7 @@ def get_usage_data():
     assert column_a[0] == 'Date'
     assert column_a[1] == 'Hour'
     new_data_row = len(column_a) + 1  # one-based when using update_cell function - this is the first empty row
-    fill_top_row = 3  # zero-based when we use the autoFill function - this is the first row of data
+    fill_top_row = 4  # zero-based when we use the autoFill function - this is the first row of data
     start_date = max(pandas.to_datetime(column_a[fill_top_row:], dayfirst=True)) + pandas.to_timedelta(1, 'd')
     if start_date >= today():  # no need to collect more data
         return
@@ -66,6 +66,8 @@ def get_usage_data():
     for fuel in 'gas', 'electricity':
         fuel_column = columns.index(fuel.title()) + 1
         fuel_data = get_fuel_data(start_date, fuel)
+        print(fuel_data)
+        print(fuel_data.size)
         assert fuel_data.size % 48 == 0  # we want a whole number of days (i.e. 48 half-hourly points)
         last_row = new_data_row + len(fuel_data) - 1
         update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
@@ -89,8 +91,7 @@ def get_usage_data():
 
     summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     print(summary)
-    if today().dayofweek == 1:  # notify once a week, on Tuesdays
-        Pushbullet(api_key).push_note('⚡ Energy usage', summary)
+    Pushbullet(api_key).push_note('⚡ Energy usage', summary)
 
 
 def get_fuel_data(start_date, fuel):
