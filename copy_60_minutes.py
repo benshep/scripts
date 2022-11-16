@@ -180,9 +180,10 @@ def copy_albums(copy_folder_list, albums):
 def copy_60_minutes():
     user_folder = os.environ['UserProfile']
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
-    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55, 70, 4),
+    extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
+    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 4),
                         Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
-
+    print(copy_folder_list)
     # toast = ''
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
