@@ -1,13 +1,15 @@
 #!python3
 # -*- coding: utf-8 -*-
 import os
+import re
 from math import log10
 import phrydy  # for media file tagging
 import pylast
-
+import json  # to save data
+import shutil
 import media
 from lastfm import lastfm  # contains secrets, so don't show them here
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import OrderedDict
 from send2trash import send2trash
 from pushbullet import Pushbullet  # to show notifications
@@ -147,6 +149,59 @@ def rename_folder(old):
         pass
 
 
+def json_load_if_exists(filename):
+    """Read in JSON data if the file exists, else an empty dict."""
+    return json.load(open(filename)) if os.path.exists(filename) else {}
+
+
+def get_artists(music_folder):
+    """Return a dict containing artists and their most similar artists."""
+    root_len = len(music_folder) + 1
+    os.chdir(music_folder)
+    exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n'))[1:]  # first is _Copied which is OK
+    similar_artists = json_load_if_exists('similar_artists.json')
+    artist_files = json_load_if_exists('artist_files.json')
+    socket.setdefaulttimeout(2)  # in case of a slow network!
+    for i, (folder, _, file_list) in enumerate(os.walk(music_folder)):
+        name = folder[root_len:]
+        if name.startswith(exclude_prefixes):
+            continue
+        if i % 10 == 0:
+            cols = shutil.get_terminal_size().columns
+            print(name + ' ' * (cols - len(name)), end='\r')  # keep on same line
+        # use all files in the folder to detect the oldest...
+        file_list = [os.path.join(folder, file) for file in file_list]
+        # ...but filter this down to media files to look for tags
+        media_files = list(filter(media.is_media_file, file_list))
+        for file in media_files:
+            tags = phrydy.MediaFile(file)
+            if not tags.artist:
+                continue
+            short_file = file[root_len:]
+            file_and_length = (short_file, int(tags.length))
+            for artist in tags.artist.split(', '):
+                if artist in artist_files:
+                    if file_and_length not in artist_files[artist]:
+                        # file not listed - add it
+                        artist_files[artist].append(file_and_length)
+                else:
+                    artist_files[artist] = [file_and_length]
+            json.dump(artist_files, open('artist_files.json', 'w'))
+
+    for artist in artist_files.keys():
+        if artist not in similar_artists:
+            try:
+                similar = [similar_artist.item.name for similar_artist in
+                           lastfm.get_artist(artist).get_similar()
+                           if similar_artist.item.name in artist_files]
+                similar_artists[artist] = similar
+                json.dump(similar_artists, open('similar_artists.json', 'w'))
+            except (pylast.WSError, pylast.MalformedResponseError, pylast.NetworkError):
+                # artist not found or timeout
+                continue
+    print('')
+
+
 def get_albums(user, music_folder):
     """Return a dict representing albums in the music folder."""
     # Find Last.fm top albums. Weight is number of tracks played. Third list item will be number of tracks per album.
@@ -278,5 +333,37 @@ def check_radio_files(lastfm_user):
     return toast
 
 
+def get_data_from_music_update(push):
+    """Given a Pushbullet toast, return the date and the number of files, weeks, hours."""
+    date = datetime.fromtimestamp(push['created'])
+    status_line = next(line for line in push['body'].split('\n') if line.startswith('📻'))
+    match = re.match(r'📻 (\d+) files; (\d+) weeks; (\d+) hours', status_line)
+    files, weeks, hours = match.group(1, 2, 3)
+    return date, int(files), int(weeks), int(hours)
+
+
+def check_radio_hours_added():
+    """Fetch the last 60 days of toasts, and determine how many hours were added to the radio files on average."""
+    pb = Pushbullet(api_key)
+    start = datetime.now() - timedelta(days=60)
+    pushes = pb.get_pushes(modified_after=start.timestamp())
+    music_updates = [push for push in pushes if push.get('title') == '🎧 Update phone music']
+
+    last = music_updates[0]  # reverse chronological order
+    first = music_updates[-1]
+    last_date, _, _, last_hours = get_data_from_music_update(last)
+    first_date, _, _, first_hours = get_data_from_music_update(first)
+    hours_per_week = 7 * (last_hours - first_hours) / (last_date - first_date).days
+    print(f'Since {first_date.strftime("%d/%m/%Y")}: {hours_per_week=:+.1f}')
+
+    # for push in music_updates:
+    #     created_date = datetime.fromtimestamp(push['created']).strftime('%d/%m/%Y %H:%M')
+    #     try:
+    #         status_line = next(line for line in push['body'].split('\n') if line.startswith('📻'))
+    #     except StopIteration:
+    #         continue
+    #     print(created_date, status_line[2:], sep='; ')
+
+
 if __name__ == '__main__':
-    update_phone_music()
+    get_artists(os.path.join(user_profile, 'Music'))
