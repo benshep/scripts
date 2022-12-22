@@ -1,8 +1,10 @@
 import os
 import json
 import subprocess
+
 from youtube_dl import YoutubeDL
 from phrydy import MediaFile
+from media import is_media_file
 
 
 class BadDownload(Exception):
@@ -57,11 +59,11 @@ def reject_large(info_dict):
 def show_status(progress):
     """Show downloading status."""
     if progress['status'] == 'downloading':
-        print(f'{progress["_eta_str"]} {progress["filename"]}')#, end='\r')
+        print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
 
 
 def get_youtube_playlists():
-    user_profile = os.environ['UserProfile']
+    user_profile = os.environ['UserProfile' if os.name == 'nt' else 'HOME']
     music_folder = os.path.join(user_profile, 'Music')
     info_file = 'download.txt'  # info file contained in each folder
     for folder, _, files in os.walk(music_folder):
@@ -69,6 +71,22 @@ def get_youtube_playlists():
             continue
         print(folder)
         os.chdir(folder)
+        artist_titles = []
+        for file in files:
+            if is_media_file(file):
+                tags = MediaFile(file)
+                artist_titles.append((tags.artist, tags.title))
+
+        def reject_existing(info_dict):
+            """Reject any videos matching existing files in the folder."""
+            for artist, title in artist_titles:
+                video_title = info_dict['title']
+                if artist in video_title and title in video_title:
+                    message = f"Already got {artist} - {title} - skipping {video_title}"
+                    print(message)
+                    return message
+            return reject_large(info_dict)  # also reject anything that's too long
+
         info = open(info_file).read()
         if '{' in info:
             playlist = json.loads(info)  # dict with keys: url, artist, album
@@ -96,7 +114,7 @@ def get_youtube_playlists():
                    'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
                                       # {'key': 'EmbedThumbnail'}  # not supported on Opus yet - do it ourselves
                                       ],
-                   'logger': tag_adder, 'match_filter': reject_large, 'progress_hooks': [show_status]}
+                   'logger': tag_adder, 'match_filter': reject_existing, 'progress_hooks': [show_status]}
         YoutubeDL(options).download([playlist['url']])
 
 
