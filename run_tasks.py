@@ -9,9 +9,11 @@ import psutil
 import google_sheets
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
+
 try:
     from rich import print  # rich-text printing
     from rich.traceback import install  # rich tracebacks
+
     install()
 except ImportError:
     pass  # revert to standard print
@@ -22,6 +24,8 @@ from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
+from check_tickets import check_game_time
+
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
 from oracle_staff_check import otl_check, annual_leave_check
 from get_budget_data import get_budget_data
@@ -30,6 +34,8 @@ from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
 from check_on_site_support import check_on_site_support
 from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
+from get_access_data import check_prev_week
+from todos_from_notes import todos_from_notes
 
 # for name, module in list(locals().items()):
 #     if callable(module):
@@ -100,8 +106,10 @@ def run_tasks():
                 print('')
                 print(now_str, function_name, parameters)
                 try:
-                    exec(f'{function_name}({parameters})')
-                    result = 'Success'
+                    return_value = eval(f'{function_name}({parameters})')
+                    print(f'{return_value=}')
+                    # sometimes we don't want to run the function now, but don't need to notify failure
+                    result = 'Postponed' if return_value is False else 'Success'
                 except Exception:
                     error_lines = format_exc().split('\n')
                     result = '\n'.join(error_lines[4:])
@@ -116,7 +124,6 @@ def run_tasks():
         else:
             print('On battery, not running any tasks')
 
-        print('Updating online status')
         set_pc_unlocked_flag()
 
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
