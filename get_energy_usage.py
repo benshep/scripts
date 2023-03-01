@@ -14,7 +14,7 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 
 
 def today():
-    return pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(3, 'd')
+    return pandas.to_datetime('today').to_period('d').start_time  # - pandas.to_timedelta(3, 'd')
 
 
 def dmy(date, time=True):
