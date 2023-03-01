@@ -14,7 +14,7 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 
 
 def today():
-    return pandas.to_datetime('today').to_period('d').start_time  # + pandas.to_timedelta(1, 'd')
+    return pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(3, 'd')
 
 
 def dmy(date, time=True):
@@ -63,28 +63,30 @@ def get_usage_data():
                                             }, 'dimension': 'ROWS', 'fillLength': row_count}}}
 
     fill_requests = []
-    for fuel in 'gas', 'electricity':
+    data_titles = 'gas', 'electricity', 'carbon intensity'
+    all_fuel_data = [get_fuel_data(start_date, data_title) for data_title in data_titles]
+    right_length = all_fuel_data[0].size
+    print('Size of datasets', [data.size for data in all_fuel_data])
+    # we want a whole number of days (i.e. 48 half-hourly points), and all the datasets to be the same size
+    if right_length % 48 != 0 or not all(data.size == right_length for data in all_fuel_data):
+        return False  # sometimes this happens, postpone without raising an error
+    for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
-        fuel_data = get_fuel_data(start_date, fuel)
         print(fuel_data)
         print(fuel_data.size)
-        assert fuel_data.size % 48 == 0  # we want a whole number of days (i.e. 48 half-hourly points)
+        if fuel_data.size % 48 != 0:  # we want a whole number of days (i.e. 48 half-hourly points)
+            return False  # sometimes this happens, postpone without raising an error
         last_row = new_data_row + len(fuel_data) - 1
         update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
         google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
-        fill_requests.append(fill_request(fuel_column + 47, 2, last_row - fill_top_row - 1))
+        fill_count = 53 if fuel == 'carbon intensity' else 2  # fill 'carbon' columns too (elec use x carbon intensity)
+        fill_requests.append(fill_request(fuel_column + 47, fill_count, last_row - fill_top_row - 1))
     # fill in date column
     update_range = google_sheets.get_range_spec(1, new_data_row, 1, last_row)
     new_dates = [[date] for date in dmy(pandas.to_datetime(fuel_data.index), False).tolist()]
     google_sheets.update_cells(sheet_id, sheet_name, update_range, new_dates)
-
-    co2_data = get_co2_data(start_date)
-    assert len(co2_data) == len(fuel_data)
-    data_column = columns.index('Carbon intensity [gCO₂e/kWh]') + 1
-    fill_requests.append(fill_request(data_column + 47, 53, last_row - fill_top_row - 1))
-    update_range = google_sheets.get_range_spec(data_column, new_data_row, data_column + 47, last_row)
-    google_sheets.update_cells(sheet_id, sheet_name, update_range, co2_data.values.tolist())
-
+    # fill down BST helper column
+    fill_requests.append(fill_request(1, 1, last_row - fill_top_row - 1))
     # Fill formulae from first row
     request_body = {'requests': [fill_requests]}
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
@@ -97,6 +99,8 @@ def get_usage_data():
 def get_fuel_data(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} usage data beginning {dmy(start_date)}')
+    if fuel == 'carbon intensity':
+        return get_co2_data(start_date)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': mac_address}  # AUTH is my MAC code
     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
