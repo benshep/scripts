@@ -1,5 +1,6 @@
 #!python3
 # -*- coding: utf-8 -*-
+import contextlib
 import os
 import re
 from math import log10
@@ -8,6 +9,7 @@ import pylast
 import json  # to save data
 import shutil
 import media
+import google_sheets
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -96,39 +98,45 @@ def folder_size(folder):
 
 
 def update_phone_music():
+    """Deleted listened-to radio files, and fill up the music folder to capacity."""
+    now = datetime.now()
+    if now.hour < 10:
+        return False  # don't run before 10am (bridge crossing data not received yet)
+    mersey_gateway_spreadsheet = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'
+    last_crossing = google_sheets.get_data(mersey_gateway_spreadsheet, 'Sheet1', 'lastDate')[0][0]
+    if now.strftime('%d/%m/%Y') == last_crossing:
+        return False  # don't run if bridge crossed today - deleting files will mess with the playlist
+
     user = lastfm.get_user('ning')
     toast = check_radio_files(user)
 
     # update size of all shared phone folders
-    used_total = sum(folder_size(folder) for folder in ['40 minutes', 'Commute', 'Nokia 3.4', 'Radio'])
+    if False:  # skip all this for now, we have a larger SD card to fill
+        used_total = sum(folder_size(folder) for folder in ['40 minutes', 'Commute', 'Nokia 3.4', 'Radio'])
 
-    GB = 1024 ** 3
-    sd_capacity = (32 - 4) * GB  # leave a bit of space
-    max_size = sd_capacity - used_total
-    print(f'\nSpace for {max_size / GB:.1f} GB of music')
+        GB = 1024 ** 3
+        sd_capacity = (64 - 4) * GB  # leave a bit of space
+        max_size = sd_capacity - used_total
+        print(f'\nSpace for {max_size / GB:.1f} GB of music')
 
-    music_folder = os.path.join(user_profile, 'Music')
-    albums = get_albums(user, music_folder)
+        music_folder = os.path.join(user_profile, 'Music')
+        albums = get_albums(user, music_folder)
 
-    total_size = 0
-    os.chdir(music_folder)
-    root_len = len(music_folder) + 1
-    # Instead of linking, add a # to the end of folders NOT to sync
-    for album in albums:  # breaks out when total_size > max_size
-        # recently played? if so, don't link to it after all (to increase turnover)
-        # if len(set(track.track.title for track in played_tracks if match(track.album, album.title) and (
-        #         match(album.artist, track.track.artist.name) or 'Various' in album.artist))) >= 0.5 * album.track_count:
-        #     continue
-        total_size += album.size
-        name = album.folder[root_len:]
-        excluded = name.endswith('#')
-        if total_size > max_size:  # already done everything we can fit - exclude everything else
-            if not excluded:
+        total_size = 0
+        os.chdir(music_folder)
+        root_len = len(music_folder) + 1
+        # Instead of linking, add a # to the end of folders NOT to sync
+        for album in albums:  # breaks out when total_size > max_size
+            total_size += album.size
+            name = album.folder[root_len:]
+            excluded = name.endswith('#')
+            if total_size > max_size:  # already done everything we can fit - exclude everything else
+                if not excluded:
+                    rename_folder(name)
+                    toast += f'🗑️ {name}\n'
+            elif excluded:  # was previously excluded
                 rename_folder(name)
-                toast += f'🗑️ {name}\n'
-        elif excluded:  # was previously excluded
-            rename_folder(name)
-            toast += album.toast() + '\n'
+                toast += album.toast() + '\n'
 
     if toast:
         print(toast)
@@ -141,12 +149,11 @@ def rename_folder(old):
     If the new folder exists, copy everything from the old to the new folder."""
     new = old.rstrip('#') if old.endswith('#') else f'{old}#'
     os.makedirs(new, exist_ok=True)
-    try:
+    # maybe it got moved in the meantime by a sync operation, so ignore 'not found' errors
+    with contextlib.suppress(FileNotFoundError):
         for filename in os.listdir(old):
             os.replace(os.path.join(old, filename), os.path.join(new, filename))
         os.rmdir(old)
-    except FileNotFoundError:  # maybe it got moved in the meantime by a sync operation
-        pass
 
 
 def json_load_if_exists(filename):
@@ -292,6 +299,8 @@ def check_radio_files(lastfm_user):
     min_date = None
     total_hours = 0
     for file in sorted(radio_files):
+        if not media.is_media_file(file):
+            continue
         try:
             file_date = datetime.strptime(file[:10], '%Y-%m-%d')
         except ValueError:
@@ -329,7 +338,7 @@ def check_radio_files(lastfm_user):
         print(file)
         if not test_mode and os.path.exists(file):
             send2trash(file)
-    toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
+    # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
     return toast
 
 
@@ -366,4 +375,5 @@ def check_radio_hours_added():
 
 
 if __name__ == '__main__':
-    get_artists(os.path.join(user_profile, 'Music'))
+    # get_artists(os.path.join(user_profile, 'Music'))
+    update_phone_music()
