@@ -22,16 +22,18 @@ def pick_random_cd(cd_mode=True):
             continue
         os.chdir(path)
         files = os.listdir()
-        if cd_mode and ('nocd' in files or any(is_opus(file) for file in files)):
-            continue  # already ripped to Opus
-        track_list = sorted([MediaFile(f) for f in files if is_media_file(f)], key=lambda media: int(media.track))
+        if cd_mode and 'nocd' in files:
+            continue  # don't have the CD
+        track_list = sorted([MediaFile(f) for f in files if is_media_file(f)],
+                            key=lambda media: int(media.track) if media.track else 0)
         if not track_list:
             continue
         os.system(f'title {folder.replace("&", "^&")}')  # set title of window
         print(folder)
-        [print(f'{media.track:2d}. {media.title}') for media in track_list]
+        [print(f'{media.track:2}.' if media.track else '  .', media.title) for media in track_list]
         if cd_mode:
             scrobble_cd(track_list)
+            print('\n')
         else:
             music_bee_exe = r'C:\Program Files (x86)\MusicBee\MusicBee.exe'
             # open first, then queue the rest - otherwise order will be wrong
@@ -46,27 +48,18 @@ def pick_random_cd(cd_mode=True):
 def scrobble_cd(track_list):
     """Scrobble the tracks on last.fm."""
     start_time = int(time())
-    num_tracks = input('Scrobble up to track [auto]: ')
+    num_tracks = input("Scrobble up to track [auto], or 'n' for no CD: ")
     if num_tracks and 'nocd'.startswith(num_tracks):
         # record the lack of CD, so we don't have to ask again ('n' is sufficient)
         open('nocd', 'w').close()
         return
     num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
-    scrobbled = False
     for media in track_list:
-        if start_time + media.length > time() or int(media.track) > num_tracks:
+        if start_time + media.length > time() or (media.track and int(media.track) > num_tracks):
             break
         lastfm.scrobble(artist=media.artist, title=media.title, album=media.album, timestamp=start_time)
-        scrobbled = True
         print(f'{media.artist} - {media.title}')
         start_time += media.length
-    # if this was a CD and not in Opus format, open in Explorer in preparation for re-ripping
-    if scrobbled:
-        # if any(is_opus(media.path) for media in track_list):
-        #     print('Already ripped to Opus format')
-        # else:
-        os.startfile('.')  # open Explorer in folder
-    print('\n')
 
 
 def find_folders(cd_mode, music_folder):
@@ -81,11 +74,6 @@ def find_folders(cd_mode, music_folder):
         if not name.startswith(exclude_prefixes) and is_album_folder(name):
             cd_folders.append(name)
     return cd_folders
-
-
-def is_opus(filename):
-    """Returns True if the given filename has an Opus extension."""
-    return os.path.splitext(filename)[1].lower() == '.opus'
 
 
 if __name__ == '__main__':
