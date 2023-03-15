@@ -51,7 +51,7 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    column_names = ['Function name', 'Parameters', 'Period', 'Last run', 'Machine', 'Last result']
+    column_names = ['Function name', 'Parameters', 'Period', 'Enabled', 'Last run', 'Machine', 'Last result']
 
     def get_column(name):
         return google_sheets.get_column(column_names.index(name) + 1)
@@ -76,6 +76,10 @@ def run_tasks():
             toast = ''
             for i, values in enumerate(data[1:]):
                 n_values = len(values)
+                col_index = column_names.index('Enabled')
+                enabled = values[col_index] == 'TRUE' if n_values > col_index else False
+                if not enabled:
+                    continue
                 col_index = column_names.index('Last run')
                 last_run_str = values[col_index] if n_values > col_index else None
                 col_index = column_names.index('Last result')
