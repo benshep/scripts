@@ -291,9 +291,9 @@ def get_random_image(image_list):
 
 def is_out_of_season(full_name, today):
     file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
-    diff = abs(file_date.replace(year=today.year) - today)
-    # print(f' {diff.days=:}')
-    return datetime.timedelta(days=30) < diff < datetime.timedelta(days=335)
+    diff = abs(file_date.timetuple().tm_yday - today.timetuple().tm_yday)  # tm_yday is "day of year"
+    print(f' {diff=:}')
+    return diff > 30
 
 
 def get_exclude_list(pics_folder):
