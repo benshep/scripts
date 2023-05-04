@@ -1,16 +1,19 @@
 #!python3
 # -*- coding: utf-8 -*-
 import os
-import pickle
 import phrydy  # to get media data
 from lastfm import lastfm
 import random
 from collections import namedtuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from shutil import copy2  # to copy files
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
+
+user_folder = os.environ['UserProfile']
+music_folder = os.path.join(user_folder, 'Music')
+copy_log_file = os.path.join(music_folder, 'copied_already.txt')
 
 
 def is_media_file(filename):
@@ -64,13 +67,15 @@ def copy_album(album, files, existing_folder=None):
             copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
         copy2(os.path.join(folder, f), copy_filename)
     os.chdir('..')
+    open(copy_log_file, 'a').write('\t'.join(map(str, album)) + '\n')
     return copied_name
 
 
-def scan_music_folder(music_folder):
+def scan_music_folder():
     bytes_to_minutes = 8 / (1024 * 128 * 60)
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
+    copied_already = open(copy_log_file).read().split('\n')
 
     def is_included(walk_tuple):
         folder_name = walk_tuple[0]
@@ -88,8 +93,8 @@ def scan_music_folder(music_folder):
             filename = os.path.join(folder, file)
             try:
                 tags = phrydy.MediaFile(filename)
-            except Exception:
-                print(f'No media info for {file}')
+            except Exception as e:
+                print(f'No media info for {file}', e)
                 continue
             # use album artist (if available) so we can compare 'Various Artist' albums
             artist = tags.albumartist or tags.artist
@@ -97,6 +102,8 @@ def scan_music_folder(music_folder):
             # some buggy mp3s - assume 128kbps
             duration = tags.length / 60 if tags.length else os.path.getsize(filename) * bytes_to_minutes
             key = (folder, artist, album_name)
+            if '\t'.join(map(str, key)) in copied_already:
+                continue
             # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
             albums.setdefault(key, {})[file] = duration
     print('')  # next line
@@ -178,7 +185,6 @@ def copy_albums(copy_folder_list, albums):
 
 
 def copy_60_minutes():
-    user_folder = os.environ['UserProfile']
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
     copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 4),
@@ -190,12 +196,26 @@ def copy_60_minutes():
         print('Not ready to copy new album.')
         return
 
-    albums = scan_music_folder(os.path.join(user_folder, 'Music'))
-
+    albums = scan_music_folder()
+    # for (folder, artist, album_name), file_list in albums.items():
+    #     print(folder, artist, album_name, sum(file_list.values()), sep='\t')
     toast += copy_albums(copy_folder_list, albums)
 
     if toast:
         Pushbullet(api_key).push_note('🎵 Commute Music', toast)
+
+
+def check_previous():
+    """Fetch previous toasts, and determine how many hours were added to the radio files on average."""
+    pb = Pushbullet(api_key)
+    start = datetime.now() - timedelta(days=360)
+    pushes = pb.get_pushes(modified_after=start.timestamp())
+    music_updates = [push for push in pushes if push.get('title') == '🎵 Commute Music']
+
+    for update in music_updates:
+        for line in update['body'].splitlines():
+            if line.startswith('✔'):
+                print(line)
 
 
 if __name__ == '__main__':
