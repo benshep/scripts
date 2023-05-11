@@ -65,17 +65,15 @@ def get_usage_data():
     fill_requests = []
     data_titles = 'gas', 'electricity', 'carbon intensity'
     all_fuel_data = [get_fuel_data(start_date, data_title) for data_title in data_titles]
-    right_length = all_fuel_data[0].size
-    print('Size of datasets', [data.size for data in all_fuel_data])
-    # we want a whole number of days (i.e. 48 half-hourly points), and all the datasets to be the same size
-    if right_length % 48 != 0 or not all(data.size == right_length for data in all_fuel_data):
-        return False  # sometimes this happens, postpone without raising an error
+    print(all_fuel_data)
+    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
+    min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
+    # check all dates are the same
+    if len(set([tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data])) > 1:
+        return False  # postpone data entry
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
-        print(fuel_data)
-        print(fuel_data.size)
-        if fuel_data.size % 48 != 0:  # we want a whole number of days (i.e. 48 half-hourly points)
-            return False  # sometimes this happens, postpone without raising an error
         last_row = new_data_row + len(fuel_data) - 1
         update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
         google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
@@ -96,10 +94,40 @@ def get_usage_data():
     Pushbullet(api_key).push_note('⚡ Energy usage', summary)
 
 
+def fill_old_carbon_data():
+    """Fill in carbon data retrospectively."""
+    sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
+    sheet_name = 'Hourly'
+    columns = google_sheets.get_data(sheet_id, sheet_name, '1:1')[0]
+    column_a = [cell[0] if len(cell) > 0 else '' for cell in (google_sheets.get_data(sheet_id, sheet_name, 'A:A'))]
+    assert column_a[0] == 'Date'
+    assert column_a[1] == 'Hour'
+    start_date = pandas.to_datetime('2023-01-01 00:00')
+    new_data_row = 528  # one-based when using update_cell function - this is the first empty row
+    while start_date < today():
+        print(start_date)
+
+        data_titles = ['regional carbon intensity']
+        all_fuel_data = [get_fuel_data(start_date, data_title) for data_title in data_titles]
+        print(all_fuel_data)
+        # check all dates are the same
+        if len(set([tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data])) > 1:
+            return False  # postpone data entry
+        for fuel, fuel_data in zip(data_titles, all_fuel_data):
+            fuel_column = columns.index(fuel.title()) + 1
+            last_row = new_data_row + len(fuel_data) - 1
+            update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
+            google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
+
+        start_date += pandas.to_timedelta(14, 'd')
+        new_data_row += 14
+        return
+
+
 def get_fuel_data(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} usage data beginning {dmy(start_date)}')
-    if fuel == 'carbon intensity':
+    if 'carbon intensity' in fuel:
         return get_co2_data(start_date)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': mac_address}  # AUTH is my MAC code
@@ -127,14 +155,16 @@ def get_temp_data():
 
 
 def get_co2_data(start_date):
-    """Use the Carbon Intensity API to fetch CO₂ intensity data."""
-    url = f'https://api.carbonintensity.org.uk/intensity/{ymd(start_date)}T00:30Z/{ymd(today())}T00:00Z'
-    df = pandas.json_normalize(requests.get(url).json(), record_path='data')
+    """Use the Carbon Intensity API to fetch regional CO₂ intensity data."""
+    end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
+    url = f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z/postcode/WA10'
+    df = pandas.json_normalize(requests.get(url).json(), record_path=['data', 'data'])
     df['from'] = pandas.to_datetime(df['from'])
-    df['intensity'] = df['intensity.actual'].fillna(df['intensity.forecast'])
+    df['intensity'] = df['intensity.forecast']
     pivot = pandas.pivot_table(df, index=df['from'].dt.date, columns=df['from'].dt.time, values='intensity')
-    return pivot.fillna('')
+    return pivot.dropna()  # drop any incomplete rows
 
 
 if __name__ == '__main__':
     get_usage_data()
+    # fill_old_carbon_data()
