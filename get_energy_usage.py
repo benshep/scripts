@@ -154,17 +154,34 @@ def get_temp_data():
     return temp_data
 
 
-def get_co2_data(start_date):
-    """Use the Carbon Intensity API to fetch regional CO₂ intensity data."""
+def get_co2_data(start_date, regional=True):
+    """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
-    url = f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z/postcode/WA10'
-    df = pandas.json_normalize(requests.get(url).json(), record_path=['data', 'data'])
+    area = 'regional/' if regional else ''
+    suffix = '/postcode/WA10' if regional else ''
+    url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
+    # path is data.data for regional
+    df = pandas.json_normalize(requests.get(url).json(), record_path=['data'] * (1 + int(regional)))
     df['from'] = pandas.to_datetime(df['from'])
-    df['intensity'] = df['intensity.forecast']
+    # use 'actual' value where available with national. For regional, we only see 'forecast' values
+    df['intensity'] = df['intensity.forecast'] if regional else df['intensity.actual'].fillna(df['intensity.forecast'])
     pivot = pandas.pivot_table(df, index=df['from'].dt.date, columns=df['from'].dt.time, values='intensity')
     return pivot.dropna()  # drop any incomplete rows
 
 
+def get_old_data_avg():
+    """Get the two-week average of carbon data."""
+    start_date = pandas.to_datetime('2018-01-04 00:00')
+    while start_date < today():
+        data = get_co2_data(start_date)
+        regional = data.mean().mean()  # average of whole DataFrame
+        data = get_co2_data(start_date, regional=False)
+        national = data.mean().mean()  # average of whole DataFrame
+        print(start_date, regional, national, sep='\t')
+        start_date += pandas.to_timedelta(14, 'd')
+        return
+
+
 if __name__ == '__main__':
-    get_usage_data()
+    get_old_data_avg()
     # fill_old_carbon_data()
