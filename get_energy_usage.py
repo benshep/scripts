@@ -22,9 +22,9 @@ def dmy(date, time=True):
     return date.strftime('%d/%m/%Y' + (' %H:%M' if time else ''))
 
 
-def ymd(date):
+def ymd(date, time=False):
     """Convert datetime into yyyy-mm-dd format."""
-    return date.strftime('%Y-%m-%d')
+    return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
 
 def ymdhm(date):
@@ -70,7 +70,7 @@ def get_usage_data():
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
     # check all dates are the same
-    if len(set([tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data])) > 1:
+    if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
         return False  # postpone data entry
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
@@ -90,6 +90,14 @@ def get_usage_data():
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
 
     summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
+    forecast = get_co2_forecast()
+    for minmax in ('min', 'max'):
+        row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
+        gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
+        highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
+        summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
+                   f"{time.strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+
     print(summary)
     Pushbullet(api_key).push_note('⚡ Energy usage', summary)
 
@@ -111,7 +119,7 @@ def fill_old_carbon_data():
         all_fuel_data = [get_fuel_data(start_date, data_title) for data_title in data_titles]
         print(all_fuel_data)
         # check all dates are the same
-        if len(set([tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data])) > 1:
+        if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
             return False  # postpone data entry
         for fuel, fuel_data in zip(data_titles, all_fuel_data):
             fuel_column = columns.index(fuel.title()) + 1
@@ -169,6 +177,17 @@ def get_co2_data(start_date, regional=True):
     return pivot.dropna()  # drop any incomplete rows
 
 
+def get_co2_forecast():
+    """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
+    now = pandas.to_datetime("now")
+    url = f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(now, time=True)}/fw48h/postcode/WA10'
+    print(url)
+    # path is data.data for regional
+    df = pandas.json_normalize(requests.get(url).json(), record_path=['data', 'data'])
+    df['from'] = pandas.to_datetime(df['from'])
+    return df
+
+
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
     start_date = pandas.to_datetime('2018-01-04 00:00')
@@ -183,5 +202,4 @@ def get_old_data_avg():
 
 
 if __name__ == '__main__':
-    get_old_data_avg()
-    # fill_old_carbon_data()
+    get_usage_data()
