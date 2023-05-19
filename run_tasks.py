@@ -128,7 +128,12 @@ def run_tasks():
         else:
             print('On battery, not running any tasks')
 
-        set_pc_unlocked_flag()
+        try:
+            set_pc_unlocked_flag()
+        except Exception as e:
+            print(e)
+            sleep(60)
+            continue
 
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
         next_task_time += timedelta(seconds=hash(node()) % 300)
