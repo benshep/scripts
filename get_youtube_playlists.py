@@ -34,7 +34,7 @@ class TagAdder:
     def add_tags(self):
         """After all the files have finished downloading, add the tags."""
         for filename in self.files:
-            print(f'Tagging {filename} with {self.artist=}, {self.album=}')
+            print(f'Tagging {filename} with {self.artist = }, {self.album = }')
             media = MediaFile(filename)
             media.albumartist = self.artist
             media.album = self.album
@@ -120,8 +120,14 @@ def get_youtube_playlists():
             continue  # can't process info
         print(playlist)
 
-        tag_adder = TagAdder(playlist.get('album', os.path.split(folder)[-1]),  # default to folder name
-                             playlist.get('artist', 'Various Artists'))
+        subfolders = folder.split(os.path.sep)
+        album_name = subfolders[-1]  # folder name
+        artist = subfolders[-2]  # parent folder name
+        if artist in ('Emma', 'Jess', 'YouTube'):  # compilation
+            artist = 'Various Artists'
+        if ' - ' in album_name:  # artist - album
+            artist, album_name = album_name.split(' - ', 1)
+        tag_adder = TagAdder(playlist.get('album', album_name), playlist.get('artist', artist))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
                    # reverse order for channels (otherwise new videos will always be track 1)
                    # 'max_downloads': 1,  # for testing
