@@ -1,10 +1,14 @@
 import os
 import json
 import subprocess
+import contextlib
+from io import BytesIO
 
+import youtube_dl.utils
 from youtube_dl import YoutubeDL
 from phrydy import MediaFile
 from media import is_media_file
+from PIL import Image
 
 
 class BadDownload(Exception):
@@ -16,29 +20,44 @@ class TagAdder:
     def __init__(self, album, artist):
         self.album = album
         self.artist = artist
+        self.files = []
 
     def debug(self, msg):
-        """If a file has finished downloading, add the relevant tags."""
-        # print(msg)
+        """If a file has finished downloading, add it to the list for tagging later."""
         # msg looks like [ffmpeg] Adding metadata to '1 Lord Franklin.opus'
         prefix = '[ffmpeg] Adding metadata to '
         if not msg.startswith(prefix):
             return
         filename = msg[len(prefix):].strip("'")
-        media = MediaFile(filename)
-        media.albumartist = self.artist
-        media.album = self.album
-        media.track = int(filename[:2])
-        basename, _ = os.path.splitext(filename)
-        try:
-            art_filename = next(f'{basename}.{ext}' for ext in ('jpg', 'webp') if os.path.exists(f'{basename}.{ext}'))
-            media.art = open(art_filename, 'rb').read()
-            print(f'Saved thumbnail from {art_filename}')
-            os.remove(art_filename)
-        except StopIteration:
-            print(f'No thumbnail found for {filename}')
-        media.save()
-        print('Downloaded', filename)
+        self.files.append(filename)
+
+    def add_tags(self):
+        """After all the files have finished downloading, add the tags."""
+        for filename in self.files:
+            print(f'Tagging {filename} with {self.artist=}, {self.album=}')
+            media = MediaFile(filename)
+            media.albumartist = self.artist
+            media.album = self.album
+            media.track = int(filename[:2])
+            base, _ = os.path.splitext(filename)
+            for ext in ('webp', 'jpg'):
+                art_filename = f'{base}.{ext}'
+                if os.path.exists(art_filename):
+                    if ext == 'webp':  # convert to JPEG since WEBP files can't be embedded in M4A files
+                        buffer = BytesIO()
+                        Image.open(art_filename).convert('RGB').save(buffer, 'JPEG', optimize=True)
+                        image_data = buffer.getvalue()
+                        print('Converted thumbnail to JPEG')
+                    else:
+                        image_data = open(art_filename, 'rb').read()
+                    media.art = image_data
+                    print(f'Saved thumbnail from {art_filename}')
+                    os.remove(art_filename)
+                    break
+            else:
+                print(f'No thumbnail found for {filename}')
+            media.save()
+            print('Downloaded', filename)
 
     def warning(self, msg):
         pass
@@ -88,13 +107,13 @@ def get_youtube_playlists():
             return reject_large(info_dict)  # also reject anything that's too long
 
         info = open(info_file).read()
-        if '{' in info:
-            playlist = json.loads(info)  # dict with keys: url, artist, album
-        elif 'playlists' in info:  # playlists page
+        if 'playlists' in info:  # playlists page
             if not get_playlist_info(info):
                 continue
             get_youtube_playlists()  # restart, since directory structure has changed
             break
+        elif '{' in info:
+            playlist = json.loads(info)  # dict with keys: url, artist, album
         elif info.startswith('https://www.youtube.com/'):  # just the url?
             playlist = {'url': info.strip()}
         else:
@@ -105,6 +124,7 @@ def get_youtube_playlists():
                              playlist.get('artist', 'Various Artists'))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
                    # reverse order for channels (otherwise new videos will always be track 1)
+                   # 'max_downloads': 1,  # for testing
                    'ignoreerrors': True,
                    'writethumbnail': True,
                    'playlistreverse': 'channel' in playlist['url'],
@@ -115,24 +135,32 @@ def get_youtube_playlists():
                                       # {'key': 'EmbedThumbnail'}  # not supported on Opus yet - do it ourselves
                                       ],
                    'logger': tag_adder, 'match_filter': reject_existing, 'progress_hooks': [show_status]}
-        YoutubeDL(options).download([playlist['url']])
+        with contextlib.suppress(youtube_dl.utils.MaxDownloadsReached):
+            YoutubeDL(options).download([playlist['url']])
+        # must be after everything's finished
+        tag_adder.add_tags()
 
 
 def get_playlist_info(url):
     """Given a playlist page, download all the playlists contained there, creating subdirs if necessary."""
+    # It would be useful to use a different delimiter other than '.' here - but that doesn't seem to work
     output = subprocess.run(['youtube-dl', '-i', '--extract-audio',
                              '--output', '"%(playlist_id)s.%(playlist)s.%(ext)s"', '--get-filename', url],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     lines = output.stdout.decode('utf-8').split('\n')
     lines = filter(None, lines)  # remove blanks
-    split = [line.split('.') for line in lines]
-    playlists = {list_id: name for list_id, name, _ in split}  # remove duplicates, ignore extensions
+    playlists = {}
+    for line in lines:
+        # Get the id and the name. We don't care about the extension. Need to take care in case the name contains a '.'
+        list_id, rest = line.split('.', 1)
+        name, _ = rest.rsplit('.', 1)
+        playlists[list_id.lstrip('#')] = name  # each line starts and ends with #, remove it from the id
     got_new = False
     for list_id, name in playlists.items():
         if not os.path.exists(name):
             os.mkdir(name)
             os.chdir(name)
-            open('download.txt', 'w').write('https://www.youtube.com/playlist?list=' + list_id.lstrip('#'))
+            open('download.txt', 'w').write(f'https://www.youtube.com/playlist?list={list_id}')
             print(f'Created folder for {name}')
             os.chdir('..')
             got_new = True
