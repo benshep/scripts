@@ -29,6 +29,7 @@ class TagAdder:
         if not msg.startswith(prefix):
             return
         filename = msg[len(prefix):].strip("'")
+        print('Downloaded', filename)
         self.files.append(filename)
 
     def add_tags(self):
@@ -57,7 +58,6 @@ class TagAdder:
             else:
                 print(f'No thumbnail found for {filename}')
             media.save()
-            print('Downloaded', filename)
 
     def warning(self, msg):
         pass
@@ -67,8 +67,8 @@ class TagAdder:
 
 
 def reject_large(info_dict):
-    """Don't download songs longer than 10 minutes."""
-    if info_dict['duration'] < 600:
+    """Don't download songs longer than 15 minutes."""
+    if info_dict['duration'] < 900:
         return None
     message = f"Too long - skipping {info_dict['title']}"
     print(message)
@@ -129,26 +129,24 @@ def get_youtube_playlists():
             artist, album_name = album_name.split(' - ', 1)
         tag_adder = TagAdder(playlist.get('album', album_name), playlist.get('artist', artist))
         options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
-                   # reverse order for channels (otherwise new videos will always be track 1)
                    # 'max_downloads': 1,  # for testing
-                   'ignoreerrors': True,
-                   'writethumbnail': True,
+                   'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
+                   # reverse order for channels (otherwise new videos will always be track 1)
                    'playlistreverse': 'channel' in playlist['url'],
-                   'format': 'bestaudio/best',
                    # https://github.com/ytdl-org/youtube-dl/blob/master/README.md#output-template
                    'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
                    'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
                                       # {'key': 'EmbedThumbnail'}  # not supported on Opus yet - do it ourselves
                                       ],
                    'logger': tag_adder, 'match_filter': reject_existing, 'progress_hooks': [show_status]}
-        with contextlib.suppress(youtube_dl.utils.MaxDownloadsReached):
+        with contextlib.suppress(youtube_dl.utils.MaxDownloadsReached):  # don't give an error when limit reached
             YoutubeDL(options).download([playlist['url']])
         # must be after everything's finished
         tag_adder.add_tags()
 
 
 def get_playlist_info(url):
-    """Given a playlist page, download all the playlists contained there, creating subdirs if necessary."""
+    """Given a playlist page, download all the playlists contained there, creating sub-folders if necessary."""
     # It would be useful to use a different delimiter other than '.' here - but that doesn't seem to work
     output = subprocess.run(['youtube-dl', '-i', '--extract-audio',
                              '--output', '"%(playlist_id)s.%(playlist)s.%(ext)s"', '--get-filename', url],
