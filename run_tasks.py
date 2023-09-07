@@ -1,3 +1,4 @@
+import contextlib
 import sys
 import os
 from time import sleep
@@ -10,14 +11,11 @@ import google_sheets
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
-try:
+with contextlib.suppress(ImportError):
     from rich import print  # rich-text printing
     from rich.traceback import install  # rich tracebacks
 
     install()
-except ImportError:
-    pass  # revert to standard print
-
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
@@ -27,9 +25,8 @@ from get_energy_usage import get_usage_data
 from check_tickets import check_game_time
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
-from oracle_staff_check import otl_check, annual_leave_check
+from oracle_staff_check import otl_check, annual_leave_check, enter_otl_timecard
 from get_budget_data import get_budget_data
-from enter_otl_timecard import enter_otl_timecard
 from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
 from check_on_site_support import check_on_site_support
