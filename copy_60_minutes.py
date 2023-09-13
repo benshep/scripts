@@ -121,24 +121,22 @@ def check_folder_list(copy_folder_list):
     for i in reversed(range(len(copy_folder_list))):
         copy_folder = copy_folder_list[i].address
         os.chdir(copy_folder)
-        # delete the oldest if it's been played (assumes files have 20yy-mm-dd prefix)
+        # delete any that have been played
         subfolders = get_subfolders()
-        if not subfolders:  # empty list
-            continue
-        oldest = min(subfolders)
-        print(f'Oldest dir: {oldest}')
-        os.chdir(oldest)
-        files = os.listdir()
-        print(files)
-        played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
-        file_count = len(files)
-        print(f'Played {played_count}/{file_count} tracks')
-        os.chdir('..')
+        for subfolder in subfolders:
+            print(subfolder)
+            os.chdir(subfolder)
+            files = os.listdir()
+            print(files)
+            played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
+            file_count = len(files)
+            print(f'Played {played_count}/{file_count} tracks')
+            os.chdir('..')
 
-        if played_count >= file_count / 2:
-            send2trash(oldest)
-            toast += f'❌ {oldest[11:]}'
-            subfolders.remove(oldest)
+            if played_count >= file_count / 2:
+                send2trash(subfolder)
+                toast += f'❌ {subfolder[11:]}\n'
+                subfolders.remove(subfolder)
         if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
             del copy_folder_list[i]
     return toast, copy_folder_list
@@ -180,7 +178,7 @@ def copy_albums(copy_folder_list, albums):
                     break
             folder_count += 1
             os.rename(folder_name, f'{folder_name} [{duration:.0f}]')  # rename with the total length
-            toast += '\n✔ ' + folder_name[11:]  # skip [YYYY-MM-DD] part
+            toast += f'✔ {folder_name[11:]}\n'
     return toast
 
 
