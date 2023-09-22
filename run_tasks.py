@@ -25,7 +25,7 @@ from get_energy_usage import get_usage_data
 from check_tickets import check_game_time
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
-from oracle_staff_check import otl_check, annual_leave_check, enter_otl_timecard
+from oracle_staff_check import otl_check, annual_leave_check, enter_otl_timecard, otl_submit
 from get_budget_data import get_budget_data
 from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
