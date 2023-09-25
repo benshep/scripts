@@ -107,38 +107,7 @@ def update_phone_music():
     if now.strftime('%d/%m/%Y') == last_crossing:
         return False  # don't run if bridge crossed today - deleting files will mess with the playlist
 
-    user = lastfm.get_user('ning')
-    toast = check_radio_files(user)
-
-    # update size of all shared phone folders
-    if False:  # skip all this for now, we have a larger SD card to fill
-        used_total = sum(folder_size(folder) for folder in ['40 minutes', 'Commute', 'Nokia 3.4', 'Radio'])
-
-        GB = 1024 ** 3
-        sd_capacity = (64 - 4) * GB  # leave a bit of space
-        max_size = sd_capacity - used_total
-        print(f'\nSpace for {max_size / GB:.1f} GB of music')
-
-        music_folder = os.path.join(user_profile, 'Music')
-        albums = get_albums(user, music_folder)
-
-        total_size = 0
-        os.chdir(music_folder)
-        root_len = len(music_folder) + 1
-        # Instead of linking, add a # to the end of folders NOT to sync
-        for album in albums:  # breaks out when total_size > max_size
-            total_size += album.size
-            name = album.folder[root_len:]
-            excluded = name.endswith('#')
-            if total_size > max_size:  # already done everything we can fit - exclude everything else
-                if not excluded:
-                    rename_folder(name)
-                    toast += f'🗑️ {name}\n'
-            elif excluded:  # was previously excluded
-                rename_folder(name)
-                toast += album.toast() + '\n'
-
-    if toast:
+    if toast := check_radio_files(lastfm.get_user('ning')):
         print(toast)
         if not test_mode:
             Pushbullet(api_key).push_note('🎧 Update phone music', toast)
@@ -298,6 +267,7 @@ def check_radio_files(lastfm_user):
     file_count = 0
     min_date = None
     total_hours = 0
+    which_artist = {}
     for file in sorted(radio_files):
         if not media.is_media_file(file):
             continue
@@ -321,14 +291,24 @@ def check_radio_files(lastfm_user):
             else:
                 print(f'Not found: {track_title}')
                 checking_scrobbles = False  # stop here - don't keep searching
-        if tags.title in ('', 'Untitled Episode', None):
+        if tags.title in ('', 'Untitled Episode', None):  # unhelpful titles - set it from the filename instead
             print(f'Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
         if not tags.albumartist:
-            print(f'Set {file} album artist to {tags.artist}')
-            tags.albumartist = tags.artist
-            tags_changed = True
+            if artist := tags.artist or which_artist.get(tags.album):
+                print(f'Set {file} album artist to {artist}' + (' (guessed from album)' if tags.artist is None else ''))
+                tags.artist = artist
+                tags.albumartist = artist
+                tags_changed = True
+        # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
+        if tags.album in which_artist:
+            if which_artist[tags.album] != tags.artist:
+                which_artist[tags.album] = None  # mismatch
+                print(f'{tags.album}: (multiple artists)')
+        else:
+            which_artist[tags.album] = tags.artist
+            print(f'{tags.album}: {tags.artist}')
         if tags_changed and not test_mode:
             tags.save()
     toast = ''
