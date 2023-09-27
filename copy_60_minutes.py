@@ -4,7 +4,7 @@ import os
 import phrydy  # to get media data
 from lastfm import lastfm
 import random
-from collections import namedtuple
+from collections import namedtuple, Counter
 from datetime import datetime, timedelta
 from shutil import copy2  # to copy files
 from pushbullet import Pushbullet  # to show notifications
@@ -71,11 +71,12 @@ def copy_album(album, files, existing_folder=None):
     return copied_name
 
 
-def scan_music_folder():
+def scan_music_folder(max_count=0):
     bytes_to_minutes = 8 / (1024 * 128 * 60)
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
     copied_already = open(copy_log_file).read().split('\n')
+    print(f'{len(copied_already)} albums in copied_already list')
 
     def is_included(walk_tuple):
         folder_name = walk_tuple[0]
@@ -84,6 +85,8 @@ def scan_music_folder():
     albums = {}
     line_len = 0
     for folder, folder_list, file_list in filter(is_included, os.walk(music_folder)):
+        if max_count and len(albums) >= max_count:
+            break
         if len(albums) % 10 == 0:
             output = folder[len(music_folder) + 1:]
             output += (line_len - len(output)) * ' '  # pad to length of previous output
@@ -127,7 +130,7 @@ def check_folder_list(copy_folder_list):
             print(subfolder)
             os.chdir(subfolder)
             files = os.listdir()
-            print(files)
+            # print(files)
             played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
@@ -185,6 +188,7 @@ def copy_albums(copy_folder_list, albums):
 def copy_60_minutes():
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
+    extra_time += 5  # extra mile during Keckwick Lane closure period
     copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 4),
                         Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
     print(copy_folder_list)
@@ -195,12 +199,25 @@ def copy_60_minutes():
         return
 
     albums = scan_music_folder()
+    list_by_length(albums, max_length=80)
     # for (folder, artist, album_name), file_list in albums.items():
     #     print(folder, artist, album_name, sum(file_list.values()), sep='\t')
     toast += copy_albums(copy_folder_list, albums)
 
     if toast:
         Pushbullet(api_key).push_note('🎵 Commute Music', toast)
+
+
+def list_by_length(albums, max_length=0):
+    """List the number of albums by length."""
+    length_counter = Counter()
+    for key, file_list in albums.items():
+        duration = sum(file_list.values())
+        length_counter[int(duration // 5 * 5)] += 1  # round to next-lowest 5 minutes
+    for length in sorted(length_counter.keys()):
+        if max_length and length > max_length:
+            break
+        print(length, length_counter[length], sep='\t')
 
 
 def check_previous():
@@ -217,4 +234,4 @@ def check_previous():
 
 
 if __name__ == '__main__':
-    copy_60_minutes()
+    list_by_length(scan_music_folder(max_count=20), max_length=50)
