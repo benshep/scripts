@@ -14,16 +14,17 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 
 
 def today():
+    """Return a datetime object representing the start of today."""
     return pandas.to_datetime('today').to_period('d').start_time  # - pandas.to_timedelta(3, 'd')
 
 
 def dmy(date, time=True):
-    """Convert datetime into dd/mm/yyyy format."""
+    """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
     return date.strftime('%d/%m/%Y' + (' %H:%M' if time else ''))
 
 
 def ymd(date, time=False):
-    """Convert datetime into yyyy-mm-dd format."""
+    """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM."""
     return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
 
@@ -53,10 +54,8 @@ def get_usage_data():
     def fill_request(start_column, column_count, row_count):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
         print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
-        return {'autoFill': {'useAlternateSeries': False,
-                             'sourceAndDestination': {
-                                 'source': {'sheetId': grid_id,
-                                            'startRowIndex': fill_top_row,
+        return {'autoFill': {'useAlternateSeries': False, 'sourceAndDestination': {
+                                 'source': {'sheetId': grid_id, 'startRowIndex': fill_top_row,
                                             'endRowIndex': fill_top_row + 1,  # half-open
                                             'startColumnIndex': start_column,
                                             'endColumnIndex': start_column + column_count,
@@ -96,7 +95,7 @@ def get_usage_data():
         gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
         highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
         summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                   f"{time.strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+                   f"{row['from'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
 
     print(summary)
     Pushbullet(api_key).push_note('⚡ Energy usage', summary)
@@ -146,7 +145,8 @@ def get_fuel_data(start_date, fuel):
     # print(response.json())
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
-    return pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value').dropna()
+    data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value').dropna()
+    return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
 def get_temp_data():
@@ -162,43 +162,58 @@ def get_temp_data():
     return temp_data
 
 
-def get_co2_data(start_date, regional=True):
-    """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data."""
+def get_co2_data(start_date, postcode='WA10'):
+    """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
+    Leave postcode blank to get national data."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
-    area = 'regional/' if regional else ''
-    suffix = '/postcode/WA10' if regional else ''
+    area = 'regional/' if postcode else ''
+    suffix = f'/postcode/{postcode}' if postcode else ''
     url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
+    json = get_json(url)
     # path is data.data for regional
-    df = pandas.json_normalize(requests.get(url).json(), record_path=['data'] * (1 + int(regional)))
+    df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
     df['from'] = pandas.to_datetime(df['from'])
     # use 'actual' value where available with national. For regional, we only see 'forecast' values
-    df['intensity'] = df['intensity.forecast'] if regional else df['intensity.actual'].fillna(df['intensity.forecast'])
+    df['intensity'] = df['intensity.forecast'] if postcode else df['intensity.actual'].fillna(df['intensity.forecast'])
     pivot = pandas.pivot_table(df, index=df['from'].dt.date, columns=df['from'].dt.time, values='intensity')
     return pivot.dropna()  # drop any incomplete rows
+
+
+def get_json(url, retries=3):
+    """Attempt to fetch JSON data from a URL, retrying a number of times (default 3)."""
+    while (attempt := 0) < retries:
+        json = requests.get(url).json()
+        if 'error' not in json:
+            break
+        attempt += 1
+        print(f'Failed to get data from {url=} on {attempt=}')
+    else:
+        raise ValueError(f'Bad response from server after {retries=}: {json["error"]}')
+    return json
 
 
 def get_co2_forecast():
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     now = pandas.to_datetime("now")
-    url = f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(now, time=True)}/fw48h/postcode/WA10'
-    print(url)
-    # path is data.data for regional
-    df = pandas.json_normalize(requests.get(url).json(), record_path=['data', 'data'])
+    json = get_json(f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(now, time=True)}/fw48h/postcode/WA10')
+    df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
     df['from'] = pandas.to_datetime(df['from'])
     return df
 
 
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
-    start_date = pandas.to_datetime('2018-01-04 00:00')
-    while start_date < today():
-        data = get_co2_data(start_date)
-        regional = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, regional=False)
-        national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, regional, national, sep='\t')
-        start_date += pandas.to_timedelta(14, 'd')
-        return
+    start_date = today() - pandas.to_timedelta(6, 'd')  # to align to previous dataset
+    while True:
+        start_date -= pandas.to_timedelta(14, 'd')
+        # data = get_co2_data(start_date, postcode='WA4')
+        # north = data.mean().mean()  # average of whole DataFrame
+        data = get_co2_data(start_date, postcode='IV1')
+        scotland = data.mean().mean()  # average of whole DataFrame
+        # data = get_co2_data(start_date, postcode='')  # national
+        # national = data.mean().mean()  # average of whole DataFrame
+        print(start_date, scotland, sep='\t')
+        # return
 
 
 if __name__ == '__main__':
