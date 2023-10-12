@@ -108,7 +108,6 @@ def run_tasks():
                 print(now_str, function_name, parameters)
                 try:
                     return_value = eval(f'{function_name}({parameters})')
-                    print(f'{return_value=}')
                     # sometimes we don't want to run the function now, but don't need to notify failure
                     result = 'Postponed' if return_value is False else 'Success'
                 except Exception:

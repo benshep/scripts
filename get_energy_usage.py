@@ -70,6 +70,7 @@ def get_usage_data():
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
     # check all dates are the same
     if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
+        print('Not all dates are identical in energy datasets')
         return False  # postpone data entry
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1

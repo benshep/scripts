@@ -101,10 +101,12 @@ def update_phone_music():
     """Deleted listened-to radio files, and fill up the music folder to capacity."""
     now = datetime.now()
     if now.hour < 10:
+        print('Too early in the day')
         return False  # don't run before 10am (bridge crossing data not received yet)
     mersey_gateway_spreadsheet = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'
     last_crossing = google_sheets.get_data(mersey_gateway_spreadsheet, 'Sheet1', 'lastDate')[0][0]
     if now.strftime('%d/%m/%Y') == last_crossing:
+        print('Not running on car commute days')
         return False  # don't run if bridge crossed today - deleting files will mess with the playlist
 
     if toast := check_radio_files(lastfm.get_user('ning')):
