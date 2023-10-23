@@ -67,6 +67,10 @@ def get_usage_data():
     print(all_fuel_data)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    if min_size == 0:
+        empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
+        print(f'No new {empty_sets} data received')
+        return False
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
     # check all dates are the same
     if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
@@ -134,7 +138,7 @@ def fill_old_carbon_data():
 
 def get_fuel_data(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
-    print(f'Fetching {fuel} usage data beginning {dmy(start_date)}')
+    print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
         return get_co2_data(start_date)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
@@ -170,6 +174,7 @@ def get_co2_data(start_date, postcode='WA10'):
     area = 'regional/' if postcode else ''
     suffix = f'/postcode/{postcode}' if postcode else ''
     url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
+    print(url)
     json = get_json(url)
     # path is data.data for regional
     df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
