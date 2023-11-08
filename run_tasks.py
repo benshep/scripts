@@ -22,10 +22,9 @@ from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
-from check_tickets import check_game_time
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
-from oracle_staff_check import otl_check, annual_leave_check, enter_otl_timecard, otl_submit
+from oracle_staff_check import annual_leave_check, otl_submit
 from get_budget_data import get_budget_data
 from check_leave_dates import check_leave_dates
 from fill_availability import fill_availability
@@ -33,6 +32,7 @@ from check_on_site_support import check_on_site_support
 from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
 from get_access_data import check_prev_week
 from todos_from_notes import todos_from_notes
+from get_payslips import get_payslips
 
 # for name, module in list(locals().items()):
 #     if callable(module):
