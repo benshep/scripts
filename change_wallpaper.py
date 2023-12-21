@@ -64,14 +64,6 @@ def apply_orientation(im):
     return im
 
 
-def get_image_files(folder):
-    """Use os.walk to get JPG files and sizes in the given folder."""
-    filename_list = []
-    for root, directory, files in os.walk(folder):
-        filename_list += [os.path.join(root, file) for file in files if file.lower().endswith(('.jpg', '.jpeg'))]
-    return filename_list
-
-
 def change_wallpaper(target='desktop'):
     """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
     target can be desktop, lockscreen or phone."""
@@ -97,13 +89,11 @@ def change_wallpaper(target='desktop'):
 
     def write_caption(im, text, x, y, align_right=False):
         draw = ImageDraw.Draw(im)
-        if align_right:
-            w, h = draw.textsize(text, font=font)
-            x -= w
         print(f' Caption "{text}" at {x}, {y}')
         # put a black drop shadow behind so the text can be read on any background
-        draw.text((x + 1, y + 1), text, 'black', font=font)
-        draw.text((x, y), text, 'white', font=font)
+        anchor = 'rt' if align_right else 'lt'  # top left or top right
+        draw.text((x + 1, y + 1), text, 'black', font=font, anchor=anchor)
+        draw.text((x, y), text, 'white', font=font, anchor=anchor)
 
     exclude_list = get_exclude_list(pics_folder)
 
@@ -292,7 +282,7 @@ def get_random_image(image_list):
 def is_out_of_season(full_name, today):
     file_date = datetime.date.fromtimestamp(os.path.getmtime(full_name))
     diff = abs(file_date.timetuple().tm_yday - today.timetuple().tm_yday)  # tm_yday is "day of year"
-    print(f' {diff=:}')
+    # print(f' {diff=:}')
     return diff > 30
 
 
@@ -308,7 +298,8 @@ def find_images(pics_folder):
     # weight by sum of size and date:
     # bigger files (likely to be better quality) get a higher weighting
     # as do more recent files (we've already seen older ones quite a lot, so they get a lower weighting)
-    file_list = get_image_files(pics_folder)
+    file_list = [os.path.join(root, file) for root, _, files in os.walk(pics_folder)
+                 for file in files if file.lower().endswith(('.jpg', '.jpeg'))]
     sizes = [os.path.getsize(f) for f in file_list]
     dates = [os.path.getmtime(f) for f in file_list]
     min_date = min(dates)
