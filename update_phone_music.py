@@ -109,7 +109,8 @@ def update_phone_music():
     #     print('Not running on car commute days')
     #     return False  # don't run if bridge crossed today - deleting files will mess with the playlist
 
-    if toast := check_radio_files(lastfm.get_user('ning')):
+    scrobbled_titles = get_scrobbled_titles(lastfm.get_user('ning'))
+    if toast := check_radio_files(scrobbled_titles):
         print(toast)
         if not test_mode:
             Pushbullet(api_key).push_note('🎧 Update phone music', toast)
@@ -256,11 +257,8 @@ def get_album_info(media_files):
     return artist, title
 
 
-def check_radio_files(lastfm_user):
+def check_radio_files(scrobbled_titles):
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
-    # get recently played tracks (as reported by Last.fm)
-    played_tracks = lastfm_user.get_recent_tracks(limit=400)
-    scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
     scrobbled_radio = []
     os.chdir(os.path.join(user_profile, 'Radio'))
     radio_files = os.listdir()
@@ -268,9 +266,9 @@ def check_radio_files(lastfm_user):
     # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
     checking_scrobbles = True
     file_count = 0
-    min_date = None
+    # min_date = None
     bump_date = []
-    total_hours = 0
+    # total_hours = 0
     which_artist = {}
     for file in sorted(radio_files):
         if not media.is_media_file(file):
@@ -281,32 +279,36 @@ def check_radio_files(lastfm_user):
             continue  # not a date-based filename
 
         file_count += 1
-        min_date = min_date or file_date  # set to first one
+        # min_date = min_date or file_date  # set to first one
         if file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
             bump_date.append(file_date)  # but maintain a list, don't bump everything here
-        weeks = (file_date - min_date).days // 7
+        # weeks = (file_date - min_date).days // 7
 
         tags = phrydy.MediaFile(file)
         tags_changed = False
-        total_hours += tags.length / 3600
+        # total_hours += tags.length / 3600
+
         if checking_scrobbles:
             track_title = media.artist_title(tags)
             if track_title.lower() in scrobbled_titles:
-                print(f'[{file_count}] Found: {track_title}')
+                print(f'[{file_count}] Played: {track_title}')
                 scrobbled_radio.append(file)
             else:
-                print(f'[{file_count}] Not found: {track_title}')
+                print(f'[{file_count}] Not played: {track_title}')
                 checking_scrobbles = False  # stop here - don't keep searching
+
         if tags.title in ('', 'Untitled Episode', None):  # unhelpful titles - set it from the filename instead
             print(f'[{file_count}] Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
+
         if not tags.albumartist:
             if artist := tags.artist or which_artist.get(tags.album):
                 print(f'[{file_count}] Set {file} album artist to {artist}' + (' (guessed from album)' if tags.artist is None else ''))
                 tags.artist = artist
                 tags.albumartist = artist
                 tags_changed = True
+
         # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
         if tags.album in which_artist:
             if which_artist[tags.album] != tags.artist:
@@ -316,14 +318,16 @@ def check_radio_files(lastfm_user):
             which_artist[tags.album] = tags.artist
             print(f'[{file_count}] {tags.album}: {tags.artist}')
             # is it a new album fairly far down the list?
-            if ('[bumped]' not in file and not tags_changed  # don't bump anything more than once
-                    and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):
+            if ('[bumped]' not in file  # don't bump anything more than once
+                    and not tags_changed  # don't rename if we want to save tags - might have weird results
+                    and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_date.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
-                new_name = f'{new_date} [bumped] {file[10:]}'
                 print(f'[{file_count}] Bumping {file} up the list: {new_date}')
-                os.rename(file, new_name)
+                os.rename(file, f'{new_date} [bumped] {file[11:]}')
+
         if tags_changed and not test_mode:
             tags.save()
+
     toast = ''
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
         toast += f'🗑️ {os.path.splitext(file)[0]}\n'
@@ -331,6 +335,13 @@ def check_radio_files(lastfm_user):
             send2trash(file)
     # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
     return toast
+
+
+def get_scrobbled_titles(lastfm_user):
+    # get recently played tracks (as reported by Last.fm)
+    played_tracks = lastfm_user.get_recent_tracks(limit=400)
+    scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
+    return scrobbled_titles
 
 
 def get_data_from_music_update(push):
