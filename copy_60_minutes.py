@@ -67,7 +67,7 @@ def copy_album(album, files, existing_folder=None):
             copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
         copy2(os.path.join(folder, f), copy_filename)
     os.chdir('..')
-    open(copy_log_file, 'a').write('\t'.join(map(str, album)) + '\n')
+    open(copy_log_file, 'a', encoding='utf-8').write('\t'.join(map(str, album)) + '\n')
     return copied_name
 
 
@@ -75,7 +75,7 @@ def scan_music_folder(max_count=0):
     bytes_to_minutes = 8 / (1024 * 128 * 60)
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
-    copied_already = open(copy_log_file).read().split('\n')
+    copied_already = open(copy_log_file, encoding='utf-8').read().split('\n')
     print(f'{len(copied_already)} albums in copied_already list')
 
     def is_included(walk_tuple):
@@ -116,10 +116,7 @@ def scan_music_folder(max_count=0):
 
 def check_folder_list(copy_folder_list):
     """Go through each copy folder in turn. Delete subfolders from it if they've been played."""
-    # get recently played tracks (as reported by Last.fm)
-    played_tracks = lastfm.get_user('ning').get_recent_tracks(limit=200)
-    scrobbles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
-
+    scrobbles = get_scrobbles()
     toast = ''
     for i in reversed(range(len(copy_folder_list))):
         copy_folder = copy_folder_list[i].address
@@ -130,7 +127,6 @@ def check_folder_list(copy_folder_list):
             print(subfolder)
             os.chdir(subfolder)
             files = os.listdir()
-            # print(files)
             played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
@@ -143,6 +139,12 @@ def check_folder_list(copy_folder_list):
         if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
             del copy_folder_list[i]
     return toast, copy_folder_list
+
+
+def get_scrobbles():
+    """Get recently played tracks (as reported by Last.fm)."""
+    played_tracks = lastfm.get_user('ning').get_recent_tracks(limit=200)
+    return [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
 
 def get_subfolders():
@@ -192,7 +194,6 @@ def copy_60_minutes():
     copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 4),
                         Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
     print(copy_folder_list)
-    # toast = ''
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
@@ -200,8 +201,6 @@ def copy_60_minutes():
 
     albums = scan_music_folder()
     list_by_length(albums, max_length=80)
-    # for (folder, artist, album_name), file_list in albums.items():
-    #     print(folder, artist, album_name, sum(file_list.values()), sep='\t')
     toast += copy_albums(copy_folder_list, albums)
 
     if toast:
