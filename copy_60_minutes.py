@@ -56,7 +56,7 @@ def copy_album(album, files, existing_folder=None):
     else:  # copying into an existing folder
         copied_name = f'{existing_folder}; {album_filename}'
         os.rename(existing_folder, copied_name)
-        n = len(os.listdir(copied_name))
+        n = max(int(file[:2]) for file in os.listdir(copied_name))  # highest track number in filename
     os.chdir(copied_name)
     for j, f in enumerate(files.keys(), start=1):
         media_info = phrydy.MediaFile(os.path.join(folder, f))
