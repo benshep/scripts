@@ -7,10 +7,13 @@ import yt_dlp.utils
 from yt_dlp import YoutubeDL
 from phrydy import MediaFile
 from media import is_media_file
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 
 class AddTags(yt_dlp.postprocessor.PostProcessor):
     """Add tags to a post-processed file."""
+
     def __init__(self, album, artist):
         super().__init__()
         self.album = album
@@ -21,6 +24,7 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         """After a file has finished downloading, tag it with album artist and album."""
         filename = info['filepath']
         _, name = os.path.split(filename)
+        self.files.append(name)
         track = int(name.split(' ')[0])  # 01 Title.ext
         media = MediaFile(filename)
         media.albumartist = self.artist
@@ -67,6 +71,7 @@ def get_youtube_playlists():
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
     # files = os.listdir(folder)
     # for i in range(1):
+    toast = ''
     for folder, _, files in os.walk(music_folder):
         if info_file not in files:
             continue
@@ -96,11 +101,11 @@ def get_youtube_playlists():
         #     break
         if '{' in info:
             playlist = json.loads(info)  # dict with keys: url, artist, album
-        elif info.startswith('https://www.youtube.com/'):  # just the url?
+        elif info.startswith(('https://www.youtube.com/', 'https://music.youtube.com/')):  # just the url?
             playlist = {'url': info.strip()}
         else:
             continue  # can't process info
-        print(playlist)
+        # print(playlist)
 
         subfolders = folder.split(os.path.sep)
         album_name = subfolders[-1]  # folder name
@@ -114,6 +119,7 @@ def get_youtube_playlists():
                    'force_write_download_archive': True,
                    # 'no-warnings': True,
                    # 'verbose': True,
+                   'quiet': True,
                    # 'max_downloads': 1,  # for testing
                    'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
                    # reverse order for channels (otherwise new videos will always be track 1)
@@ -125,10 +131,17 @@ def get_youtube_playlists():
                                       {'key': 'EmbedThumbnail'}
                                       ],
                    'match_filter': reject_existing, 'progress_hooks': [show_status]}
-        with contextlib.suppress(yt_dlp.utils.MaxDownloadsReached):  # don't give an error when limit reached
+        with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
             with YoutubeDL(options) as downloader:
                 downloader.add_post_processor(add_tags, when='after_move')
                 downloader.download([playlist['url']])
+                new_files = add_tags.files
+                if new_files:
+                    toast += f'{album_name}: ' + \
+                             (f'{len(new_files)} new files\n' if len(new_files) > 1 else f'{new_files[0]}\n')
+
+    if toast:
+        Pushbullet(api_key).push_note('🎼 Get YouTube playlists', toast)
 
 
 def get_playlist_info(url):
