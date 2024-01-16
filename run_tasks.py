@@ -22,6 +22,7 @@ from copy_60_minutes import copy_60_minutes
 from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
+from bitrot import check_folders_for_bitrot
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'Documents', 'Scripts'))
 from oracle_staff_check import annual_leave_check, otl_submit
@@ -48,7 +49,7 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    column_names = ['Function name', 'Parameters', 'Period', 'Enabled', 'Last run', 'Machine', 'Last result']
+    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Enabled', 'Last run', 'Machine', 'Last result']
 
     def get_column(name):
         return google_sheets.get_column(column_names.index(name) + 1)
@@ -56,6 +57,7 @@ def run_tasks():
     last_col = google_sheets.get_column(len(column_names))
     time_format = "%d/%m/%Y %H:%M"
     period_col = column_names.index('Period')
+    pushbullet = Pushbullet(api_key)
     while True:
         print('Fetching data from spreadsheet')
         try:
@@ -69,23 +71,19 @@ def run_tasks():
         next_task_time = datetime.now() + timedelta(days=min_period)
         battery = psutil.sensors_battery()
         if battery is None or battery.power_plugged:
-            failures = []
+            failures = set()
             toast = ''
             for i, values in enumerate(data[1:]):
-                n_values = len(values)
-                col_index = column_names.index('Enabled')
-                enabled = values[col_index] == 'TRUE' if n_values > col_index else False
-                if not enabled:
+                properties = dict(zip(column_names, values))
+                if properties.get('Enabled', False) != 'TRUE':
                     continue
-                col_index = column_names.index('Last run')
-                last_run_str = values[col_index] if n_values > col_index else None
-                col_index = column_names.index('Last result')
-                last_result = values[col_index] if n_values > col_index else None
+                last_run_str = properties.get('Last run')
+                last_result = properties.get('Last result')
                 check_when_run = last_run_str and last_result == 'Success'
                 now = datetime.now()
                 if check_when_run:
                     last_run = datetime.strptime(last_run_str, time_format)
-                    period = float(values[period_col])
+                    period = float(properties.get('Period', 1))  # default: once per day
                     next_run_time = last_run + timedelta(days=period)
                     time_to_run = next_run_time <= now
                 else:  # never been run, or failed last time
@@ -98,29 +96,36 @@ def run_tasks():
                 update_cell(i + 2, get_column('Last run'), now_str)
                 update_cell(i + 2, get_column('Machine'), node())
                 update_cell(i + 2, get_column('Last result'), 'Running')
-                function_name = values[0]
+                function_name = properties.get('Function name')
+                parameters_raw = properties.get('Parameters', '')
+                icon = properties.get('Icon', '')
                 try:
-                    parameters = float(values[1])
+                    parameters = float(parameters_raw)
                 except ValueError:  # it's not a float, assume string
-                    parameters = f'"{values[1]}"' if values[1] else ''  # wrap in quotes to send to function
-                os.system(f'title ➡️ {function_name}')  # set title of window
+                    parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
+                os.system(f'title ➡️ {icon} {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
                 try:
                     return_value = eval(f'{function_name}({parameters})')
                     # sometimes we don't want to run the function now, but don't need to notify failure
-                    result = 'Postponed' if return_value is False else 'Success'
+                    if return_value is False:
+                        result = 'Postponed'
+                    else:
+                        result = 'Success'
+                        if return_value:  # function returns a non-empty string: toast with summary of what it's done
+                            pushbullet.push_note(f'{icon} {function_name}', return_value)
                 except Exception:
                     error_lines = format_exc().split('\n')
                     result = '\n'.join(error_lines[4:])
-                    failures.append(function_name)
+                    failures.add(function_name)
                     toast = ', '.join(failures) if len(failures) > 1 else f'{function_name}: {result}'
 
                 print(result)
                 update_cell(i + 2, get_column('Last result'), result)
 
             if toast:
-                Pushbullet(api_key).push_note(f'👁️ Failed tasks {node()}', toast)
+                pushbullet.push_note(f'👁️ Failed tasks {node()}', toast)
         else:
             print('On battery, not running any tasks')
 
