@@ -7,8 +7,6 @@ import requests
 import google_sheets
 from energy_credentials import mac_address
 from openweather import api_key
-from pushbullet import Pushbullet  # to show notifications
-from pushbullet_api_key import api_key  # local file, keep secret!
 
 base_url = 'https://consumer-api.data.n3rgy.com'
 
@@ -102,8 +100,7 @@ def get_usage_data():
         summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
                    f"{row['from'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
 
-    print(summary)
-    Pushbullet(api_key).push_note('⚡ Energy usage', summary)
+    return summary
 
 
 def fill_old_carbon_data():
@@ -182,6 +179,10 @@ def get_co2_data(start_date, postcode='WA10'):
     # use 'actual' value where available with national. For regional, we only see 'forecast' values
     df['intensity'] = df['intensity.forecast'] if postcode else df['intensity.actual'].fillna(df['intensity.forecast'])
     pivot = pandas.pivot_table(df, index=df['from'].dt.date, columns=df['from'].dt.time, values='intensity')
+    # Add an extra day (sometimes necessary when data is missing)
+    # pivot.loc[pivot.index[0] + pandas.to_timedelta(1, 'd')] = [pandas.NA] * 48
+    # pivot = pivot.sort_index()
+    # pivot = pivot.fillna(-1)
     return pivot.dropna()  # drop any incomplete rows
 
 
