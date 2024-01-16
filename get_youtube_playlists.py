@@ -7,8 +7,6 @@ import yt_dlp.utils
 from yt_dlp import YoutubeDL
 from phrydy import MediaFile
 from media import is_media_file
-from pushbullet import Pushbullet  # to show notifications
-from pushbullet_api_key import api_key  # local file, keep secret!
 
 
 class AddTags(yt_dlp.postprocessor.PostProcessor):
@@ -140,8 +138,7 @@ def get_youtube_playlists():
                     toast += f'{album_name}: ' + \
                              (f'{len(new_files)} new files\n' if len(new_files) > 1 else f'{new_files[0]}\n')
 
-    if toast:
-        Pushbullet(api_key).push_note('🎼 Get YouTube playlists', toast)
+    return toast
 
 
 def get_playlist_info(url):

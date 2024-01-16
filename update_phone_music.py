@@ -99,21 +99,17 @@ def folder_size(folder):
 
 def update_phone_music():
     """Deleted listened-to radio files, and fill up the music folder to capacity."""
-    # now = datetime.now()
-    # if now.hour < 10:
-    #     print('Too early in the day')
-    #     return False  # don't run before 10am (bridge crossing data not received yet)
-    # mersey_gateway_spreadsheet = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'
-    # last_crossing = google_sheets.get_data(mersey_gateway_spreadsheet, 'Sheet1', 'lastDate')[0][0]
-    # if now.strftime('%d/%m/%Y') == last_crossing:
-    #     print('Not running on car commute days')
-    #     return False  # don't run if bridge crossed today - deleting files will mess with the playlist
+    now = datetime.now()
+    if now.hour < 10:
+        print('Too early in the day')
+        return False  # don't run before 10am (bridge crossing data not received yet)
+    mersey_gateway_spreadsheet = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'
+    last_crossing = google_sheets.get_data(mersey_gateway_spreadsheet, 'Sheet1', 'lastDate')[0][0]
+    if now.strftime('%d/%m/%Y') == last_crossing:
+        print('Not running on car commute days')
+        return False  # don't run if bridge crossed today - deleting files will mess with the playlist
 
-    scrobbled_titles = get_scrobbled_titles(lastfm.get_user('ning'))
-    if toast := check_radio_files(scrobbled_titles):
-        print(toast)
-        if not test_mode:
-            Pushbullet(api_key).push_note('🎧 Update phone music', toast)
+    return check_radio_files(get_scrobbled_titles(lastfm.get_user('ning')))
 
 
 def rename_folder(old):
@@ -268,6 +264,7 @@ def check_radio_files(scrobbled_titles):
     file_count = 0
     # min_date = None
     bump_date = []
+    toast = ''
     # total_hours = 0
     which_artist = {}
     for file in sorted(radio_files):
@@ -322,13 +319,12 @@ def check_radio_files(scrobbled_titles):
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
                     and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_date.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
-                print(f'[{file_count}] Bumping {file} up the list: {new_date}')
+                toast += f'🔼 {file}\n'
                 os.rename(file, f'{new_date} [bumped] {file[11:]}')
 
         if tags_changed and not test_mode:
             tags.save()
 
-    toast = ''
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
         toast += f'🗑️ {os.path.splitext(file)[0]}\n'
         if not test_mode and os.path.exists(file):
@@ -339,9 +335,8 @@ def check_radio_files(scrobbled_titles):
 
 def get_scrobbled_titles(lastfm_user):
     # get recently played tracks (as reported by Last.fm)
-    played_tracks = lastfm_user.get_recent_tracks(limit=400)
-    scrobbled_titles = [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
-    return scrobbled_titles
+    return [f'{track.track.artist.name} - {track.track.title}'.lower() for track in
+            (lastfm_user.get_recent_tracks(limit=400))]
 
 
 def get_data_from_music_update(push):

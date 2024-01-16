@@ -202,9 +202,7 @@ def copy_60_minutes():
     albums = scan_music_folder()
     list_by_length(albums, max_length=80)
     toast += copy_albums(copy_folder_list, albums)
-
-    if toast:
-        Pushbullet(api_key).push_note('🎵 Commute Music', toast)
+    return toast
 
 
 def list_by_length(albums, max_length=0):
