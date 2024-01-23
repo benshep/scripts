@@ -331,8 +331,8 @@ def get_monitors(target):
     """Figure out monitor geometry."""
     if target == 'phone':
         width, height = 800, 1560
-        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height),
-                    screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
+        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height)]
+                    # screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
     else:
         monitors = screeninfo.get_monitors()  # 'windows' if on_windows else 'drm')
         if target == 'lockscreen':
