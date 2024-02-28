@@ -13,7 +13,7 @@ from send2trash import send2trash
 
 user_folder = os.environ['UserProfile']
 music_folder = os.path.join(user_folder, 'Music')
-copy_log_file = os.path.join(music_folder, 'copied_already.txt')
+copy_log_file = 'copied_already.txt'
 
 
 def is_media_file(filename):
@@ -67,7 +67,7 @@ def copy_album(album, files, existing_folder=None):
             copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
         copy2(os.path.join(folder, f), copy_filename)
     os.chdir('..')
-    open(copy_log_file, 'a', encoding='utf-8').write('\t'.join(map(str, album)) + '\n')
+    open(os.path.join(music_folder, copy_log_file), 'a', encoding='utf-8').write('\t'.join(map(str, album)) + '\n')
     return copied_name
 
 
@@ -75,7 +75,16 @@ def scan_music_folder(max_count=0):
     bytes_to_minutes = 8 / (1024 * 128 * 60)
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
-    copied_already = open(copy_log_file, encoding='utf-8').read().split('\n')
+    base, ext = os.path.splitext(copy_log_file)
+    # deal with multiple copies of the log (typically Syncthing-generated)
+    copied_already = set()
+    for name in os.listdir(music_folder):
+        if name.startswith(base) and name.endswith(ext):
+            copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
+            if name != copy_log_file:  # get rid of other copies and keep the original
+                send2trash(name)
+    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already))
+
     print(f'{len(copied_already)} albums in copied_already list')
 
     def is_included(walk_tuple):
@@ -231,4 +240,4 @@ def check_previous():
 
 
 if __name__ == '__main__':
-    list_by_length(scan_music_folder(max_count=20), max_length=50)
+    copy_60_minutes()
