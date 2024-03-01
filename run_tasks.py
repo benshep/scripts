@@ -117,7 +117,9 @@ def run_tasks():
                     else:
                         period = float(properties.get('Period', 1))  # default: once per day
                         next_run_time = now + timedelta(days=period)
-                    update_cell(i + 2, get_column('Next run'), next_run_time.strftime(time_format))
+                    next_run_str = next_run_time.strftime(time_format)
+                    print('Next run time: ', next_run_str)
+                    update_cell(i + 2, get_column('Next run'), next_run_str)
                     # sometimes we don't want to run the function now, but don't need to notify failure
                     if return_value is False:
                         result = 'Postponed'
