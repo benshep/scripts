@@ -1,6 +1,7 @@
 import contextlib
 import sys
 import os
+import inspect
 from time import sleep
 from traceback import format_exc
 from datetime import datetime, timedelta
@@ -35,10 +36,20 @@ from get_access_data import check_prev_week
 from todos_from_notes import todos_from_notes
 from get_payslips import get_payslips
 
-# for name, module in list(locals().items()):
-#     if callable(module):
-#         print(name)
-#         print(getfile(module))
+# restart code
+# imported_files = set(inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f))
+# print(imported_files)
+# start_dir = os.getcwd()
+# mod_time = os.path.getmtime(__file__)
+# for i in range(10):
+#     print(i)
+#     sleep(10)
+#     if mod_time != os.path.getmtime(__file__):
+#         print('Restarting')
+#         os.chdir(start_dir)
+#         subprocess.Popen([sys.executable] + sys.argv)
+#         exit()
+
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
 sheet_name = 'Sheet1'
@@ -49,7 +60,8 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Enabled', 'Last run', 'Machine', 'Last result']
+    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Enabled',
+                    'Last run', 'Machine', 'Last result', 'Next run']
 
     def get_column(name):
         return google_sheets.get_column(column_names.index(name) + 1)
@@ -77,18 +89,10 @@ def run_tasks():
                 properties = dict(zip(column_names, values))
                 if properties.get('Enabled', False) != 'TRUE':
                     continue
-                last_run_str = properties.get('Last run')
                 last_result = properties.get('Last result')
-                check_when_run = last_run_str and last_result == 'Success'
                 now = datetime.now()
-                if check_when_run:
-                    last_run = datetime.strptime(last_run_str, time_format)
-                    period = float(properties.get('Period', 1))  # default: once per day
-                    next_run_time = last_run + timedelta(days=period)
-                    time_to_run = next_run_time <= now
-                else:  # never been run, or failed last time
-                    time_to_run = True
-                if not time_to_run:
+                next_run_time = datetime.strptime(properties.get('Next run'), time_format)
+                if next_run_time > now and last_result == 'Success':
                     next_task_time = min(next_task_time, next_run_time)
                     continue
 
@@ -108,6 +112,12 @@ def run_tasks():
                 print(now_str, function_name, parameters)
                 try:
                     return_value = eval(f'{function_name}({parameters})')
+                    if isinstance(return_value, tuple):
+                        return_value, next_run_time = return_value
+                    else:
+                        period = float(properties.get('Period', 1))  # default: once per day
+                        next_run_time = now + timedelta(days=period)
+                    update_cell(i + 2, get_column('Next run'), next_run_time.strftime(time_format))
                     # sometimes we don't want to run the function now, but don't need to notify failure
                     if return_value is False:
                         result = 'Postponed'
