@@ -206,7 +206,7 @@ def copy_60_minutes():
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
-        return
+        return datetime.now().replace(hour=9, minute=0) + timedelta(days=1)  # try again 9am tomorrow
 
     albums = scan_music_folder()
     list_by_length(albums, max_length=80)
