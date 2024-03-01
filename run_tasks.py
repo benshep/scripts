@@ -110,22 +110,28 @@ def run_tasks():
                 os.system(f'title ➡️ {icon} {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
+                # return_value can be:
+                # False: postpone until next scheduled run
+                # datetime: postpone until then
+                # empty string or True: success but no toast
+                # string: toast summarising actions
                 try:
                     return_value = eval(f'{function_name}({parameters})')
-                    if isinstance(return_value, tuple):
-                        return_value, next_run_time = return_value
+                    if isinstance(return_value, datetime):
+                        next_run_time = return_value
                     else:
                         period = float(properties.get('Period', 1))  # default: once per day
                         next_run_time = now + timedelta(days=period)
                     next_run_str = next_run_time.strftime(time_format)
-                    print('Next run time: ', next_run_str)
+                    print('Next run time:', next_run_str)
                     update_cell(i + 2, get_column('Next run'), next_run_str)
                     # sometimes we don't want to run the function now, but don't need to notify failure
                     if return_value is False:
                         result = 'Postponed'
                     else:
                         result = 'Success'
-                        if return_value:  # function returns a non-empty string: toast with summary of what it's done
+                        if isinstance(return_value, str) and return_value:
+                            # function returns a non-empty string: toast with summary of what it's done
                             pushbullet.push_note(f'{icon} {function_name}', return_value)
                 except Exception:
                     error_lines = format_exc().split('\n')
