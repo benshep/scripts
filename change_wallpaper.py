@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import time
+from send2trash import send2trash
 from itertools import accumulate
 from math import ceil  # calculation of mosaic dimensions
 from random import randint
@@ -203,7 +204,14 @@ def change_wallpaper(target='desktop'):
                 wallpaper_subfolder = os.path.join(wallpaper_dir, 'Landscape' if mon_landscape else 'Portrait')
                 os.makedirs(wallpaper_subfolder, exist_ok=True)
                 os.chdir(wallpaper_subfolder)
-                image_files = [f for f in os.listdir('.') if f[-3:] == 'jpg']
+                image_files = []
+                for filename in os.listdir('.'):
+                    if 'sync-conflict' in filename:
+                        # Android date issue, sync conflicts get erroneously generated every so often - safe to delete
+                        print(' Removing', filename)
+                        send2trash(filename)
+                    elif filename.endswith('.jpg'):
+                        image_files.append(filename)
                 if image_files:
                     newest = max(image_files, key=os.path.getmtime)
                     # Increment by 1
