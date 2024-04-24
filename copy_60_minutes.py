@@ -83,7 +83,7 @@ def scan_music_folder(max_count=0):
             copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
-    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already))
+    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
 
     print(f'{len(copied_already)} albums in copied_already list')
 
@@ -127,11 +127,12 @@ def check_folder_list(copy_folder_list):
     """Go through each copy folder in turn. Delete subfolders from it if they've been played."""
     scrobbles = get_scrobbles()
     toast = ''
-    for i in reversed(range(len(copy_folder_list))):
-        copy_folder = copy_folder_list[i].address
-        os.chdir(copy_folder)
+    folders_to_fill = []
+    for copy_folder in copy_folder_list:
+        os.chdir(copy_folder.address)
         # delete any that have been played
         subfolders = get_subfolders()
+        to_delete = []
         for subfolder in subfolders:
             print(subfolder)
             os.chdir(subfolder)
@@ -139,15 +140,17 @@ def check_folder_list(copy_folder_list):
             played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
+            if played_count >= file_count / 2:
+                to_delete.append(subfolder)
             os.chdir('..')
 
-            if played_count >= file_count / 2:
-                send2trash(subfolder)
-                toast += f'❌ {subfolder[11:]}\n'
-                subfolders.remove(subfolder)
-        if len(subfolders) >= copy_folder_list[i].min_count:  # got enough albums in this folder
-            del copy_folder_list[i]
-    return toast, copy_folder_list
+        for subfolder in to_delete:
+            send2trash(subfolder)
+            toast += f'❌ {subfolder[11:]}\n'
+            subfolders.remove(subfolder)
+        if len(subfolders) < copy_folder.min_count:  # need more albums in this folder
+            folders_to_fill.append(copy_folder)
+    return toast, folders_to_fill
 
 
 def get_scrobbles():
