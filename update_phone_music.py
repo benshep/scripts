@@ -371,6 +371,31 @@ def check_radio_hours_added():
     #     print(created_date, status_line[2:], sep='; ')
 
 
+def bump_down():
+    """Bump an album down the list by increasing the date in the filename."""
+    os.chdir(os.path.join(user_profile, 'Radio'))
+    radio_files = os.listdir()
+    next_date = None
+    for file in sorted(radio_files, reverse=True):  # get most recent first
+        if not media.is_media_file(file):
+            continue
+        try:
+            file_date = datetime.strptime(file[:10], '%Y-%m-%d')
+        except ValueError:
+            continue  # not a date-based filename
+
+        tags = phrydy.MediaFile(file)
+        if tags.album is None or "The Hitchhiker’s Guide to the Galaxy: The Complete Radio Series" not in tags.album:
+            continue
+
+        if not next_date:
+            next_date = file_date
+            print('Last file', file, next_date)
+        else:
+            next_date -= timedelta(days=6)
+            os.rename(file, next_date.strftime('%Y-%m-%d') + file[10:])
+
+
 if __name__ == '__main__':
     # get_artists(os.path.join(user_profile, 'Music'))
-    update_phone_music()
+    bump_down()
