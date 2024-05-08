@@ -15,6 +15,7 @@ from send2trash import send2trash
 def crop_cover(media):
     """Deal with album covers that have been turned into widescreen thumbnails."""
     if not media.art:
+        print(f'No cover in {media.filename}')
         return
     cover = Image.open(BytesIO(media.art))
     width, height = cover.size
