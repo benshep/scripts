@@ -12,12 +12,15 @@ from media import is_media_file
 from send2trash import send2trash
 
 
-def crop_thumbnail(media):
+def crop_cover(media):
     """Deal with album covers that have been turned into widescreen thumbnails."""
+    if not media.art:
+        return
     cover = Image.open(BytesIO(media.art))
     width, height = cover.size
     border_size = (width - height) // 2
     if border_size < 10:  # close enough to square
+        print(f'Cover in {media.filename} is square {cover.size}')
         return
     left_border = cover.crop((0, 0, border_size - 10, height))  # left, upper, right, lower
     right_border = cover.crop((width - border_size + 10, 0, width, height))  # left, upper, right, lower
@@ -27,6 +30,9 @@ def crop_thumbnail(media):
         square_thumb.save(data, format=cover.format)
         media.art = data.getvalue()
         media.save()
+        print(f'Cropped cover in {media.filename} to {square_thumb.size} image')
+    else:
+        print(f'Cover in {media.filename} is a full image - no borders')
 
 
 class AddTags(yt_dlp.postprocessor.PostProcessor):
@@ -63,7 +69,7 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         title = title.strip('"')  # "Song Name" -> Song Name
         media.title = title
         self.to_screen(f'Tagging {name} with {self.artist = }, {self.album = }, {track=}, {title=}')
-        crop_thumbnail(media)
+        crop_cover(media)
         media.save()
         return [], info
 
@@ -83,16 +89,18 @@ def show_status(progress):
         print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
 
 
-def get_youtube_playlists():
+def get_youtube_playlists(just_crop_art=False):
     user_profile = os.environ['UserProfile' if os.name == 'nt' else 'HOME']
     music_folder = os.path.join(user_profile, 'Music')
     info_file = 'download.txt'  # info file contained in each folder
+    archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
     # files = os.listdir(folder)
     # for i in range(1):
     toast = ''
     for folder, _, files in os.walk(music_folder):
-        if info_file not in files:
+        # if just_crop_art is selected, look for archive files too
+        if info_file not in files and (not just_crop_art or archive_file not in files):
             continue
         print(folder)
         os.chdir(folder)
@@ -100,7 +108,13 @@ def get_youtube_playlists():
         for file in files:
             if is_media_file(file):
                 tags = MediaFile(file)
+                if just_crop_art:
+                    crop_cover(tags)
+                    continue
                 artist_titles.append((tags.artist, tags.title))
+
+        if just_crop_art:
+            continue
 
         def reject_existing(info_dict, *args, incomplete=False):
             """Reject any videos matching existing files in the folder."""
@@ -134,7 +148,7 @@ def get_youtube_playlists():
         if ' - ' in album_name:  # artist - album
             artist, album_name = album_name.split(' - ', 1)
         add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
-        options = {'download_archive': 'download-archive.txt',  # keep track of previously-downloaded videos
+        options = {'download_archive': archive_file,  # keep track of previously-downloaded videos
                    'force_write_download_archive': True,
                    # 'no-warnings': True,
                    # 'verbose': True,
@@ -195,5 +209,5 @@ def get_playlist_info(url):
 
 
 if __name__ == '__main__':
-    get_youtube_playlists()
+    get_youtube_playlists(just_crop_art=True)
     # test()
