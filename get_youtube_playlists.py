@@ -6,8 +6,27 @@ import contextlib
 import yt_dlp.utils
 from yt_dlp import YoutubeDL
 from phrydy import MediaFile
+from PIL import Image
+from io import BytesIO
 from media import is_media_file
 from send2trash import send2trash
+
+
+def crop_thumbnail(media):
+    """Deal with album covers that have been turned into widescreen thumbnails."""
+    cover = Image.open(BytesIO(media.art))
+    width, height = cover.size
+    border_size = (width - height) // 2
+    if border_size < 10:  # close enough to square
+        return
+    left_border = cover.crop((0, 0, border_size - 10, height))  # left, upper, right, lower
+    right_border = cover.crop((width - border_size + 10, 0, width, height))  # left, upper, right, lower
+    if left_border.getcolors(10) and right_border.getcolors(10):  # both return not None if there are <=10 colours
+        square_thumb = cover.crop((border_size, 0, width - border_size, height))
+        data = BytesIO()
+        square_thumb.save(data, format=cover.format)
+        media.art = data.getvalue()
+        media.save()
 
 
 class AddTags(yt_dlp.postprocessor.PostProcessor):
@@ -44,6 +63,7 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         title = title.strip('"')  # "Song Name" -> Song Name
         media.title = title
         self.to_screen(f'Tagging {name} with {self.artist = }, {self.album = }, {track=}, {title=}')
+        crop_thumbnail(media)
         media.save()
         return [], info
 
