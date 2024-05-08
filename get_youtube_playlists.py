@@ -7,6 +7,7 @@ import yt_dlp.utils
 from yt_dlp import YoutubeDL
 from phrydy import MediaFile
 from media import is_media_file
+from send2trash import send2trash
 
 
 class AddTags(yt_dlp.postprocessor.PostProcessor):
@@ -132,11 +133,16 @@ def get_youtube_playlists():
         with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
             with YoutubeDL(options) as downloader:
                 downloader.add_post_processor(add_tags, when='after_move')
-                downloader.download([playlist['url']])
+                error_code = downloader.download([playlist['url']])  # 1 if error occurred, else 0
+                # _Copied folder is for albums not playlists, won't be updated so can delete info file
+                if '_Copied' in folder and not error_code:
+                    print(f'Success. Deleting {info_file} from {folder}')
+                    send2trash(info_file)
                 new_files = add_tags.files
                 if new_files:
                     toast += f'{album_name}: ' + \
-                             (f'{len(new_files)} new files\n' if len(new_files) > 1 else f'{new_files[0]}\n')
+                             (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
+                             (' (with errors)\n' if error_code else '\n')
 
     return toast
 
