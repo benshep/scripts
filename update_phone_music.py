@@ -5,6 +5,7 @@ import os
 import re
 from math import log10
 import phrydy  # for media file tagging
+import mediafile
 import pylast
 import json  # to save data
 import shutil
@@ -12,7 +13,7 @@ import media
 import google_sheets
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime, timedelta
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from send2trash import send2trash
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
@@ -243,7 +244,7 @@ def get_album_info(media_files):
         try:
             tags = phrydy.MediaFile(file)
             break
-        except phrydy.mediafile.FileTypeError:
+        except mediafile.FileTypeError:
             print(f'No media info for {file}')
     else:  # no media info for any (or empty list)
         return None, None
