@@ -28,7 +28,10 @@ def crop_cover(media):
     if left_border.getcolors(10) and right_border.getcolors(10):  # both return not None if there are <=10 colours
         square_thumb = cover.crop((border_size, 0, width - border_size, height))
         data = BytesIO()
-        square_thumb.save(data, format=cover.format)
+        img_format = cover.format
+        if media.format == 'AAC' and img_format not in ('PNG', 'JPEG'):
+            img_format = 'JPEG'  # otherwise throws an error
+        square_thumb.save(data, format=img_format)
         media.art = data.getvalue()
         media.save()
         print(f'Cropped cover in {media.filename} to {square_thumb.size} image')
