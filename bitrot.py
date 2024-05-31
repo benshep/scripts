@@ -611,7 +611,7 @@ def check_folders_for_bitrot(computer_name):
         return False
 
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
-    for folder in ('Documents', 'Misc', 'Pictures', 'Music'):
+    for folder in (r'OneDrive - Science and Technology Facilities Council\Documents', 'Misc', 'Pictures', 'Music'):
         print(folder)
         os.chdir(os.path.join(os.environ['UserProfile'], folder))
         Bitrot(exclude_list=exclude_list).run()
