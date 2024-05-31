@@ -20,8 +20,7 @@ def new_version():
     choco_name = 'getiplayer'
     app_folder = os.path.join(user_dir, 'GitHub', app_name)
     wiki_folder = f'{app_folder}.wiki'
-    choco_folder = os.path.join(user_dir, 'OneDrive - Science and Technology Facilities Council',
-                                'Documents', 'Scripts', choco_name)
+    choco_folder = os.path.join(user_dir, 'STFC', 'Documents', 'Scripts', choco_name)
     os.chdir(choco_folder)
     [send2trash(filename) for filename in os.listdir() if filename.endswith('.nupkg')]
 
