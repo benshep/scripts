@@ -47,6 +47,7 @@ DEFAULT_CHUNK_SIZE = 16384  # block size in HFS+; 4X the block size in ext4
 DOT_THRESHOLD = 200
 IGNORED_FILE_SYSTEM_ERRORS = {errno.ENOENT, errno.EACCES}
 FSENCODING = sys.getfilesystemencoding()
+FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS = 0x00400000
 try:
     VERSION = version("bitrot")
 except PackageNotFoundError:
@@ -107,7 +108,7 @@ def list_existing_paths(directory, expected=(), ignored=(),
     and their `total_size`. If directory was a bytes object, so will be the returned
     paths.
 
-    Doesn't add entries listed in `ignored`.  Doesn't add symlinks if
+    Doesn't add entries listed in `ignored`.  Doesn't add symlinks or cloud-only files if
     `follow_links` is False (the default).  All entries present in `expected`
     must be files (can't be directories or symlinks).
     """
@@ -126,7 +127,7 @@ def list_existing_paths(directory, expected=(), ignored=(),
                 continue
 
             try:
-                st = os.stat(p) if follow_links or p_uni in expected else os.lstat(p)
+                st = os.stat(p, follow_symlinks=follow_links)
             except OSError as ex:
                 if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
                     raise
@@ -135,12 +136,19 @@ def list_existing_paths(directory, expected=(), ignored=(),
                 # ['dir1', 'dir2', 'file.txt']
                 # and match on any of these components
                 # so we could use 'dir*', '*2', '*.txt', etc. to exclude anything
-                exclude_this = [fnmatch(ff, wildcard)
-                                for ff in p.split(os.path.sep)
-                                for wildcard in ignored]
-                if not stat.S_ISREG(st.st_mode) or any(exclude_this):
+                exclude_this = [fnmatch(ff, wildcard) for ff in p.split(os.path.sep) for wildcard in ignored]
+                ignore_reason = 'in exclude list' if any(exclude_this) else ''
+
+                # check attributes - is it a cloud-only file? (e.g. from OneDrive)
+                # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+                if not follow_links and st.st_file_attributes & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
+                    ignore_reason = ignore_reason or 'cloud-only'
+
+                if not stat.S_ISREG(st.st_mode):
+                    ignore_reason = ignore_reason or 'not regular file'
+                if ignore_reason:
                     if verbosity > 1:
-                        print('Ignoring file:', p)
+                        print(f'Ignoring file ({ignore_reason}):', p)
                     continue
                 paths.add(p)
                 total_size += st.st_size
@@ -605,7 +613,7 @@ def read_exclude_list(exclude_list):
     return [line.rstrip('\n') for line in open(exclude_list)]
 
 
-def check_folders_for_bitrot(computer_name):
+def check_folders_for_bitrot(computer_name, verbosity=1):
     if computer_name != node():
         print('Wrong argument for this computer')
         return False
@@ -614,8 +622,8 @@ def check_folders_for_bitrot(computer_name):
     for folder in (r'STFC\Documents', 'Misc', 'Pictures', 'Music'):
         print(folder)
         os.chdir(os.path.join(os.environ['UserProfile'], folder))
-        Bitrot(exclude_list=exclude_list).run()
+        Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
 
 
 if __name__ == '__main__':
-    check_folders_for_bitrot('DDAST0025')
+    check_folders_for_bitrot('DLAST0023', verbosity=2)
