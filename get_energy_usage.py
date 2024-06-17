@@ -31,7 +31,7 @@ def ymdhm(date):
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data():
+def get_usage_data(remove_incomplete_rows=True):
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -61,7 +61,7 @@ def get_usage_data():
 
     fill_requests = []
     data_titles = 'gas', 'electricity', 'carbon intensity'
-    all_fuel_data = [get_fuel_data(start_date, data_title) for data_title in data_titles]
+    all_fuel_data = [get_fuel_data(start_date, data_title, remove_incomplete_rows) for data_title in data_titles]
     print(all_fuel_data)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
@@ -133,11 +133,11 @@ def fill_old_carbon_data():
         return
 
 
-def get_fuel_data(start_date, fuel):
+def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
-        return get_co2_data(start_date)
+        return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': mac_address}  # AUTH is my MAC code
     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
@@ -147,7 +147,8 @@ def get_fuel_data(start_date, fuel):
     # print(response.json())
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
-    data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value').dropna()
+    data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value')
+    data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
@@ -164,14 +165,15 @@ def get_temp_data():
     return temp_data
 
 
-def get_co2_data(start_date, postcode='WA10'):
+def get_co2_data(start_date, postcode='WA10', remove_incomplete_rows=True):
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
-    Leave postcode blank to get national data."""
+    Leave postcode blank to get national data.
+    Specify remove_incomplete_rows=False to fill in -1 values where there are data gaps."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
     area = 'regional/' if postcode else ''
     suffix = f'/postcode/{postcode}' if postcode else ''
     url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
-    print(url)
+    # print(url)
     json = get_json(url)
     # path is data.data for regional
     df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
@@ -182,8 +184,9 @@ def get_co2_data(start_date, postcode='WA10'):
     # Add an extra day (sometimes necessary when data is missing)
     # pivot.loc[pivot.index[0] + pandas.to_timedelta(1, 'd')] = [pandas.NA] * 48
     # pivot = pivot.sort_index()
-    # pivot = pivot.fillna(-1)
-    return pivot.dropna()  # drop any incomplete rows
+
+    # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
+    return pivot.dropna() if remove_incomplete_rows else pivot.fillna(-1)
 
 
 def get_json(url, retries=3):
@@ -210,18 +213,18 @@ def get_co2_forecast():
 
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
-    start_date = today() - pandas.to_timedelta(6, 'd')  # to align to previous dataset
+    start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
     while True:
         start_date -= pandas.to_timedelta(14, 'd')
-        # data = get_co2_data(start_date, postcode='WA4')
-        # north = data.mean().mean()  # average of whole DataFrame
+        data = get_co2_data(start_date, postcode='OX11')
+        south = data.mean().mean()  # average of whole DataFrame
         data = get_co2_data(start_date, postcode='IV1')
         scotland = data.mean().mean()  # average of whole DataFrame
-        # data = get_co2_data(start_date, postcode='')  # national
-        # national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, scotland, sep='\t')
+        data = get_co2_data(start_date, postcode='')  # national
+        national = data.mean().mean()  # average of whole DataFrame
+        print(start_date, south, scotland, national, sep='\t')
         # return
 
 
 if __name__ == '__main__':
-    get_usage_data()
+    print(get_usage_data(remove_incomplete_rows=False))
