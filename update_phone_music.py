@@ -19,6 +19,7 @@ from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 import socket
+from folders import user_profile
 
 # REWRITE:
 # Database class to store music
@@ -47,7 +48,6 @@ import socket
 # need to repeat process to fine-tune?
 
 test_mode = False  # don't change anything!
-user_profile = os.environ['UserProfile']
 
 
 def human_format(num, precision=0):

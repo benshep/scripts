@@ -10,7 +10,7 @@ from PIL import Image
 from io import BytesIO
 from media import is_media_file
 from send2trash import send2trash
-
+from folders import music_folder
 
 def crop_cover(media):
     """Deal with album covers that have been turned into widescreen thumbnails."""
@@ -94,8 +94,6 @@ def show_status(progress):
 
 
 def get_youtube_playlists(just_crop_art=False):
-    user_profile = os.environ['UserProfile' if os.name == 'nt' else 'HOME']
-    music_folder = os.path.join(user_profile, 'Music')
     info_file = 'download.txt'  # info file contained in each folder
     archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'

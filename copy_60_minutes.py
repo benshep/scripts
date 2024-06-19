@@ -11,9 +11,8 @@ from media import is_media_file, artist_title
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
+from folders import user_profile, music_folder
 
-user_folder = os.environ['UserProfile']
-music_folder = os.path.join(user_folder, 'Music')
 copy_log_file = 'copied_already.txt'
 
 
@@ -196,8 +195,8 @@ def copy_60_minutes():
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
     extra_time += 5  # extra mile during Keckwick Lane closure period
-    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
-                        Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
+    copy_folder_list = [Folder(os.path.join(user_profile, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
+                        Folder(os.path.join(user_profile, '40 minutes'), 35, 40, 2)]
     print(copy_folder_list)
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:

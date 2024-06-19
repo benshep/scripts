@@ -6,6 +6,7 @@ import media
 import phrydy
 from time import sleep
 from send2trash import send2trash
+from folders import music_folder
 
 
 def explicit_songs(files):
@@ -36,8 +37,6 @@ def explicit_songs(files):
 
 def fix_tags(fix_function):
     """Loop through music folder and use the supplied fix_function to fix tags."""
-    user_profile = os.environ['UserProfile']
-    music_folder = os.path.join(user_profile, 'Music')
     os.chdir(music_folder)
     log_file = f'{__file__}.log'
     if os.path.exists(log_file):
@@ -55,8 +54,9 @@ def fix_tags(fix_function):
         # print(folder)
         open(log_file, 'w', encoding='utf-8').write(folder)
         os.chdir(folder)
-        files = list(filter(media.is_media_file, files))
-        fix_function(files)
+        # files = list(filter(media.is_media_file, files))
+        files = list(filter(lambda file: file.lower().endswith(('.jpeg', '.jpg')), files))
+        fix_function(files, folder)
         # sleep(2)
 
 
@@ -113,5 +113,12 @@ def find_320k_mp3s(files):
             send2trash(file)
 
 
+def delete_low_res_jpgs(files, folder):
+    if len(files) < 2:
+        return
+    print(f'<p>{folder}</p>')
+    print(*[f'<img src="{folder}\\{file}">\n' for file in files])
+
+
 if __name__ == '__main__':
-    fix_tags(find_320k_mp3s)
+    fix_tags(delete_low_res_jpgs)

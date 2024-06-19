@@ -366,9 +366,9 @@ def on_remote_desktop():
 
 def get_folders(target):
     # find user's "My Documents" dir
-    user_home = os.environ['UserProfile' if on_windows else 'HOME']
+    user_profile = os.environ['UserProfile' if on_windows else 'HOME']
     # where pictures are kept
-    pics_folder = os.path.join(user_home, 'Pictures')
+    pics_folder = os.path.join(user_profile, 'Pictures')
     # in case it's a symlink
     try:
         pics_folder = os.readlink(pics_folder)
@@ -376,7 +376,7 @@ def get_folders(target):
         pass  # not a link!
     # print(pics_folder)
     subfolder = {'desktop': 'wallpaper', 'lockscreen': 'lockscreen', 'phone': 'phone-pics'}[target]
-    wallpaper_dir = os.path.join(user_home, subfolder)
+    wallpaper_dir = os.path.join(user_profile, subfolder)
     os.makedirs(wallpaper_dir, exist_ok=True)
     return pics_folder, wallpaper_dir
 

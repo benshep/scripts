@@ -5,7 +5,7 @@ import os
 from shutil import copyfile
 import requests
 from send2trash import send2trash
-
+from folders import user_profile, docs_folder
 
 def replace_in_tag(text, tag_name, new_inner):
     start_tag, end_tag = f'<{tag_name}>', f'</{tag_name}>'
@@ -15,12 +15,11 @@ def replace_in_tag(text, tag_name, new_inner):
 
 def new_version():
     # folders
-    user_dir = os.environ['UserProfile']
     app_name = 'get_iplayer'
     choco_name = 'getiplayer'
-    app_folder = os.path.join(user_dir, 'GitHub', app_name)
+    app_folder = os.path.join(user_profile, 'GitHub', app_name)
     wiki_folder = f'{app_folder}.wiki'
-    choco_folder = os.path.join(user_dir, 'STFC', 'Documents', 'Scripts', choco_name)
+    choco_folder = os.path.join(docs_folder, 'Scripts', choco_name)
     os.chdir(choco_folder)
     [send2trash(filename) for filename in os.listdir() if filename.endswith('.nupkg')]
 
