@@ -7,6 +7,7 @@ import random
 from collections import namedtuple, Counter
 from datetime import datetime, timedelta
 from shutil import copy2  # to copy files
+from media import is_media_file, artist_title
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
@@ -14,16 +15,6 @@ from send2trash import send2trash
 user_folder = os.environ['UserProfile']
 music_folder = os.path.join(user_folder, 'Music')
 copy_log_file = 'copied_already.txt'
-
-
-def is_media_file(filename):
-    return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma'))
-
-
-def artist_title(filename):
-    """Return {artist} - {title} string for a given file."""
-    media_info = phrydy.MediaFile(filename)
-    return f'{media_info.artist} - {media_info.title}'.lower()
 
 
 def find_with_length(albums, low, high):
@@ -35,7 +26,7 @@ def find_with_length(albums, low, high):
         return None
 
 
-def copy_album(album, files, existing_folder=None):
+def copy_album(album: tuple[str, str, str], files, existing_folder=None):
     """Copy a given album to the copy folder."""
     bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use these in filenames
 
@@ -137,7 +128,7 @@ def check_folder_list(copy_folder_list):
             print(subfolder)
             os.chdir(subfolder)
             files = os.listdir()
-            played_count = len([filename for filename in files if artist_title(filename) in scrobbles])
+            played_count = len([filename for filename in files if artist_title(filename).lower() in scrobbles])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
             if played_count >= file_count / 2:
@@ -179,7 +170,8 @@ def copy_albums(copy_folder_list, albums):
                     print(key, int(duration))
                     folder_name = copy_album(key, file_list)
                     break
-                elif duration < copy_folder.min_length:  # less than we want? look for another one to fill the rest of the time
+                elif duration < copy_folder.min_length:
+                    # less than we want? look for another one to fill the rest of the time
                     print(key, int(duration))
                     gap_min_length = copy_folder.min_length - duration
                     gap_max_length = copy_folder.max_length - duration
@@ -191,7 +183,8 @@ def copy_albums(copy_folder_list, albums):
                     new_duration = sum(second_file_list.values())
                     print(second_key, int(new_duration))
                     duration += new_duration
-                    folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))  # do first one first!
+                    # do first one first!
+                    folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))
                     break
             folder_count += 1
             os.rename(folder_name, f'{folder_name} [{duration:.0f}]')  # rename with the total length
@@ -203,7 +196,7 @@ def copy_60_minutes():
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
     extra_time += 5  # extra mile during Keckwick Lane closure period
-    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 4),
+    copy_folder_list = [Folder(os.path.join(user_folder, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
                         Folder(os.path.join(user_folder, '40 minutes'), 35, 40, 2)]
     print(copy_folder_list)
     toast, copy_folder_list = check_folder_list(copy_folder_list)
