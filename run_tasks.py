@@ -35,6 +35,7 @@ from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
 from get_access_data import check_prev_week
 from todos_from_notes import todos_from_notes
 from get_payslips import get_payslips
+from catering_bookings import get_bookings
 
 # restart code
 # imported_files = set(inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f))
