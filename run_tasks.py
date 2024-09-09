@@ -36,6 +36,7 @@ from get_access_data import check_prev_week
 from todos_from_notes import todos_from_notes
 from get_payslips import get_payslips
 from catering_bookings import get_bookings
+from package_updates import find_new_python_packages
 
 # restart code
 # imported_files = set(inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f))
