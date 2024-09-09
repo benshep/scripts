@@ -151,7 +151,7 @@ def get_scrobbles():
 
 def get_subfolders():
     """Return the subfolders in a folder that have a date prefix."""
-    return [folder for folder in os.listdir() if folder.startswith('20')]
+    return [folder for folder in os.listdir() if folder.startswith('20') and os.path.isdir(folder)]
 
 
 def copy_albums(copy_folder_list, albums):
