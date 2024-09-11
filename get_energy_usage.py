@@ -77,16 +77,17 @@ def get_usage_data(remove_incomplete_rows=True):
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
+        fill_row_count = last_row - fill_top_row - 1
         update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
         google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
-        fill_count = 53 if fuel == 'carbon intensity' else 2  # fill 'carbon' columns too (elec use x carbon intensity)
-        fill_requests.append(fill_request(fuel_column + 47, fill_count, last_row - fill_top_row - 1))
+        fill_col_count = 53 if fuel == 'carbon intensity' else 2  # fill 'carbon' columns too (elec use x intensity)
+        fill_requests.append(fill_request(fuel_column + 47, fill_col_count, fill_row_count))
     # fill in date column
     update_range = google_sheets.get_range_spec(1, new_data_row, 1, last_row)
     new_dates = [[date] for date in dmy(pandas.to_datetime(fuel_data.index), False).tolist()]
     google_sheets.update_cells(sheet_id, sheet_name, update_range, new_dates)
-    # fill down BST helper column
-    fill_requests.append(fill_request(1, 1, last_row - fill_top_row - 1))
+    fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
+    fill_requests.append(fill_request(253, 4, fill_row_count))  # Octopus Tracker rates (IT:IW)
     # Fill formulae from first row
     request_body = {'requests': [fill_requests]}
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
@@ -175,6 +176,7 @@ def get_co2_data(start_date, postcode='WA10', remove_incomplete_rows=True):
     url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
     # print(url)
     json = get_json(url)
+    # print(json)
     # path is data.data for regional
     df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
     df['from'] = pandas.to_datetime(df['from'])
@@ -214,17 +216,20 @@ def get_co2_forecast():
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
     start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
-    while True:
-        start_date -= pandas.to_timedelta(14, 'd')
+    start_date = pandas.to_datetime('2023-12-29')
+    while start_date < today():
+        # start_date -= pandas.to_timedelta(14, 'd')
         data = get_co2_data(start_date, postcode='OX11')
         south = data.mean().mean()  # average of whole DataFrame
         data = get_co2_data(start_date, postcode='IV1')
         scotland = data.mean().mean()  # average of whole DataFrame
         data = get_co2_data(start_date, postcode='')  # national
         national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, south, scotland, national, sep='\t')
+        print(start_date, '', '', south, scotland, national, sep='\t')
+        start_date += pandas.to_timedelta(14, 'd')
         # return
 
 
 if __name__ == '__main__':
     print(get_usage_data(remove_incomplete_rows=False))
+    # get_old_data_avg()
