@@ -99,7 +99,7 @@ def get_usage_data(remove_incomplete_rows=True):
         gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
         highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
         summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                   f"{row['from'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+                   f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
 
     return summary
 
@@ -171,18 +171,19 @@ def get_co2_data(start_date, postcode='WA10', remove_incomplete_rows=True):
     Leave postcode blank to get national data.
     Specify remove_incomplete_rows=False to fill in -1 values where there are data gaps."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
+    end_date -= pandas.to_timedelta(1, 'd')
     area = 'regional/' if postcode else ''
     suffix = f'/postcode/{postcode}' if postcode else ''
-    url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:30Z/{ymd(end_date)}T00:00Z{suffix}'
+    url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
     # path is data.data for regional
     df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
-    df['from'] = pandas.to_datetime(df['from'])
+    df['to'] = pandas.to_datetime(df['to'])
     # use 'actual' value where available with national. For regional, we only see 'forecast' values
     df['intensity'] = df['intensity.forecast'] if postcode else df['intensity.actual'].fillna(df['intensity.forecast'])
-    pivot = pandas.pivot_table(df, index=df['from'].dt.date, columns=df['from'].dt.time, values='intensity')
+    pivot = pandas.pivot_table(df, index=df['to'].dt.date, columns=df['to'].dt.time, values='intensity')
     # Add an extra day (sometimes necessary when data is missing)
     # pivot.loc[pivot.index[0] + pandas.to_timedelta(1, 'd')] = [pandas.NA] * 48
     # pivot = pivot.sort_index()
@@ -209,7 +210,7 @@ def get_co2_forecast():
     now = pandas.to_datetime("now")
     json = get_json(f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(now, time=True)}/fw48h/postcode/WA10')
     df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
-    df['from'] = pandas.to_datetime(df['from'])
+    df['to'] = pandas.to_datetime(df['to'])
     return df
 
 
