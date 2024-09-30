@@ -1,14 +1,18 @@
 import json
+import time
 import urllib.parse
 
 import pandas
 import requests
+from tabulate import tabulate
 
 import google_sheets
 from energy_credentials import mac_address
 from openweather import api_key
 
+api_url = 'https://api.carbonintensity.org.uk'
 base_url = 'https://consumer-api.data.n3rgy.com'
+home_postcode = 'WA10'
 
 
 def today():
@@ -93,7 +97,7 @@ def get_usage_data(remove_incomplete_rows=True):
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
 
     summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
-    forecast = get_co2_forecast()
+    forecast = get_regional_intensity()
     for minmax in ('min', 'max'):
         row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
         gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
@@ -166,7 +170,7 @@ def get_temp_data():
     return temp_data
 
 
-def get_co2_data(start_date, postcode='WA10', remove_incomplete_rows=True):
+def get_co2_data(start_date, postcode=home_postcode, remove_incomplete_rows=True):
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     Leave postcode blank to get national data.
     Specify remove_incomplete_rows=False to fill in -1 values where there are data gaps."""
@@ -174,7 +178,7 @@ def get_co2_data(start_date, postcode='WA10', remove_incomplete_rows=True):
     end_date -= pandas.to_timedelta(1, 'd')
     area = 'regional/' if postcode else ''
     suffix = f'/postcode/{postcode}' if postcode else ''
-    url = f'https://api.carbonintensity.org.uk/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
+    url = f'{api_url}/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
@@ -205,10 +209,10 @@ def get_json(url, retries=3):
     return json
 
 
-def get_co2_forecast():
+def get_regional_intensity(start_time='now', postcode=home_postcode):
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
-    now = pandas.to_datetime("now")
-    json = get_json(f'https://api.carbonintensity.org.uk/regional/intensity/{ymd(now, time=True)}/fw48h/postcode/WA10')
+    start_time = ymd(pandas.to_datetime(start_time), time=True)
+    json = get_json(f'{api_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
     df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
     df['to'] = pandas.to_datetime(df['to'])
     return df
@@ -231,6 +235,20 @@ def get_old_data_avg():
         # return
 
 
+def get_mix(start_time='now', postcode=home_postcode):
+    """Return the regional energy mix for a 48h period."""
+    data = get_regional_intensity(start_time, postcode)
+    return pandas.DataFrame.from_dict([
+        {'to': end_datetime, 'intensity': intensity, **{mix_dict['fuel']: mix_dict['perc']
+                                for mix_dict in generation_mix
+                                }}
+        for end_datetime, intensity, generation_mix in
+        zip(data['to'], data['intensity.forecast'], data['generationmix'])])
+
+
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=False))
+    # print(get_usage_data(remove_incomplete_rows=False))
     # get_old_data_avg()
+    while True:
+        print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
+        time.sleep(30 * 60)
