@@ -9,6 +9,8 @@ import mediafile
 import pylast
 import json  # to save data
 import shutil
+
+import folders
 import media
 import google_sheets
 from lastfm import lastfm  # contains secrets, so don't show them here
@@ -246,12 +248,13 @@ def get_album_info(media_files):
 
 def check_radio_files(scrobbled_titles):
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
-    scrobbled_radio = []
-    os.chdir(os.path.join(user_profile, 'Radio'))
+    scrobbled_radio = []  # list of played radio files to delete
+    first_unheard = ''  # first file in the list that hasn't been played
+    extra_played_count = 0  # more files that have been played, after one that apparently hasn't
+    os.chdir(folders.radio_folder)
     radio_files = os.listdir()
     print(f'{len(radio_files)} files in folder')
     # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
-    checking_scrobbles = True
     file_count = 0
     # min_date = None
     bump_date = []
@@ -276,42 +279,47 @@ def check_radio_files(scrobbled_titles):
         tags_changed = False
         # total_hours += tags.length / 3600
 
-        if checking_scrobbles:
-            track_title = media.artist_title(tags)
-            if track_title.lower() in scrobbled_titles:
-                print(f'[{file_count}] Played: {track_title}')
-                scrobbled_radio.append(file)
+        track_title = media.artist_title(tags)
+        if track_title.lower() in scrobbled_titles:
+            print(f'[{file_count}] ✔ {track_title}')
+            if not first_unheard:  # only found played files so far
+                scrobbled_radio.append(file)  # possibly delete this one
             else:
-                print(f'[{file_count}] Not played: {track_title}')
-                checking_scrobbles = False  # stop here - don't keep searching
+                extra_played_count += 1  # don't delete, but flag as played for later
+        elif not first_unheard:
+            print(f'[{file_count}] ❌ {track_title}')
+            first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
 
-        if tags.title in ('', 'Untitled Episode', None):  # unhelpful titles - set it from the filename instead
+        # unhelpful titles - set it from the filename instead
+        if tags.title in ('', 'Untitled Episode', None) \
+                or (tags.title.lower() == tags.title and '_' in tags.title and ' ' not in tags.title):
             print(f'[{file_count}] Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
 
         if not tags.albumartist:
             if artist := tags.artist or which_artist.get(tags.album):
-                print(f'[{file_count}] Set {file} album artist to {artist}' + (' (guessed from album)' if tags.artist is None else ''))
+                print(f'[{file_count}] Set {file} album artist to {artist}' +
+                      (' (guessed from album)' if tags.artist is None else ''))
                 tags.artist = artist
                 tags.albumartist = artist
                 tags_changed = True
 
         # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
         if tags.album in which_artist:
-            if which_artist[tags.album] != tags.artist:
+            if which_artist[tags.album] is not None and which_artist[tags.album] != tags.artist:
                 which_artist[tags.album] = None  # mismatch
-                print(f'[{file_count}] {tags.album}: (multiple artists)')
+                print(f'[{file_count}] (multiple artists) - {tags.album}')
         else:  # not seen this album before
             which_artist[tags.album] = tags.artist
-            print(f'[{file_count}] {tags.album}: {tags.artist}')
+            print(f'[{file_count}] {tags.artist} - {tags.album}')
             # is it a new album fairly far down the list?
-            if ('[bumped]' not in file  # don't bump anything more than once
+            if ('(bumped)' not in file  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
                     and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_date.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file}\n'
-                os.rename(file, f'{new_date} [bumped] {file[11:]}')
+                os.rename(file, f'{new_date} (bumped) {file[11:]}')
 
         if tags_changed and not test_mode:
             tags.save()
@@ -320,6 +328,8 @@ def check_radio_files(scrobbled_titles):
         toast += f'🗑️ {os.path.splitext(file)[0]}\n'
         if not test_mode and os.path.exists(file):
             send2trash(file)
+    if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
+        toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
     # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
     return toast
 
@@ -364,7 +374,7 @@ def check_radio_hours_added():
 
 def bump_down():
     """Bump an album down the list by increasing the date in the filename."""
-    os.chdir(os.path.join(user_profile, 'Radio'))
+    os.chdir(folders.radio_folder)
     radio_files = os.listdir()
     next_date = None
     for file in sorted(radio_files, reverse=True):  # get most recent first
@@ -389,4 +399,5 @@ def bump_down():
 
 if __name__ == '__main__':
     # get_artists(os.path.join(user_profile, 'Music'))
-    bump_down()
+    # bump_down()
+    print(update_phone_music())
