@@ -126,7 +126,7 @@ def check_folder_list(copy_folder_list):
         for subfolder in subfolders:
             print(subfolder)
             os.chdir(subfolder)
-            files = os.listdir()
+            files = [file for file in os.listdir() if is_media_file(file)]
             played_count = len([filename for filename in files if artist_title(filename).lower() in scrobbles])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
