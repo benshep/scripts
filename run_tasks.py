@@ -95,7 +95,7 @@ def run_tasks():
                 last_result = properties.get('Last result')
                 now = datetime.now()
                 next_run_time = datetime.strptime(properties.get('Next run'), time_format)
-                if next_run_time > now and last_result == 'Success':
+                if next_run_time > now and last_result in ('Success', 'Postponed'):
                     next_task_time = min(next_task_time, next_run_time)
                     continue
 
