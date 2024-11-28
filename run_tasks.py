@@ -1,4 +1,5 @@
 import contextlib
+import subprocess
 import sys
 import os
 import inspect
@@ -39,24 +40,14 @@ from get_payslips import get_payslips
 from catering_bookings import get_bookings
 from package_updates import find_new_python_packages
 
-# restart code
-# imported_files = set(inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f))
-# print(imported_files)
-# start_dir = os.getcwd()
-# mod_time = os.path.getmtime(__file__)
-# for i in range(10):
-#     print(i)
-#     sleep(10)
-#     if mod_time != os.path.getmtime(__file__):
-#         print('Restarting')
-#         os.chdir(start_dir)
-#         subprocess.Popen([sys.executable] + sys.argv)
-#         exit()
-
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
 sheet_name = 'Sheet1'
 
+start_dir = os.getcwd()
+imports = {inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f)}
+imports = {file: os.path.getmtime(file) for file in imports if 'envs' not in file}  # my code, not library stuff
+imports[__file__] = os.path.getmtime(__file__)  # this file too
 
 def update_cell(row, col, string):
     google_sheets.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
@@ -167,6 +158,14 @@ def run_tasks():
         os.system(f'title ⌛️ {next_time_str}')  # set title of window
         while datetime.now() < next_task_time:
             sleep(60)
+
+        # restart code
+        for file, mod_time in imports.items():
+            if mod_time != os.path.getmtime(file):
+                print(f'Change detected in {file}\nRestarting\n\n')
+                os.chdir(start_dir)
+                subprocess.Popen([sys.executable] + sys.argv)
+                exit()
 
 
 if __name__ == '__main__':
