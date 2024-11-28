@@ -140,7 +140,10 @@ def run_tasks():
                     error_lines = format_exc().split('\n')
                     result = '\n'.join(error_lines[4:])
                     failures.add(function_name)
-                    toast = ', '.join(failures) if len(failures) > 1 else f'{function_name}: {result}'
+                    if len(failures) > 1:
+                        toast = ', '.join(failures)
+                    elif last_result != result:  # don't notify if we got the same error as last time
+                        toast = f'{function_name}: {result}'
 
                 print(result)
                 update_cell(i + 2, get_column('Last result'), result)
