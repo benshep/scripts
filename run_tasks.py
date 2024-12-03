@@ -3,6 +3,9 @@ import subprocess
 import sys
 import os
 import inspect
+import cryptography.utils
+import warnings
+warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
 from time import sleep
 from traceback import format_exc
 from datetime import datetime, timedelta
@@ -48,6 +51,7 @@ start_dir = os.getcwd()
 imports = {inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f)}
 imports = {file: os.path.getmtime(file) for file in imports if 'envs' not in file}  # my code, not library stuff
 imports[__file__] = os.path.getmtime(__file__)  # this file too
+
 
 def update_cell(row, col, string):
     google_sheets.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
