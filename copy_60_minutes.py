@@ -1,14 +1,18 @@
 #!python3
 # -*- coding: utf-8 -*-
 import os
+import time
+
 import phrydy  # to get media data
+import requests
+
 from lastfm import lastfm
 import random
 from collections import namedtuple, Counter
 from datetime import datetime, timedelta
 from shutil import copy2  # to copy files
 from media import is_media_file, artist_title
-from pushbullet import Pushbullet  # to show notifications
+import pushbullet
 from pushbullet_api_key import api_key  # local file, keep secret!
 from send2trash import send2trash
 from folders import user_profile, music_folder
@@ -194,7 +198,6 @@ def copy_albums(copy_folder_list, albums):
 def copy_60_minutes():
     Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
-    extra_time += 5  # extra mile during Keckwick Lane closure period
     copy_folder_list = [Folder(os.path.join(user_profile, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
                         Folder(os.path.join(user_profile, '40 minutes'), 35, 40, 2)]
     print(copy_folder_list)
@@ -221,11 +224,57 @@ def list_by_length(albums, max_length=0):
         print(length, length_counter[length], sep='\t')
 
 
+def get_pushes(pb, modified_after=None, limit=None, filter_inactive=True, wait_for_reset=False, verbose=False):
+    """Version of get_pushes from pushbullet.py that allows for rate limiting.
+    See https://docs.pushbullet.com/#ratelimiting
+    If wait_for_reset is True, it will wait until the rate limit gets reset,
+    otherwise it just returns what it has so far."""
+    data = {"modified_after": modified_after, "limit": limit}
+    if filter_inactive:
+        data['active'] = "true"
+
+    pushes_list = []
+    previous_remaining = 0
+    used = 0
+    while True:
+        r = pb._session.get(pb.PUSH_URL, params=data)
+        if r.status_code != requests.codes.ok:
+            raise pushbullet.PushbulletError(r.text)
+
+        js = r.json()
+        # The units are a sort of generic 'cost' number. A request costs 1 and a database operation costs 4.
+        # So reading 500 pushes costs about 500 database operations + 1 request = 500*4 + 1 = 2001
+        reset = int(r.headers.get('X-Ratelimit-Reset'))  # when it resets (integer seconds in Unix Time)
+        rate_limit = int(r.headers.get('X-Ratelimit-Limit'))  # what the ratelimit is
+        remaining = int(r.headers.get('X-Ratelimit-Remaining'))  # how much you have remaining
+        if previous_remaining > 0:
+            used = previous_remaining - remaining
+        previous_remaining = remaining
+        reset_time = datetime.fromtimestamp(reset)
+        if verbose:
+            print(f'{reset_time=} {rate_limit=} {remaining=} {used=}')
+        pushes_list += js.get("pushes")
+        if remaining < 2 * used:  # we could use up to 2x more next time (seems to be mostly 85 but sometimes lower)
+            if wait_for_reset:
+                print('Waiting for rate limit reset at', reset_time)
+                time.sleep(reset - datetime.now().timestamp() + 5)
+            else:
+                break
+        if 'cursor' in js and (not limit or len(pushes_list) < limit):
+            if verbose:
+                print(f'Got {len(pushes_list)} pushes')
+            data['cursor'] = js['cursor']
+        else:
+            break
+
+    return pushes_list
+
+
 def check_previous():
     """Fetch previous toasts, and determine how many hours were added to the radio files on average."""
-    pb = Pushbullet(api_key)
-    start = datetime.now() - timedelta(days=360)
-    pushes = pb.get_pushes(modified_after=start.timestamp())
+    pb = pushbullet.Pushbullet(api_key)
+    start = datetime.now() - timedelta(days=1000)
+    pushes = get_pushes(pb, modified_after=start.timestamp(), wait_for_reset=True, verbose=True)
     music_updates = [push for push in pushes if push.get('title') == '🎵 Commute Music']
 
     for update in music_updates:
@@ -235,4 +284,4 @@ def check_previous():
 
 
 if __name__ == '__main__':
-    copy_60_minutes()
+    check_previous()
