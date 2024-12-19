@@ -7,11 +7,12 @@ import requests
 from tabulate import tabulate
 
 import google_sheets
-from energy_credentials import mac_address
+import energy_credentials
 from openweather import api_key
 
-api_url = 'https://api.carbonintensity.org.uk'
 base_url = 'https://consumer-api.data.n3rgy.com'
+carbon_int_url = 'https://api.carbonintensity.org.uk'
+octopus_url = 'https://api.octopus.energy/v1'
 home_postcode = 'WA10'
 
 
@@ -40,7 +41,8 @@ def get_usage_data(remove_incomplete_rows=True):
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
     columns = google_sheets.get_data(sheet_id, sheet_name, '1:1')[0]
-    column_a = [cell[0] if len(cell) > 0 else '' for cell in (google_sheets.get_data(sheet_id, sheet_name, 'A:A'))]
+    column_a = google_sheets.get_data(sheet_id, sheet_name, 'A:A')
+    column_a = [cell[0] if len(cell) > 0 else '' for cell in column_a]  # transpose, flatten
     assert column_a[0] == 'Date'
     assert column_a[1] == 'Hour'
     new_data_row = len(column_a) + 1  # one-based when using update_cell function - this is the first empty row
@@ -50,8 +52,7 @@ def get_usage_data(remove_incomplete_rows=True):
         return
 
     sheet = google_sheets.spreadsheets.get(spreadsheetId=sheet_id).execute()
-    grid_id = next(
-        grid['properties']['sheetId'] for grid in sheet['sheets'] if grid['properties']['title'] == sheet_name)
+    grid_id = next(g['properties']['sheetId'] for g in sheet['sheets'] if g['properties']['title'] == sheet_name)
 
     def fill_request(start_column, column_count, row_count):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
@@ -138,13 +139,13 @@ def fill_old_carbon_data():
         return
 
 
-def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
+def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
         return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
-    headers = {'Authorization': mac_address}  # AUTH is my MAC code
+    headers = {'Authorization': energy_credentials.mac_address}  # AUTH is my MAC code
     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
     print(url)
@@ -153,6 +154,31 @@ def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
     data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value')
+    data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
+    return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
+
+
+def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
+    """Use the Octopus API to get kWh data for gas or electricity."""
+    print(f'Fetching {fuel} data beginning {dmy(start_date)}')
+    if 'carbon intensity' in fuel:
+        return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
+
+    # https://www.guylipman.com/octopus/api_guide.html#s3
+    # spreadsheet expects *end* times going from 00:00 to 23:30 - shift requested time back by half an hour
+    half_hour = pandas.to_timedelta(30, 'min')
+    start_date -= half_hour
+    end_date = today() - half_hour
+    params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True),
+              'period_to': ymd(end_date, True), 'order_by': 'period'}
+    url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
+                    energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
+    print(url)
+    response = requests.get(url, auth=(energy_credentials.octopus_api_key, ''))
+    # print(response.json())
+    df = pandas.json_normalize(response.json(), record_path='results')
+    df.interval_end = pandas.to_datetime(df.interval_end)
+    data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time, values='consumption')
     data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
@@ -178,7 +204,7 @@ def get_co2_data(start_date, postcode=home_postcode, remove_incomplete_rows=True
     end_date -= pandas.to_timedelta(1, 'd')
     area = 'regional/' if postcode else ''
     suffix = f'/postcode/{postcode}' if postcode else ''
-    url = f'{api_url}/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
+    url = f'{carbon_int_url}/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
@@ -212,7 +238,7 @@ def get_json(url, retries=3):
 def get_regional_intensity(start_time='now', postcode=home_postcode):
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     start_time = ymd(pandas.to_datetime(start_time), time=True)
-    json = get_json(f'{api_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
+    json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
     df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
     df['to'] = pandas.to_datetime(df['to'])
     return df
@@ -221,16 +247,20 @@ def get_regional_intensity(start_time='now', postcode=home_postcode):
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
     start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
-    start_date = pandas.to_datetime('2023-12-29')
+    start_date = pandas.to_datetime('2018-05-18')
     while start_date < today():
         # start_date -= pandas.to_timedelta(14, 'd')
-        data = get_co2_data(start_date, postcode='OX11')
-        south = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, postcode='IV1')
+        # data = get_co2_data(start_date, postcode='OX11')
+        # south = data.mean().mean()  # average of whole DataFrame
+        data = get_co2_data(start_date, postcode='EH9')
         scotland = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, postcode='')  # national
-        national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, '', '', south, scotland, national, sep='\t')
+        # data = get_co2_data(start_date, postcode='')  # national
+        # national = data.mean().mean()  # average of whole DataFrame
+        print(start_date, '', '',
+              # south,
+              scotland,
+              # national,
+              sep='\t')
         start_date += pandas.to_timedelta(14, 'd')
         # return
 
@@ -247,8 +277,10 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=False))
+    print(get_usage_data(remove_incomplete_rows=False))
     # get_old_data_avg()
-    while True:
-        print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
-        time.sleep(30 * 60)
+    # while True:
+    #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
+    #     time.sleep(30 * 60)
+    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(10, 'd')
+    # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
