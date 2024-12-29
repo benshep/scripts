@@ -105,7 +105,7 @@ def run_tasks():
                     parameters = float(parameters_raw)
                 except ValueError:  # it's not a float, assume string
                     parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
-                os.system(f'title ➡️ {icon} {function_name}')  # set title of window
+                os.system(f'title {icon} {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
                 # return_value can be:
