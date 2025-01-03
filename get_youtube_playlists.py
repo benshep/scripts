@@ -74,7 +74,10 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
             title = title[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
         title = title.strip('"')  # "Song Name" -> Song Name
         media.title = title
-        self.to_screen(f'Tagging {name} with {self.artist = }, {self.album = }, {track=}, {title=}')
+        pos = media.album.find('Official')
+        if pos > 1:  # e.g. Album Name (Official Audio)
+            media.album = media.album[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
+        self.to_screen(f'Tagged {name} with {self.artist = }, {media.album = }, {track=}, {title=}')
         crop_cover(media)
         media.save()
         return [], info
