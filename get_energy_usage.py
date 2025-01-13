@@ -96,15 +96,16 @@ def get_usage_data(remove_incomplete_rows=True):
     # Fill formulae from first row
     request_body = {'requests': [fill_requests]}
     google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
-
+    # Get the summary cell to go in a toast
     summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
-    forecast = get_regional_intensity()
-    for minmax in ('min', 'max'):
-        row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
-        gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
-        highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
-        summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                   f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+    # Add the minimum and maximum forecasted intensity for the next 2 days
+    if forecast := get_regional_intensity():  # will be None if this API call fails
+        for minmax in ('min', 'max'):
+            row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
+            gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
+            highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
+            summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
+                       f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
 
     return summary
 
@@ -239,7 +240,10 @@ def get_regional_intensity(start_time='now', postcode=home_postcode):
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     start_time = ymd(pandas.to_datetime(start_time), time=True)
     json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
-    df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
+    try:
+        df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
+    except KeyError:  # problem with JSON, maybe forecasts not working?
+        return None
     df['to'] = pandas.to_datetime(df['to'])
     return df
 
@@ -277,7 +281,8 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=False))
+    # print(get_usage_data(remove_incomplete_rows=False))
+    print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
