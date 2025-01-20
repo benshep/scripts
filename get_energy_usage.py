@@ -6,7 +6,7 @@ import pandas
 import requests
 from tabulate import tabulate
 
-import google_sheets
+import google
 import energy_credentials
 from openweather import api_key
 
@@ -40,8 +40,8 @@ def get_usage_data(remove_incomplete_rows=True):
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
-    columns = google_sheets.get_data(sheet_id, sheet_name, '1:1')[0]
-    column_a = google_sheets.get_data(sheet_id, sheet_name, 'A:A')
+    columns = google.get_data(sheet_id, sheet_name, '1:1')[0]
+    column_a = google.get_data(sheet_id, sheet_name, 'A:A')
     column_a = [cell[0] if len(cell) > 0 else '' for cell in column_a]  # transpose, flatten
     assert column_a[0] == 'Date'
     assert column_a[1] == 'Hour'
@@ -51,7 +51,7 @@ def get_usage_data(remove_incomplete_rows=True):
     if start_date >= today():  # no need to collect more data
         return
 
-    sheet = google_sheets.spreadsheets.get(spreadsheetId=sheet_id).execute()
+    sheet = google.spreadsheets.get(spreadsheetId=sheet_id).execute()
     grid_id = next(g['properties']['sheetId'] for g in sheet['sheets'] if g['properties']['title'] == sheet_name)
 
     def fill_request(start_column, column_count, row_count):
@@ -83,21 +83,21 @@ def get_usage_data(remove_incomplete_rows=True):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
         fill_row_count = last_row - fill_top_row - 1
-        update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
-        google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
+        update_range = google.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
+        google.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
         fill_col_count = 53 if fuel == 'carbon intensity' else 2  # fill 'carbon' columns too (elec use x intensity)
         fill_requests.append(fill_request(fuel_column + 47, fill_col_count, fill_row_count))
     # fill in date column
-    update_range = google_sheets.get_range_spec(1, new_data_row, 1, last_row)
+    update_range = google.get_range_spec(1, new_data_row, 1, last_row)
     new_dates = [[date] for date in dmy(pandas.to_datetime(fuel_data.index), False).tolist()]
-    google_sheets.update_cells(sheet_id, sheet_name, update_range, new_dates)
+    google.update_cells(sheet_id, sheet_name, update_range, new_dates)
     fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
     fill_requests.append(fill_request(253, 4, fill_row_count))  # Octopus Tracker rates (IT:IW)
     # Fill formulae from first row
     request_body = {'requests': [fill_requests]}
-    google_sheets.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
+    google.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
     # Get the summary cell to go in a toast
-    summary = google_sheets.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
+    summary = google.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
     if forecast := get_regional_intensity():  # will be None if this API call fails
         for minmax in ('min', 'max'):
@@ -114,8 +114,8 @@ def fill_old_carbon_data():
     """Fill in carbon data retrospectively."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
-    columns = google_sheets.get_data(sheet_id, sheet_name, '1:1')[0]
-    column_a = [cell[0] if len(cell) > 0 else '' for cell in (google_sheets.get_data(sheet_id, sheet_name, 'A:A'))]
+    columns = google.get_data(sheet_id, sheet_name, '1:1')[0]
+    column_a = [cell[0] if len(cell) > 0 else '' for cell in (google.get_data(sheet_id, sheet_name, 'A:A'))]
     assert column_a[0] == 'Date'
     assert column_a[1] == 'Hour'
     start_date = pandas.to_datetime('2023-01-01 00:00')
@@ -132,8 +132,8 @@ def fill_old_carbon_data():
         for fuel, fuel_data in zip(data_titles, all_fuel_data):
             fuel_column = columns.index(fuel.title()) + 1
             last_row = new_data_row + len(fuel_data) - 1
-            update_range = google_sheets.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
-            google_sheets.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
+            update_range = google.get_range_spec(fuel_column, new_data_row, fuel_column + 47, last_row)
+            google.update_cells(sheet_id, sheet_name, update_range, fuel_data.values.tolist())
 
         start_date += pandas.to_timedelta(14, 'd')
         new_data_row += 14
@@ -281,8 +281,8 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=False))
-    print(get_regional_intensity())
+    print(get_usage_data(remove_incomplete_rows=False))
+    # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
