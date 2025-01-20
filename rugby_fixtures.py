@@ -32,7 +32,6 @@ def get_home_fixtures():
         start_time = datetime.strptime(match['startDateTime'], '%Y-%m-%dT%H:%M:%S.000%z')
         bbc_id = match['id']
         if home_team == 'St Helens':
-            print(bbc_id, start_time, home_team, 'vs', away_team)
             fixtures.append(Fixture(bbc_id, start_time, home_team, away_team))
     return fixtures
 
@@ -48,6 +47,7 @@ def get_calendar_events():
 
 
 def update_saints_calendar():
+    toast = ''
     fixtures = get_home_fixtures()
     my_events = get_calendar_events()
     for match in fixtures:
@@ -57,7 +57,6 @@ def update_saints_calendar():
                  'description': match.id,
                  'start': {'dateTime': match.time.isoformat()},
                  'end': {'dateTime': (match.time + timedelta(hours=2)).isoformat()}}
-        print(match_title, match.time)
         try:
             calendar_event = next(event for event in my_events if event['description'] == match.id)
             # date/time changed?
@@ -65,11 +64,12 @@ def update_saints_calendar():
             start = datetime.strptime(start_time['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
             start = start.replace(tzinfo=timezone.utc)
             if start != match.time:
-                print(f'Updated {match_title} to {start}')
+                toast += f'Updated {match_title} to {start}\n'
                 google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
         except StopIteration:  # not found
-            print(f'New match: {match_title} at {match.time}')
+            toast += f'New match: {match_title} at {match.time}\n'
             google_calendar.insert(calendarId=calendar_id, body=event).execute()
+    return toast
 
 if __name__ == '__main__':
-    update_saints_calendar()
+    print(update_saints_calendar())
