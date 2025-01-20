@@ -29,6 +29,7 @@ from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
 from bitrot import check_folders_for_bitrot
 from erase_trailers import erase_trailers
+from rugby_fixtures import update_saints_calendar
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'STFC', 'Documents', 'Scripts'))
 from oracle_staff_check import annual_leave_check, otl_submit
