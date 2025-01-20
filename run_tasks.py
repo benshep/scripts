@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from platform import node
 
 import psutil
-import google
+import google_api
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
@@ -54,7 +54,7 @@ imports[__file__] = os.path.getmtime(__file__)  # this file too
 
 
 def update_cell(row, col, string):
-    google.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
+    google_api.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
 
 
 def run_tasks():
@@ -62,16 +62,16 @@ def run_tasks():
                     'Last run', 'Machine', 'Last result', 'Next run']
 
     def get_column(name):
-        return google.get_column(column_names.index(name) + 1)
+        return google_api.get_column(column_names.index(name) + 1)
 
-    last_col = google.get_column(len(column_names))
+    last_col = google_api.get_column(len(column_names))
     time_format = "%d/%m/%Y %H:%M"
     period_col = column_names.index('Period')
     pushbullet = Pushbullet(api_key)
     while True:
         print('Fetching data from spreadsheet')
         try:
-            data = google.get_data(sheet_id, sheet_name, f'A:{last_col}')
+            data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
         except Exception as e:
             print(e)
             sleep(60)

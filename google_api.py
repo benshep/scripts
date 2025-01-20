@@ -33,6 +33,7 @@ sheets = spreadsheets.values()
 
 # Call the Calendar API
 calendar = build('calendar', 'v3', credentials=creds)
+print(calendar)
 
 
 def get_data(sheet_id, sheet_name, data_range):

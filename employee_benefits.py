@@ -4,7 +4,7 @@ from time import sleep
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from googleapiclient.discovery import build
-import google
+import google_api
 import benefits_credentials
 
 benefits_sheet = '1o6Y41H0RAZXNxhNJlVqHh-xlATaVdst2T1QuWctf-MM'
@@ -35,7 +35,7 @@ def get_vivup(web):
     # outlook = win32com.client.Dispatch('Outlook.Application')
     # namespace = outlook.GetNamespace('MAPI')
     # inbox = namespace.GetDefaultFolder(6)
-    emails = build('gmail', 'v1', credentials=google.google_creds()).users().messages()
+    emails = build('gmail', 'v1', credentials=google_api.google_creds()).users().messages()
     results = emails.list(userId='me', labelIds=['INBOX'], q='subject:"Vivup - Please verify your device"').execute()
     messages = results.get('messages', [])
     msg = emails.get(userId='me', id=messages[0]['id']).execute()
@@ -66,19 +66,19 @@ def get_vivup(web):
                 index = stored_names.index(name)
                 if stored_values[index] != value:
                     print(f'Update for {name}: {value}')
-                    google.update_cell(benefits_sheet, 'Vivup', f'B{index + 2}', value)
+                    google_api.update_cell(benefits_sheet, 'Vivup', f'B{index + 2}', value)
                     sleep(1)  # quota limit: 60/min
             else:
                 print(f'New: {name}: {value}')
-                google.update_cell(benefits_sheet, 'Vivup', f'A{new_row}', name)
-                google.update_cell(benefits_sheet, 'Vivup', f'B{new_row}', value)
+                google_api.update_cell(benefits_sheet, 'Vivup', f'A{new_row}', name)
+                google_api.update_cell(benefits_sheet, 'Vivup', f'B{new_row}', value)
                 new_row += 1
                 sleep(2)  # quota limit: 60/min
 
 
 def get_stored_benefits(sheet_name):
-    stored_names = [row[0] for row in google.get_data(benefits_sheet, sheet_name, 'A2:A')]
-    stored_values = [row[0] for row in google.get_data(benefits_sheet, sheet_name, 'B2:B')]
+    stored_names = [row[0] for row in google_api.get_data(benefits_sheet, sheet_name, 'A2:A')]
+    stored_values = [row[0] for row in google_api.get_data(benefits_sheet, sheet_name, 'B2:B')]
     return stored_names, stored_values
 
 
@@ -98,12 +98,12 @@ def get_lebara(web: webdriver.Firefox):
                 index = stored_names.index(name)
                 if stored_values[index] != value:
                     print(f'Update for {name}: {value}')
-                    google.update_cell(benefits_sheet, 'Lebara', f'B{index + 2}', value)
+                    google_api.update_cell(benefits_sheet, 'Lebara', f'B{index + 2}', value)
                     sleep(1)  # quota limit: 60/min
             else:
                 print(f'New: {name}: {value}')
-                google.update_cell(benefits_sheet, 'Lebara', f'A{new_row}', name)
-                google.update_cell(benefits_sheet, 'Lebara', f'B{new_row}', value)
+                google_api.update_cell(benefits_sheet, 'Lebara', f'A{new_row}', name)
+                google_api.update_cell(benefits_sheet, 'Lebara', f'B{new_row}', value)
                 new_row += 1
                 sleep(2)  # quota limit: 60/min
         page += 1
