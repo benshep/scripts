@@ -24,7 +24,7 @@ if not creds or not creds.valid:
         print(os.getcwd())
         creds = InstalledAppFlow.from_client_secrets_file(creds_file, scopes).run_local_server(port=0)
     # Save the credentials for the next run
-    # open(token_file, 'w').write(creds.to_json())
+    open(token_file, 'w').write(creds.to_json())
 
 
 # Call the Sheets API
@@ -33,7 +33,6 @@ sheets = spreadsheets.values()
 
 # Call the Calendar API
 calendar = build('calendar', 'v3', credentials=creds)
-print(calendar)
 
 
 def get_data(sheet_id, sheet_name, data_range):
