@@ -24,7 +24,6 @@ with contextlib.suppress(ImportError):
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
-from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
 from bitrot import check_folders_for_bitrot
