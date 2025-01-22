@@ -56,12 +56,14 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         track = int(name.split(' ')[0])  # 01 Title.ext
         media = MediaFile(filename)
         media.albumartist = self.artist
-        media.album = self.album
+        # hack for EPIC: original album names have saga names too, we don't want to overwrite them
+        if self.album not in media.album:
+            media.album = self.album
         media.track = track
         title = media.title
         if ' - ' in title:
             # deal with titles like "Artist - Title" or "Title - Artist"
-            # (but can't automatically tell, so check first whether artist is defined
+            # (but can't automatically tell, so check first whether artist is defined)
             first, last = title.split(' - ', maxsplit=1)
             if first == self.artist:
                 title = last
@@ -72,7 +74,10 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
             title = title[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
         title = title.strip('"')  # "Song Name" -> Song Name
         media.title = title
-        self.to_screen(f'Tagging {name} with {self.artist = }, {self.album = }, {track=}, {title=}')
+        pos = media.album.find('Official')
+        if pos > 1:  # e.g. Album Name (Official Audio)
+            media.album = media.album[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
+        self.to_screen(f'Tagged {name} with {self.artist = }, {media.album = }, {track=}, {title=}')
         crop_cover(media)
         media.save()
         return [], info
@@ -128,20 +133,6 @@ def get_youtube_playlists(just_crop_art=False):
                         return message
             return reject_large(info_dict)  # also reject anything that's too long
 
-        info = open(info_file).read()
-        # if 'playlists' in info:  # playlists page - not really using this at the mo
-        #     if not get_playlist_info(info):
-        #         continue
-        #     get_youtube_playlists()  # restart, since directory structure has changed
-        #     break
-        if '{' in info:
-            playlist = json.loads(info)  # dict with keys: url, artist, album
-        elif info.startswith(('https://www.youtube.com/', 'https://music.youtube.com/')):  # just the url?
-            playlist = {'url': info.strip()}
-        else:
-            continue  # can't process info
-        # print(playlist)
-
         subfolders = folder.split(os.path.sep)
         album_name = subfolders[-1]  # folder name
         artist = subfolders[-2]  # parent folder name
@@ -149,36 +140,52 @@ def get_youtube_playlists(just_crop_art=False):
             artist = 'Various Artists'
         if ' - ' in album_name:  # artist - album
             artist, album_name = album_name.split(' - ', 1)
-        add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
-        options = {'download_archive': archive_file,  # keep track of previously-downloaded videos
-                   'force_write_download_archive': True,
-                   # 'no-warnings': True,
-                   # 'verbose': True,
-                   'quiet': True,
-                   # 'max_downloads': 1,  # for testing
-                   'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
-                   # reverse order for channels (otherwise new videos will always be track 1)
-                   'playlistreverse': 'channel' in playlist['url'],
-                   # https://github.com/yt-dlp/yt-dlp#output-template
-                   'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
-                   # 'parse_metadata': 'title:%(artist)s - %(album)s',
-                   'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
-                                      {'key': 'EmbedThumbnail'}
-                                      ],
-                   'match_filter': reject_existing, 'progress_hooks': [show_status]}
-        with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
-            with YoutubeDL(options) as downloader:
-                downloader.add_post_processor(add_tags, when='after_move')
-                error_code = downloader.download([playlist['url']])  # 1 if error occurred, else 0
-                # _Copied folder is for albums not playlists, won't be updated so can delete info file
-                if '_Copied' in folder and not error_code:
-                    print(f'Success. Deleting {info_file} from {folder}')
-                    send2trash(info_file)
-                new_files = add_tags.files
-                if new_files:
-                    toast += f'{album_name}: ' + \
-                             (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
-                             (' (with errors)\n' if error_code else '\n')
+        download_info = open(info_file).read()
+        lines = download_info.splitlines()
+        # if 'playlists' in info:  # playlists page - not really using this at the mo
+        #     if not get_playlist_info(info):
+        #         continue
+        #     get_youtube_playlists()  # restart, since directory structure has changed
+        #     break
+        if '{' in download_info:
+            playlist = json.loads(download_info)  # dict with keys: url, artist, album
+            lines = [playlist['url']]
+        elif lines[0].startswith(('https://www.youtube.com/', 'https://music.youtube.com/')):  # just the url?
+            playlist = {}
+        else:
+            continue  # can't process info
+        for url in lines:
+            playlist['url'] = url.strip()
+            # print(playlist)
+            add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
+            options = {'download_archive': archive_file,  # keep track of previously-downloaded videos
+                       'force_write_download_archive': True,
+                       # 'no-warnings': True,
+                       # 'verbose': True,
+                       'quiet': True,
+                       # 'max_downloads': 1,  # for testing
+                       'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
+                       # reverse order for channels (otherwise new videos will always be track 1)
+                       'playlistreverse': 'channel' in playlist['url'],
+                       # https://github.com/yt-dlp/yt-dlp#output-template
+                       'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
+                       # 'parse_metadata': 'title:%(artist)s - %(album)s',
+                       'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
+                                          {'key': 'EmbedThumbnail'}],
+                       'match_filter': reject_existing, 'progress_hooks': [show_status]}
+            with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
+                with YoutubeDL(options) as downloader:
+                    downloader.add_post_processor(add_tags, when='after_move')
+                    error_code = downloader.download([playlist['url']])  # 1 if error occurred, else 0
+                    # _Copied folder is for albums not playlists, won't be updated so can delete info file
+                    if '_Copied' in folder and not error_code:
+                        print(f'Success. Deleting {info_file} from {folder}')
+                        send2trash(info_file)
+                    new_files = add_tags.files
+                    if new_files:
+                        toast += f'{album_name}: ' + \
+                                 (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
+                                 (' (with errors)\n' if error_code else '\n')
 
     return toast
 
@@ -211,5 +218,5 @@ def get_playlist_info(url):
 
 
 if __name__ == '__main__':
-    get_youtube_playlists(just_crop_art=True)
+    get_youtube_playlists()
     # test()

@@ -24,22 +24,28 @@ def erase_trailers(only_known=False):
     digest = {}  # store each file's digest in a dict
     repeats = open(repeat_file, 'r').read().splitlines()
     print(f'{len(repeats)} known repeats')
+    compare_length = 1153  # first ~30s
+    max_cut = int(0.9 * compare_length)  # anything more than this is probably an error
     for file in os.listdir():
         cut_length = 0
         if not file.lower().endswith('.mp3'):
             continue
         frames = open(file, 'rb').read().split(frame_start)
-        this_digest = ''.join(sha1(frame).hexdigest()[:hash_size] for frame in frames[:1153])  # first ~30s
+        this_digest = ''.join(sha1(frame).hexdigest()[:hash_size] for frame in frames[:compare_length])
         print(file)
         # compare with known repeats
         for repeat in repeats:
             if repeat in this_digest:
                 index = this_digest.index(repeat)
-                print(f'= found {repeat[:10]} at {index}, length {len(repeat)}')
+                length = len(repeat)
+                print(f'= found {repeat[:10]} at {index}, {length=}')
+                if length > max_cut:
+                    print('= too long, ignoring')
+                    continue
                 this_digest = this_digest.replace(repeat, '', 1)
-                del frames[index:index + len(repeat)]
+                del frames[index:index + length]
                 write_mp3_file(file, frames)
-                cut_length += len(repeat)
+                cut_length += length
         if not only_known:
             # compare with previous files
             matcher = SequenceMatcher(autojunk=False)
@@ -47,9 +53,8 @@ def erase_trailers(only_known=False):
             for prev_file, prev_digest in digest.items():
                 matcher.set_seq1(prev_digest)
                 # MP3 frame size is 26ms, so 38 frames is about a second
-                matches = [match for match in matcher.get_matching_blocks()
-                           if match.size > 38 * hash_size and match.size % hash_size == 0]
-                if matches:
+                if matches := [match for match in matcher.get_matching_blocks()
+                               if max_cut > match.size > 38 * hash_size and match.size % hash_size == 0]:
                     print(f'- {prev_file} {matches}')
                     for match in matches[::-1]:  # reverse order so we don't mess up the indices
                         repeat = this_digest[match.b:match.b + match.size]

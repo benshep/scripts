@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from platform import node
 
 import psutil
-import google_sheets
+import google_api
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
@@ -24,11 +24,11 @@ with contextlib.suppress(ImportError):
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
-from update_jabs_data import update_jabs_data
 from get_youtube_playlists import get_youtube_playlists
 from get_energy_usage import get_usage_data
 from bitrot import check_folders_for_bitrot
 from erase_trailers import erase_trailers
+from rugby_fixtures import update_saints_calendar
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'STFC', 'Documents', 'Scripts'))
 from oracle_staff_check import annual_leave_check, otl_submit
@@ -54,7 +54,7 @@ imports[__file__] = os.path.getmtime(__file__)  # this file too
 
 
 def update_cell(row, col, string):
-    google_sheets.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
+    google_api.update_cell(sheet_id, sheet_name, f'{col}{row}', string)
 
 
 def run_tasks():
@@ -62,16 +62,16 @@ def run_tasks():
                     'Last run', 'Machine', 'Last result', 'Next run']
 
     def get_column(name):
-        return google_sheets.get_column(column_names.index(name) + 1)
+        return google_api.get_column(column_names.index(name) + 1)
 
-    last_col = google_sheets.get_column(len(column_names))
+    last_col = google_api.get_column(len(column_names))
     time_format = "%d/%m/%Y %H:%M"
     period_col = column_names.index('Period')
     pushbullet = Pushbullet(api_key)
     while True:
         print('Fetching data from spreadsheet')
         try:
-            data = google_sheets.get_data(sheet_id, sheet_name, f'A:{last_col}')
+            data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
         except Exception as e:
             print(e)
             sleep(60)
@@ -105,7 +105,7 @@ def run_tasks():
                     parameters = float(parameters_raw)
                 except ValueError:  # it's not a float, assume string
                     parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
-                os.system(f'title ➡️ {icon} {function_name}')  # set title of window
+                os.system(f'title {icon} {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
                 # return_value can be:
