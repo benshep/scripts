@@ -71,19 +71,24 @@ def run_tasks():
     while True:
         print('Fetching data from spreadsheet')
         try:
-            data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
+            headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
         except Exception as e:
             print(e)
             sleep(60)
             continue
-        assert data[0] == column_names
-        min_period = min(float(row[period_col]) for row in data[1:])
+        assert headers == column_names
+        min_period = min(float(row[period_col]) for row in data)
         next_task_time = datetime.now() + timedelta(days=min_period)
         battery = psutil.sensors_battery()
         if battery is None or battery.power_plugged:
             failures = set()
             toast = ''
-            for i, values in enumerate(data[1:]):
+            for i in range(len(data)):
+                try:
+                    values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
+                except Exception as e:
+                    print(e)
+                    break
                 properties = dict(zip(column_names, values))
                 if properties.get('Enabled', False) != 'TRUE':
                     continue
@@ -93,12 +98,16 @@ def run_tasks():
                 if next_run_time > now and last_result in ('Success', 'Postponed'):
                     next_task_time = min(next_task_time, next_run_time)
                     continue
+                function_name = properties.get('Function name')
+                last_run_time = datetime.strptime(properties.get('Last run'), time_format)
+                if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
+                    print(f'{function_name} already running since {last_run_time} - skipping for now')
+                    continue  # running on other PC for <2 hours - let it continue
 
                 now_str = now.strftime(time_format)
                 update_cell(i + 2, get_column('Last run'), now_str)
                 update_cell(i + 2, get_column('Machine'), node())
                 update_cell(i + 2, get_column('Last result'), 'Running')
-                function_name = properties.get('Function name')
                 parameters_raw = properties.get('Parameters', '')
                 icon = properties.get('Icon', '')
                 try:

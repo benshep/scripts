@@ -33,6 +33,16 @@ def erase_trailers(only_known=False):
         frames = open(file, 'rb').read().split(frame_start)
         this_digest = ''.join(sha1(frame).hexdigest()[:hash_size] for frame in frames[:compare_length])
         print(file)
+        try:
+            other_file = next(f for f, d in digest.items() if d == this_digest)
+            if os.path.getsize(other_file) == os.path.getsize(file):
+                # digest and file length are identical to a previous file, almost certainly a duplicate
+                print(f'- Duplicate of {other_file} - deleting')
+                send2trash(file)
+                continue
+        except StopIteration:
+            pass
+
         # compare with known repeats
         for repeat in repeats:
             if repeat in this_digest:
@@ -66,7 +76,7 @@ def erase_trailers(only_known=False):
                         del frames[match.b:match.b + match.size]
                         cut_length += len(repeat)
                     write_mp3_file(file, frames)
-            digest[file] = this_digest
+        digest[file] = this_digest
         if cut_length:
             toast += f'{file[:-4]}, {cut_length * 0.026:.0f}s\n'
     return toast
