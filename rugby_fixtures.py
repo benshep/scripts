@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import google_api
 
 google_calendar = google_api.calendar.events()
+calendar_id = 'family07468001989407757250@group.calendar.google.com'
 Fixture = namedtuple('Fixture', ['id', 'time', 'home', 'away'])
 
 
@@ -37,9 +38,6 @@ def get_home_fixtures():
     return fixtures
 
 
-calendar_id = 'family07468001989407757250@group.calendar.google.com'
-
-
 def get_calendar_events():
     now = datetime.now().isoformat() + 'Z'
     events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=50, singleEvents=True,
@@ -49,27 +47,22 @@ def get_calendar_events():
 
 def update_saints_calendar():
     toast = ''
-    fixtures = get_home_fixtures()
     my_events = get_calendar_events()
-    for match in fixtures:
+    for match in get_home_fixtures():
         # find existing event in my calendar
         match_title = f'{match.home} vs {match.away}'
-        event = {'summary': match_title,
-                 'description': match.id,
-                 'start': {'dateTime': match.time.isoformat()},
+        event = {'summary': match_title, 'description': match.id, 'start': {'dateTime': match.time.isoformat()},
                  'end': {'dateTime': (match.time + timedelta(hours=2)).isoformat()}}
-        try:
-            calendar_event = next(event for event in my_events if event['description'] == match.id)
-            # date/time changed?
-            start_time = calendar_event['start']
-            start = datetime.strptime(start_time['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
-            start = start.replace(tzinfo=timezone.utc)
-            if start != match.time:
-                toast += f'Updated {match_title} to {start}\n'
-                google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
-        except StopIteration:  # not found
+        if not (calendar_event := next((event for event in my_events if event['description'] == match.id), None)):
             toast += f'New match: {match_title} at {match.time}\n'
             google_calendar.insert(calendarId=calendar_id, body=event).execute()
+            continue
+        # date/time changed?
+        start = datetime.strptime(calendar_event['start']['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
+        start = start.replace(tzinfo=timezone.utc)
+        if start != match.time:
+            toast += f'Updated {match_title} to {start}\n'
+            google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
     return toast
 
 if __name__ == '__main__':
