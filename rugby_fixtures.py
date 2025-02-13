@@ -1,6 +1,7 @@
 from collections import namedtuple
 import requests
 import json
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 import google_api
 
@@ -18,9 +19,9 @@ def get_home_fixtures():
     """Get a list of home fixtures for the St Helens rugby league teams using the BBC Sports API."""
     today = datetime.today()
     end_date = today + timedelta(weeks=12)
-    url = f'https://www.bbc.co.uk/wc-data/container/sport-data-scores-fixtures?selectedEndDate={ymd(end_date)}' \
-          f'&selectedStartDate={ymd(today)}&todayDate={ymd(today)}' \
-          f'&urn=urn%3Abbc%3Asportsdata%3Arugby-league%3Ateam%3Ast-helens'
+    params = {'selectedEndDate': ymd(end_date), 'selectedStartDate': ymd(today), 'todayDate': ymd(today),
+              'urn': 'urn:bbc:sportsdata:rugby-league:team:st-helens'}
+    url = 'https://www.bbc.co.uk/wc-data/container/sport-data-scores-fixtures?' + urllib.parse.urlencode(params)
     print(url)
     data = json.loads(requests.get(url).text)
     fixtures = []
@@ -72,4 +73,4 @@ def update_saints_calendar():
     return toast
 
 if __name__ == '__main__':
-    print(update_saints_calendar())
+    print(get_home_fixtures())
