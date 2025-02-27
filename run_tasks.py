@@ -81,8 +81,6 @@ def run_tasks():
         next_task_time = datetime.now() + timedelta(days=min_period)
         battery = psutil.sensors_battery()
         if battery is None or battery.power_plugged:
-            failures = set()
-            toast = ''
             for i in range(len(data)):
                 try:
                     values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
@@ -117,43 +115,43 @@ def run_tasks():
                 os.system(f'title {icon} {function_name}')  # set title of window
                 print('')
                 print(now_str, function_name, parameters)
-                # return_value can be:
-                # False: postpone until next scheduled run
-                # datetime: postpone until then
-                # empty string, None, or True: success but no toast
-                # string: toast summarising actions
                 try:
                     return_value = eval(f'{function_name}({parameters})')
-                    if isinstance(return_value, datetime):
-                        next_run_time = return_value
-                    else:
-                        period = float(properties.get('Period', 1))  # default: once per day
-                        next_run_time = now + timedelta(days=period)
-                    next_run_str = next_run_time.strftime(time_format)
-                    print('Next run time:', next_run_str)
-                    update_cell(i + 2, get_column('Next run'), next_run_str)
-                    # sometimes we don't want to run the function now, but don't need to notify failure
-                    if return_value is False:
-                        result = 'Postponed'
-                    else:
-                        result = 'Success'
-                        if isinstance(return_value, str) and return_value:
-                            # function returns a non-empty string: toast with summary of what it's done
-                            pushbullet.push_note(f'{icon} {function_name}', return_value)
-                except Exception:
+                except Exception as exception:  # something went wrong with the task!
+                    return_value = exception
                     error_lines = format_exc().split('\n')
                     result = '\n'.join(error_lines[4:])
-                    failures.add(function_name)
-                    if len(failures) > 1:
-                        toast = ', '.join(failures)
-                    elif last_result != result:  # don't notify if we got the same error as last time
-                        toast = f'{function_name}: {result}'
 
+                period = float(properties.get('Period', 1))  # default: once per day
+                next_run_time = now + timedelta(days=period)
+                match return_value:
+                    case False:  # postpone until next scheduled run
+                        result = 'Postponed'
+                    case datetime():  # postpone until specific time
+                        result = 'Postponed'
+                        next_run_time = return_value
+                    case '' | None | True:  # success but no toast
+                        result = 'Success'
+                    case str():  # success and toast summarising actions
+                        result = 'Success'
+                        print(return_value)
+                        pushbullet.push_note(f'{icon} {function_name}', return_value)
+                    case Exception():  # something went wrong with the task
+                        next_run_time = now + timedelta(days=min_period)  # try again soon
+                        split = last_result.split(' ')
+                        fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
+                        if fail_count > 9:
+                            pushbullet.push_note('👁️ run_tasks',
+                                                 f'{function_name} failed {fail_count} times on {node()}')
+                        print(result)  # the exception traceback
+                        result = f'Failure {fail_count}'
+
+                next_run_str = next_run_time.strftime(time_format)
+                print('Next run time:', next_run_str)
+                update_cell(i + 2, get_column('Next run'), next_run_str)
                 print(result)
                 update_cell(i + 2, get_column('Last result'), result)
 
-            if toast:
-                pushbullet.push_note(f'👁️ Failed tasks {node()}', toast)
         else:
             print('On battery, not running any tasks')
 

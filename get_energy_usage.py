@@ -45,9 +45,9 @@ def get_usage_data(remove_incomplete_rows=True):
     column_a = [cell[0] if len(cell) > 0 else '' for cell in column_a]  # transpose, flatten
     assert column_a[0] == 'Date'
     assert column_a[1] == 'Hour'
-    new_data_row = len(column_a) + 1  # one-based when using update_cell function - this is the first empty row
-    fill_top_row = 4  # zero-based when we use the autoFill function - this is the first row of data
-    start_date = max(pandas.to_datetime(column_a[fill_top_row:], dayfirst=True)) + pandas.to_timedelta(1, 'd')
+    fill_top_row = len(column_a) - 1  # zero-based when we use the autoFill function - this is the last row of data
+    new_data_row = fill_top_row + 2  # one-based when using update_cell function - this is the first empty row
+    start_date = pandas.to_datetime(column_a[-1], dayfirst=True) + pandas.to_timedelta(1, 'd')
     if start_date >= today():  # no need to collect more data
         return
 
@@ -281,7 +281,7 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=False))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
