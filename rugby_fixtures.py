@@ -20,7 +20,9 @@ def get_home_fixtures():
     """Get a list of home fixtures for the St Helens rugby league teams using the BBC Sports API."""
     today = datetime.today()
     end_date = today + timedelta(weeks=12)
-    params = {'selectedEndDate': ymd(end_date), 'selectedStartDate': ymd(today), 'todayDate': ymd(today),
+    params = {'selectedEndDate': ymd(end_date),
+              'selectedStartDate': ymd(today),
+              'todayDate': ymd(today),
               'urn': 'urn:bbc:sportsdata:rugby-league:team:st-helens'}
     url = 'https://www.bbc.co.uk/wc-data/container/sport-data-scores-fixtures?' + urllib.parse.urlencode(params)
     print(url)
@@ -40,9 +42,13 @@ def get_home_fixtures():
 
 def get_calendar_events():
     now = datetime.now().isoformat() + 'Z'
-    events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=50, singleEvents=True,
-                                                  orderBy='startTime').execute()
+    events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=50,
+                                  singleEvents=True, orderBy='startTime').execute()
     return events['items']
+
+
+def format_time(time : datetime):
+    return time.strftime('%d %b %H:%M')  # e.g. 15 Mar 14:00
 
 
 def update_saints_calendar():
@@ -51,17 +57,19 @@ def update_saints_calendar():
     for match in get_home_fixtures():
         # find existing event in my calendar
         match_title = f'{match.home} vs {match.away}'
-        event = {'summary': match_title, 'description': match.id, 'start': {'dateTime': match.time.isoformat()},
+        event = {'summary': match_title,
+                 'description': match.id,
+                 'start': {'dateTime': match.time.isoformat()},
                  'end': {'dateTime': (match.time + timedelta(hours=2)).isoformat()}}
         if not (calendar_event := next((event for event in my_events if event['description'] == match.id), None)):
-            toast += f'New match: {match_title} at {match.time}\n'
+            toast += f'New match: {match_title}, {format_time(match.time)}\n'
             google_calendar.insert(calendarId=calendar_id, body=event).execute()
             continue
         # date/time changed?
         start = datetime.strptime(calendar_event['start']['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
         start = start.replace(tzinfo=timezone.utc)
         if start != match.time:
-            toast += f'Updated {match_title} to {start}\n'
+            toast += f'Updated {match_title} to {format_time(start)} (was {format_time(match.time)})\n'
             google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
     return toast
 
