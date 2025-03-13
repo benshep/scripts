@@ -165,7 +165,7 @@ def copy_albums(copy_folder_list, albums):
         os.chdir(copy_folder.address)
         folder_count = len(get_subfolders())
         while folder_count < copy_folder.min_count:
-            while True:  # break out when we're done
+            while len(albums) > 0:  # break out when we're done
                 key = random.choice(list(albums.keys()))
                 file_list = albums.pop(key)
                 duration = sum(file_list.values())
@@ -189,6 +189,9 @@ def copy_albums(copy_folder_list, albums):
                     # do first one first!
                     folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))
                     break
+            else:  # didn't break out: ran out of albums before finding one of the right length
+                # 13/3/25: still got 87 at 55-70 mins, maybe 20 weeks worth?
+                return toast + f'⏹ None found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
             folder_count += 1
             os.rename(folder_name, f'{folder_name} [{duration:.0f}]')  # rename with the total length
             toast += f'✔ {folder_name[11:]}\n'
