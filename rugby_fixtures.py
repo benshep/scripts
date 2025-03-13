@@ -1,4 +1,3 @@
-from collections import namedtuple
 import requests
 import json
 import urllib.parse
@@ -7,7 +6,18 @@ import google_api
 
 google_calendar = google_api.calendar.events()
 calendar_id = 'family07468001989407757250@group.calendar.google.com'
-Fixture = namedtuple('Fixture', ['id', 'time', 'home', 'away'])
+
+
+class Fixture:
+    def __init__(self, fixture_id : str, time : datetime, home : str, away : str, tournament : str):
+        self.id = fixture_id
+        self.time = time
+        self.home = home
+        self.away = away
+        self.tournament = tournament
+
+    def __repr__(self):
+        return f'Fixture(id={self.id}, time={self.time}, {self.home} vs {self.away}, {self.tournament})'
 
 
 
@@ -30,13 +40,18 @@ def get_home_fixtures():
     fixtures = []
     for event in data['eventGroups']:
         match = event['secondaryGroups'][0]['events'][0]
+        tournament = match['tournament']['name']
+        for sponsor in ['Betfred ']:
+            if tournament.startswith(sponsor):
+                tournament = tournament[len(sponsor):]
+                break
         home_team = match['home']['fullName']
         away_team = match['away']['fullName']
         # datetime format: 2025-02-15T17:30:00.000+00:00
         start_time = datetime.strptime(match['startDateTime'], '%Y-%m-%dT%H:%M:%S.000%z')
         bbc_id = match['id']
         if home_team == 'St Helens':
-            fixtures.append(Fixture(bbc_id, start_time, home_team, away_team))
+            fixtures.append(Fixture(bbc_id, start_time, home_team, away_team, tournament))
     return fixtures
 
 
@@ -56,7 +71,7 @@ def update_saints_calendar():
     my_events = get_calendar_events()
     for match in get_home_fixtures():
         # find existing event in my calendar
-        match_title = f'{match.home} vs {match.away}'
+        match_title = f'{match.home} vs {match.away} ({match.tournament})'
         event = {'summary': match_title,
                  'description': match.id,
                  'start': {'dateTime': match.time.isoformat()},
@@ -74,4 +89,4 @@ def update_saints_calendar():
     return toast
 
 if __name__ == '__main__':
-    print(get_home_fixtures())
+    print(*get_home_fixtures(),sep='\n')
