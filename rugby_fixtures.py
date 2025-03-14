@@ -9,7 +9,7 @@ calendar_id = 'family07468001989407757250@group.calendar.google.com'
 
 
 class Fixture:
-    def __init__(self, fixture_id : str, time : datetime, home : str, away : str, tournament : str):
+    def __init__(self, fixture_id: str, time: datetime, home: str, away: str, tournament: str):
         self.id = fixture_id
         self.time = time
         self.home = home
@@ -18,7 +18,6 @@ class Fixture:
 
     def __repr__(self):
         return f'Fixture(id={self.id}, time={self.time}, {self.home} vs {self.away}, {self.tournament})'
-
 
 
 def ymd(date, time=False):
@@ -62,7 +61,7 @@ def get_calendar_events():
     return events['items']
 
 
-def format_time(time : datetime):
+def format_time(time: datetime):
     return time.strftime('%d %b %H:%M')  # e.g. 15 Mar 14:00
 
 
@@ -84,9 +83,10 @@ def update_saints_calendar():
         start = datetime.strptime(calendar_event['start']['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
         start = start.replace(tzinfo=timezone.utc)
         if start != match.time:
-            toast += f'Updated {match_title} to {format_time(start)} (was {format_time(match.time)})\n'
+            toast += f'Updated {match_title} to {format_time(match.time)} (was {format_time(start)})\n'
             google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
     return toast
 
+
 if __name__ == '__main__':
-    print(*get_home_fixtures(),sep='\n')
+    print(*get_home_fixtures(), sep='\n')

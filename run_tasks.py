@@ -29,6 +29,7 @@ from get_energy_usage import get_usage_data
 from bitrot import check_folders_for_bitrot
 from erase_trailers import erase_trailers
 from rugby_fixtures import update_saints_calendar
+from concerts import update_gig_calendar
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'STFC', 'Documents', 'Scripts'))
 from oracle_staff_check import annual_leave_check, otl_submit
@@ -42,6 +43,7 @@ from todos_from_notes import todos_from_notes
 from get_payslips import get_payslips
 from catering_bookings import get_bookings
 from package_updates import find_new_python_packages
+from page_changes import check_page_changes
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
