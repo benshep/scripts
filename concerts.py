@@ -30,9 +30,11 @@ def get_ticketmaster_events(artist_name):
     concerts = []
 
     for event in events:
-        if event['name'] != artist_name:
+        print(event['name'])
+        info = event['_embedded']
+        if event['name'] != artist_name and all(attraction['name'] != artist_name for attraction in info.get('attractions', [])):
             continue
-        venue = event['_embedded']['venues'][0]
+        venue = info['venues'][0]
         city = venue['city']['name']  # also available in venue: postalCode, address:line1/..., location:latitude/longitude
         if city not in north_west_cities:  # Only keep NW England events
             continue
@@ -50,7 +52,8 @@ def get_ticketmaster_events(artist_name):
             'venue': venue_name,
             'city': city,
             'id': event['id'],
-            'url': event['url']
+            'url': event['url'],
+            'title': event['name'] + (f' (feat. {artist_name})' if artist_name != event['name'] else '')
         }
         # print(event)
         concerts.append(concert)
