@@ -30,23 +30,27 @@ def get_ticketmaster_events(artist_name):
     concerts = []
 
     for event in events:
+        if event['name'] != artist_name:
+            continue
         venue = event['_embedded']['venues'][0]
         city = venue['city']['name']  # also available in venue: postalCode, address:line1/..., location:latitude/longitude
+        if city not in north_west_cities:  # Only keep NW England events
+            continue
 
-        if city in north_west_cities:  # Only keep NW England events
-            start = event['dates']['start']
-            try:
-                start_datetime = datetime.fromisoformat(start['dateTime'])
-            except KeyError:  # no dateTime specified: default to 7pm
-                start_datetime = datetime.fromisoformat(start['localDate']).replace(hour=19, tzinfo=ZoneInfo('Europe/London'))
-            concert = {
-                'date': start_datetime,
-                'venue': venue['name'],
-                'city': city,
-                'id': event['id']
-            }
-            # print(event)
-            concerts.append(concert)
+        start = event['dates']['start']
+        try:
+            start_datetime = datetime.fromisoformat(start['dateTime'])
+        except KeyError:  # no dateTime specified: default to 7pm
+            start_datetime = datetime.fromisoformat(start['localDate']).replace(hour=19, tzinfo=ZoneInfo('Europe/London'))
+        concert = {
+            'date': start_datetime,
+            'venue': venue['name'],
+            'city': city,
+            'id': event['id'],
+            'url': event['url']
+        }
+        # print(event)
+        concerts.append(concert)
 
     return concerts
 
@@ -76,7 +80,7 @@ def get_upcoming_shows():
 
 def get_calendar_events():
     now = datetime.now().isoformat() + 'Z'
-    events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=50,
+    events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=500,
                                   singleEvents=True, orderBy='startTime').execute()
     return events['items']
 
@@ -99,11 +103,14 @@ def update_gig_calendar():
             # the length of the ID must be between 5 and 1024 characters
             show_id = base64.b32hexencode(show['id'].encode('utf-8')).lower().decode('utf-8').replace('=', '')
             event = {'summary': show_title,
-                     'id': show_id,
+                     'description': show_id,  # was using id but seems to have a problem with removed events
+                     'source.title': 'Ticketmaster',
+                     'source.url': show['url'],
                      'location': f'{show["venue"]}, {show["city"]}',
                      'start': {'dateTime': show['date'].isoformat()},
                      'end': {'dateTime': (show['date'] + timedelta(hours=3)).isoformat()}}
-            if not (calendar_event := next((cal_event for cal_event in my_events if cal_event['id'] == show_id), None)):
+            calendar_event = next((e for e in my_events if show_id in (e.get('id', ''), e.get('description', ''))), None)
+            if not calendar_event:
                 toast += f'New show: {show_title}, {format_time(show['date'])}\n'
                 google_calendar.insert(calendarId=calendar_id, body=event).execute()
                 continue
