@@ -42,9 +42,12 @@ def get_ticketmaster_events(artist_name):
             start_datetime = datetime.fromisoformat(start['dateTime'])
         except KeyError:  # no dateTime specified: default to 7pm
             start_datetime = datetime.fromisoformat(start['localDate']).replace(hour=19, tzinfo=ZoneInfo('Europe/London'))
+        venue_name : str = venue['name']
+        if venue_name.upper() == venue_name:
+            venue_name = venue_name.title()  # convert UPPER CASE to Proper Case (but only if name is in ALL CAPS)
         concert = {
             'date': start_datetime,
-            'venue': venue['name'],
+            'venue': venue_name,
             'city': city,
             'id': event['id'],
             'url': event['url']
