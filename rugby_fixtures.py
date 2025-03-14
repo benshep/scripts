@@ -80,7 +80,7 @@ def update_saints_calendar():
             google_calendar.insert(calendarId=calendar_id, body=event).execute()
             continue
         # date/time changed?
-        start = datetime.strptime(calendar_event['start']['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
+        start = datetime.fromisoformat(calendar_event['start']['dateTime'])
         start = start.replace(tzinfo=timezone.utc)
         if start != match.time:
             toast += f'Updated {match_title} to {format_time(match.time)} (was {format_time(start)})\n'

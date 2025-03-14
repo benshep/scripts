@@ -108,7 +108,7 @@ def update_gig_calendar():
                 google_calendar.insert(calendarId=calendar_id, body=event).execute()
                 continue
             # date/time changed?
-            start = datetime.strptime(calendar_event['start']['dateTime'], '%Y-%m-%dT%H:%M:%SZ')
+            start = datetime.fromisoformat(calendar_event['start']['dateTime'])
             start = start.replace(tzinfo=ZoneInfo('UTC'))
             if start != show['date']:
                 toast += f'Updated {show_title} to {format_time(show["date"])} (was {format_time(start)})\n'
