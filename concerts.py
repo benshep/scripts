@@ -1,17 +1,24 @@
-import base64
-
 import requests
-from datetime import datetime, timezone, timedelta
+from base64 import b32hexencode
+from math import cos, sin, radians, atan2, sqrt
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
 import google_api
+import googleapiclient.errors
 
 google_calendar = google_api.calendar.events()
 calendar_id = '3a0374a38ea8a8ce023b6173a9a9a6c3c86d118280f0bf104e2091f81c4a8854@group.calendar.google.com'
 
 # NW England cities to filter concerts
 north_west_cities = ['Manchester', 'Liverpool', 'Chester', 'Preston', 'Bolton', 'Warrington', 'Lancaster', 'Salford']
+
+# central latitude and longitude, and radius in km - centred around Haydock, includes Liverpool and Manchester
+# https://www.mapdevelopers.com/draw-circle-tool.php?circles=%5B%5B33602.27%2C53.4918407%2C-2.6405878%2C%22%23AAAAAA%22%2C%22%23000000%22%2C0.4%5D%5D
+central_lat, central_long, radius = radians(53.491841), radians(-2.640588), 33.603
+# Approximate radius of earth in km
+earth_radius = 6373.0
 
 
 def get_ticketmaster_events(artist_name):
@@ -30,30 +37,47 @@ def get_ticketmaster_events(artist_name):
     concerts = []
 
     for event in events:
-        print(event['name'])
         info = event['_embedded']
-        if event['name'] != artist_name and all(attraction['name'] != artist_name for attraction in info.get('attractions', [])):
+        if event['name'] != artist_name and all(
+                attraction['name'] != artist_name for attraction in info.get('attractions', [])):
             continue
         venue = info['venues'][0]
-        city = venue['city']['name']  # also available in venue: postalCode, address:line1/..., location:latitude/longitude
-        if city not in north_west_cities:  # Only keep NW England events
+        location = venue['location']
+        longitude = radians(float(location['longitude']))
+        latitude = radians(float(location['latitude']))
+        dlon = longitude - central_long
+        dlat = latitude - central_lat
+        a = sin(dlat / 2) ** 2 + cos(central_lat) * cos(latitude) * sin(dlon / 2) ** 2
+        c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        distance = earth_radius * c
+        city = venue['city']['name']  # also available in venue: postalCode, address:line1/...
+        if distance > radius:  # Only keep NW England events
             continue
 
         start = event['dates']['start']
         try:
             start_datetime = datetime.fromisoformat(start['dateTime'])
         except KeyError:  # no dateTime specified: default to 7pm
-            start_datetime = datetime.fromisoformat(start['localDate']).replace(hour=19, tzinfo=ZoneInfo('Europe/London'))
-        venue_name : str = venue['name']
+            start_datetime = datetime.fromisoformat(start['localDate']).replace(hour=19,
+                                                                                tzinfo=ZoneInfo('Europe/London'))
+        venue_name: str = venue['name']
         if venue_name.upper() == venue_name:
             venue_name = venue_name.title()  # convert UPPER CASE to Proper Case (but only if name is in ALL CAPS)
+        concert_title = event['name']
+        if artist_name not in event['name']:
+            concert_title += f' (feat. {artist_name})'
+        if venue_name not in concert_title:
+            concert_title += f' at {venue_name}'
+        if city not in concert_title:
+            concert_title += f', {city}'
+        # print(concert_title)
         concert = {
             'date': start_datetime,
             'venue': venue_name,
             'city': city,
             'id': event['id'],
             'url': event['url'],
-            'title': event['name'] + (f' (feat. {artist_name})' if artist_name != event['name'] else '')
+            'title': concert_title,
         }
         # print(event)
         concerts.append(concert)
@@ -70,7 +94,7 @@ def find_upcoming_concerts(artists):
         # print(artist_name)
         events = get_ticketmaster_events(artist_name)
         if events:
-            concerts_in_nw[artist] = events
+            concerts_in_nw[artist_name] = events
 
     return concerts_in_nw
 
@@ -84,12 +108,11 @@ def get_upcoming_shows():
     return find_upcoming_concerts(top_artists)
 
 
-def get_calendar_events():
+def get_calendar_events() -> list[dict]:
     now = datetime.now().isoformat() + 'Z'
     events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=500,
                                   singleEvents=True, orderBy='startTime').execute()
     return events['items']
-
 
 
 def format_time(time: datetime):
@@ -99,32 +122,53 @@ def format_time(time: datetime):
 def update_gig_calendar():
     toast = ''
     my_events = get_calendar_events()
-    for artist, shows in get_upcoming_shows().items():
+    for artist_name, shows in get_upcoming_shows().items():
         for show in shows:
-            # find existing event in my calendar
-            venue_name = show["venue"] if show['city'] in show['venue'] else f'{show["venue"]}, {show["city"]}'
-            show_title = f'{artist.item.name} at {venue_name}'
-            print(show_title)
+            show_title = show['title']
+            print('Adding', show_title)
+            # https://developers.google.com/calendar/api/v3/reference/events/insert
             # characters allowed in the ID are those used in base32hex encoding, i.e. lowercase letters a-v and digits 0-9, see section 3.1.2 in RFC2938
             # the length of the ID must be between 5 and 1024 characters
-            show_id = base64.b32hexencode(show['id'].encode('utf-8')).lower().decode('utf-8').replace('=', '')
+            show_id = b32hexencode(show['id'].encode('utf-8')).lower().decode('utf-8').replace('=', '')
             event = {'summary': show_title,
-                     'description': show_id,  # was using id but seems to have a problem with removed events
-                     'source.title': 'Ticketmaster',
-                     'source.url': show['url'],
+                     'id': show_id,
+                     'source': {
+                         'title': 'Ticketmaster',
+                         'url': show['url'],
+                     },
                      'location': f'{show["venue"]}, {show["city"]}',
                      'start': {'dateTime': show['date'].isoformat()},
                      'end': {'dateTime': (show['date'] + timedelta(hours=3)).isoformat()}}
-            calendar_event = next((e for e in my_events if show_id in (e.get('id', ''), e.get('description', ''))), None)
-            if not calendar_event:
+            print(show['date'].date())
+            # try to find matching events in calendar: don't add if we already have one
+            for my_event in my_events:
+                # we store the id to remember it
+                if show_id in (my_event.get('id', ''), my_event.get('description', '')):
+                    print('- already found via id')
+                    break
+                # but sometimes Ticketmaster returns several identical events - try to eliminate these
+                my_event_date = datetime.fromisoformat(my_event['start']['dateTime']).date()
+                print(my_event['summary'], my_event_date)
+                if artist_name in my_event['summary'] and my_event_date == show['date'].date():
+                    print('- already found via artist and date')
+                    break
+            else:  # not found
                 toast += f'New show: {show_title}, {format_time(show['date'])}\n'
-                google_calendar.insert(calendarId=calendar_id, body=event).execute()
+                try:
+                    google_calendar.insert(calendarId=calendar_id, body=event).execute()
+                except googleapiclient.errors.HttpError as error:
+                    if error.error_details[0].get('reason', '') == 'duplicate':  # id already exists: use description field
+                        event['description'] = event.pop('id')
+                        google_calendar.insert(calendarId=calendar_id, body=event).execute()
+                    else:
+                        raise error
+                my_events.append(event)
                 continue
             # date/time changed?
-            start = datetime.fromisoformat(calendar_event['start']['dateTime'])
+            start = datetime.fromisoformat(my_event['start']['dateTime'])
             if start != show['date']:
                 toast += f'Updated {show_title} to {format_time(show["date"])} (was {format_time(start)})\n'
-                google_calendar.update(calendarId=calendar_id, eventId=calendar_event['id'], body=event).execute()
+                google_calendar.update(calendarId=calendar_id, eventId=my_event['id'], body=event).execute()
     return toast
 
 
