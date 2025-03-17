@@ -7,10 +7,11 @@ from folders import radio_folder
 frame_start = b'\xff\xfe'
 
 
-def erase_trailers(only_known=False):
+def erase_trailers(only_known=False, limit=30):
     """Search for repeated segments in MP3 files in the radio folder, and erase those segments from the files.
     Set only_known=True to only search for known repeats (stored in repeats.txt) , otherwise it will compare every file
-    to all the previous ones."""
+    to all the previous ones.
+    Analyses the first 30 files by default; set the limit to -1 or None to search them all."""
     # Limitation: it doesn't tend to find repeats from the end of the file. Probably because those bits don't sync
     # neatly to frame boundaries. Potentially could use acoustID to compare the raw audio - but then we have to either
     # figure out how many frames to chop, or re-encode to MP3.
@@ -26,7 +27,9 @@ def erase_trailers(only_known=False):
     print(f'{len(repeats)} known repeats')
     compare_length = 1153  # first ~30s
     max_cut = int(0.9 * compare_length)  # anything more than this is probably an error
-    for file in os.listdir():
+    if limit is None:
+        limit = -1
+    for file in os.listdir()[:limit]:
         cut_length = 0
         if not file.lower().endswith('.mp3'):
             continue
