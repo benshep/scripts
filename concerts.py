@@ -20,6 +20,8 @@ central_lat, central_long, radius = radians(53.491841), radians(-2.640588), 33.6
 # Approximate radius of earth in km
 earth_radius = 6373.0
 
+musicbrainz_api_url = 'https://musicbrainz.org/ws/2'
+
 
 def get_ticketmaster_events(artist_name):
     """Find upcoming concerts for an artist using Ticketmaster API"""
@@ -101,11 +103,15 @@ def find_upcoming_concerts(artists):
 
 def get_upcoming_shows():
     global artist, events
-    top_artists = lastfm.get_user('ning').get_top_artists(period='12month', limit=100)
+    top_artists = get_top_artists()
     # print(f"🎵 Top artists for user '{username}' in the last 12 months:")
     # for i, artist in enumerate(top_artists):
     #     print(f"{i + 1: 3d}. {artist.item.name}")
     return find_upcoming_concerts(top_artists)
+
+
+def get_top_artists():
+    return lastfm.get_user('ning').get_top_artists(period='12month', limit=100)
 
 
 def get_calendar_events() -> list[dict]:
@@ -139,7 +145,7 @@ def update_gig_calendar():
                      'location': f'{show["venue"]}, {show["city"]}',
                      'start': {'dateTime': show['date'].isoformat()},
                      'end': {'dateTime': (show['date'] + timedelta(hours=3)).isoformat()}}
-            print(show['date'].date())
+            # print(show['date'].date())
             # try to find matching events in calendar: don't add if we already have one
             for my_event in my_events:
                 # we store the id to remember it
@@ -148,12 +154,12 @@ def update_gig_calendar():
                     break
                 # but sometimes Ticketmaster returns several identical events - try to eliminate these
                 my_event_date = datetime.fromisoformat(my_event['start']['dateTime']).date()
-                print(my_event['summary'], my_event_date)
+                # print(my_event['summary'], my_event_date)
                 if artist_name in my_event['summary'] and my_event_date == show['date'].date():
                     print('- already found via artist and date')
                     break
             else:  # not found
-                toast += f'New show: {show_title}, {format_time(show['date'])}\n'
+                toast += f'New show: {show_title}, {format_time(show["date"])}\n'
                 try:
                     google_calendar.insert(calendarId=calendar_id, body=event).execute()
                 except googleapiclient.errors.HttpError as error:
@@ -164,13 +170,59 @@ def update_gig_calendar():
                         raise error
                 my_events.append(event)
                 continue
-            # date/time changed?
+            # date changed?
             start = datetime.fromisoformat(my_event['start']['dateTime'])
-            if start != show['date']:
+            if start.date() != show['date'].date():
                 toast += f'Updated {show_title} to {format_time(show["date"])} (was {format_time(start)})\n'
                 google_calendar.update(calendarId=calendar_id, eventId=my_event['id'], body=event).execute()
     return toast
 
+
+def get_new_releases(artist_name):
+    """Fetch new releases for an artist from MusicBrainz"""
+    now = datetime.now()
+    one_week_ago = (now - timedelta(days=3650)).strftime('%Y-%m-%d')
+    one_week_forward = (now + timedelta(days=365)).strftime('%Y-%m-%d')
+    query = f'artist:"{artist_name}" AND type:album AND first-release-date:[{one_week_ago} TO {one_week_forward}]'
+    url = f'{musicbrainz_api_url}/release/'
+    params = {
+        'query': query,
+        'fmt': 'json'
+    }
+
+    headers = {'User-Agent': f'get_new_releases/{now.strftime("%Y%m%d")} ( bjashepherd@gmail.com )'}
+    response = requests.get(url, params=params, headers=headers)
+    json = response.json()
+    # print(json)
+    releases = json.get('releases', [])
+    return [
+        {
+            'title': release['title'],
+            'date': release.get('date', 'Unknown'),
+            'artist': artist_name
+        } for release in releases
+    ]
+
+
+def find_new_releases():
+    """Find new releases for the user's top artists"""
+    artists = get_top_artists()
+    all_releases = []
+
+    if not artists:
+        print("No top artists found.")
+        return
+
+    print(f"Fetching new album releases from the past week for your top artists...")
+    for artist in artists:
+        releases = get_new_releases(artist.item.name)
+        if releases:
+            all_releases.extend(releases)
+            for release in releases:
+                print(f"🎵 {release['artist']} - {release['title']} (Released: {release['date']})")
+        # else:
+            # print(f"No new releases found for {artist.item.name}.")
+    return all_releases
 
 if __name__ == '__main__':
     # concerts = get_upcoming_shows()
@@ -178,4 +230,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
+    # print(find_new_releases())
     print(update_gig_calendar())
