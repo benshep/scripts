@@ -1,5 +1,5 @@
 from time import sleep
-
+import os
 import requests
 from base64 import b32hexencode
 from math import cos, sin, radians, atan2, sqrt
@@ -9,12 +9,10 @@ from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
 import google_api
 import googleapiclient.errors
+from folders import music_folder
 
 google_calendar = google_api.calendar.events()
 calendar_id = '3a0374a38ea8a8ce023b6173a9a9a6c3c86d118280f0bf104e2091f81c4a8854@group.calendar.google.com'
-
-# NW England cities to filter concerts
-north_west_cities = ['Manchester', 'Liverpool', 'Chester', 'Preston', 'Bolton', 'Warrington', 'Lancaster', 'Salford']
 
 # central latitude and longitude, and radius in km - centred around Haydock, includes Liverpool and Manchester
 # https://www.mapdevelopers.com/draw-circle-tool.php?circles=%5B%5B33602.27%2C53.4918407%2C-2.6405878%2C%22%23AAAAAA%22%2C%22%23000000%22%2C0.4%5D%5D
@@ -181,10 +179,10 @@ def update_gig_calendar():
 
 
 def get_new_releases(artist):
-    """Fetch new releases for an artist from MusicBrainz"""
+    """Fetch new releases for an artist from MusicBrainz."""
     artist_name = artist.item.name
     now = datetime.now()
-    period = timedelta(days=21)
+    period = timedelta(days=30)
     min_date = (now - period).strftime('%Y-%m-%d')
     max_date = (now + period).strftime('%Y-%m-%d')
     print(artist_name)
@@ -219,7 +217,9 @@ def get_new_releases(artist):
 
 
 def find_new_releases():
-    """Find new releases for the user's top artists"""
+    """Find new releases for the user's top artists."""
+    release_list_filename = os.path.join(music_folder, 'New releases.md')
+    release_list = open(release_list_filename, encoding='utf-8').read()
     artists = get_top_artists()
     all_releases = []
     toast = ''
@@ -233,7 +233,10 @@ def find_new_releases():
         if releases:
             all_releases.extend(releases)
             for release in releases:
-                toast += f"{release['artist']} - {release['title']}, out {release['date']}\n"
+                release_text = f"{release['artist']} - {release['title']}, out {release['date']}\n"
+                if release_text not in release_list:
+                    toast += release_text
+                    open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
         # else:
             # print(f"No new releases found for {artist.item.name}.")
     return toast
