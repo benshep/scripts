@@ -1,3 +1,5 @@
+from time import sleep
+
 import requests
 from base64 import b32hexencode
 from math import cos, sin, radians, atan2, sqrt
@@ -93,7 +95,7 @@ def find_upcoming_concerts(artists):
 
     for artist in artists:
         artist_name = artist.item.name
-        # print(artist_name)
+        # print(artist)
         events = get_ticketmaster_events(artist_name)
         if events:
             concerts_in_nw[artist_name] = events
@@ -178,29 +180,41 @@ def update_gig_calendar():
     return toast
 
 
-def get_new_releases(artist_name):
+def get_new_releases(artist):
     """Fetch new releases for an artist from MusicBrainz"""
+    artist_name = artist.item.name
     now = datetime.now()
-    one_week_ago = (now - timedelta(days=3650)).strftime('%Y-%m-%d')
-    one_week_forward = (now + timedelta(days=365)).strftime('%Y-%m-%d')
-    query = f'artist:"{artist_name}" AND type:album AND first-release-date:[{one_week_ago} TO {one_week_forward}]'
-    url = f'{musicbrainz_api_url}/release/'
+    period = timedelta(days=21)
+    min_date = (now - period).strftime('%Y-%m-%d')
+    max_date = (now + period).strftime('%Y-%m-%d')
+    print(artist_name)
+    query = ' AND '.join([
+        f'artist:"{artist_name}"',
+        'type:album', '-type:live',
+        f'firstreleasedate:[{min_date} TO {max_date}]',
+    ])
+    url = f'{musicbrainz_api_url}/release-group/'
     params = {
         'query': query,
         'fmt': 'json'
     }
 
     headers = {'User-Agent': f'get_new_releases/{now.strftime("%Y%m%d")} ( bjashepherd@gmail.com )'}
+    sleep(1)  # MusicBrainz rate limit: 1 request per second  https://wiki.musicbrainz.org/MusicBrainz_API/Rate_Limiting
     response = requests.get(url, params=params, headers=headers)
+    # print(response.url)
     json = response.json()
     # print(json)
-    releases = json.get('releases', [])
+    releases = json.get('release-groups', [])
+    # if len(releases):
+    #     print(json)
     return [
         {
             'title': release['title'],
-            'date': release.get('date', 'Unknown'),
+            'date': release.get('first-release-date', 'Unknown'),
             'artist': artist_name
         } for release in releases
+        if artist_name in [artist['name'] for artist in release['artist-credit']]
     ]
 
 
@@ -208,21 +222,21 @@ def find_new_releases():
     """Find new releases for the user's top artists"""
     artists = get_top_artists()
     all_releases = []
+    toast = ''
 
     if not artists:
         print("No top artists found.")
         return
 
-    print(f"Fetching new album releases from the past week for your top artists...")
     for artist in artists:
-        releases = get_new_releases(artist.item.name)
+        releases = get_new_releases(artist)
         if releases:
             all_releases.extend(releases)
             for release in releases:
-                print(f"🎵 {release['artist']} - {release['title']} (Released: {release['date']})")
+                toast += f"{release['artist']} - {release['title']}, out {release['date']}\n"
         # else:
             # print(f"No new releases found for {artist.item.name}.")
-    return all_releases
+    return toast
 
 if __name__ == '__main__':
     # concerts = get_upcoming_shows()
@@ -230,5 +244,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
-    # print(find_new_releases())
-    print(update_gig_calendar())
+    print(find_new_releases())
+    # print(update_gig_calendar())
