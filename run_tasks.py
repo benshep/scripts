@@ -29,7 +29,7 @@ from get_energy_usage import get_usage_data
 from bitrot import check_folders_for_bitrot
 from erase_trailers import erase_trailers
 from rugby_fixtures import update_saints_calendar
-from concerts import update_gig_calendar
+from concerts import update_gig_calendar, find_new_releases
 
 sys.path.append(os.path.join(os.environ['UserProfile'], 'STFC', 'Documents', 'Scripts'))
 from oracle_staff_check import annual_leave_check, otl_submit
@@ -157,12 +157,12 @@ def run_tasks():
         else:
             print('On battery, not running any tasks')
 
-        try:
-            set_pc_unlocked_flag()
-        except Exception as e:
-            print(e)
-            sleep(60)
-            continue
+        # try:
+        #     set_pc_unlocked_flag()
+        # except Exception as e:
+        #     print(e)
+        #     sleep(60)
+        #     continue
 
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
         next_task_time += timedelta(seconds=hash(node()) % 300)
