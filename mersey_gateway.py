@@ -67,7 +67,8 @@ def log_crossings():
         google_api.update_cells(sheet_id, sheet_name, f'A{new_row}:E{new_row}', row_data)
         new_row += 1
         total_added += 1
-    toast += f'{total_added} crossings since {last_date}'
+    if total_added > 0:
+        toast += f'{total_added} crossings since {last_date}'
     return toast
 
 
