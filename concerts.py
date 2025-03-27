@@ -1,3 +1,4 @@
+import urllib.parse
 from time import sleep
 import os
 import requests
@@ -5,6 +6,7 @@ from base64 import b32hexencode
 from math import cos, sin, radians, atan2, sqrt
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from typing import TypedDict
 from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
 import google_api
@@ -93,7 +95,7 @@ def find_upcoming_concerts(artists):
 
     for artist in artists:
         artist_name = artist.item.name
-        # print(artist)
+        # print(artist_name)
         events = get_ticketmaster_events(artist_name)
         if events:
             concerts_in_nw[artist_name] = events
@@ -178,7 +180,14 @@ def update_gig_calendar():
     return toast
 
 
-def get_new_releases(artist):
+Release = TypedDict('Release', {
+    'title': str,
+    'date': str | datetime,
+    'artist': str
+})
+
+
+def get_new_releases(artist) -> list[Release]:
     """Fetch new releases for an artist from MusicBrainz."""
     artist_name = artist.item.name
     now = datetime.now()
@@ -233,9 +242,11 @@ def find_new_releases():
         if releases:
             all_releases.extend(releases)
             for release in releases:
-                release_text = f"{release['artist']} - {release['title']}, out {release['date']}\n"
-                if release_text not in release_list:
-                    toast += release_text
+                release_title = f"{release['artist']} - {release['title']}"
+                if release_title not in release_list:
+                    toast += release_title
+                    youtube_url = 'https://music.youtube.com/search?q=' + urllib.parse.quote_plus(release_title)
+                    release_text = f"[{release_title}]({youtube_url}), out {release['date']}\n"
                     open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
         # else:
             # print(f"No new releases found for {artist.item.name}.")
