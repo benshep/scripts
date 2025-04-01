@@ -176,9 +176,12 @@ def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
     print(url)
     response = requests.get(url, auth=(energy_credentials.octopus_api_key, ''))
-    # print(response.json())
-    df = pandas.json_normalize(response.json(), record_path='results')
-    df.interval_end = pandas.to_datetime(df.interval_end)
+    json = response.json()
+    print(json)
+    if json['count'] == 0:  # no results
+        return []
+    df = pandas.json_normalize(json, record_path='results')
+    df.interval_end = pandas.to_datetime(df.interval_end, utc=True)
     data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time, values='consumption')
     data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
@@ -281,11 +284,11 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(10, 'd')
-    # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
+    start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(5, 'd')
+    print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
