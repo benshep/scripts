@@ -12,7 +12,7 @@ import shutil
 
 import folders
 import media
-import google_sheets
+import google_api
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -334,10 +334,10 @@ def check_radio_files(scrobbled_titles):
     return toast
 
 
-def get_scrobbled_titles(lastfm_user):
+def get_scrobbled_titles(lastfm_user, limit=999) -> list[str]:
     # get recently played tracks (as reported by Last.fm)
     return [f'{track.track.artist.name} - {track.track.title}'.lower() for track in
-            (lastfm_user.get_recent_tracks(limit=400))]
+            (lastfm_user.get_recent_tracks(limit=limit))]  # limit <= 999
 
 
 def get_data_from_music_update(push):

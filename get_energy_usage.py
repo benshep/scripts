@@ -1,9 +1,11 @@
 import json
 import time
 import urllib.parse
+from typing import Any
 
 import pandas
 import requests
+from pandas import DataFrame, Timestamp
 from tabulate import tabulate
 
 import google_api
@@ -176,28 +178,35 @@ def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
     print(url)
     response = requests.get(url, auth=(energy_credentials.octopus_api_key, ''))
-    # print(response.json())
-    df = pandas.json_normalize(response.json(), record_path='results')
-    df.interval_end = pandas.to_datetime(df.interval_end)
+    json = response.json()
+    print(json)
+    if json['count'] == 0:  # no results
+        return []
+    df = pandas.json_normalize(json, record_path='results')
+    df.interval_end = pandas.to_datetime(df.interval_end, utc=True)
     data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time, values='consumption')
     data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
-def get_temp_data():
+def get_temp_data() -> dict[str, str]:
     """Use the OpenWeather API to fetch the last five days' worth of hourly temperatures."""
     temp_data = {}
-    for date in pandas.date_range(today() - pandas.to_timedelta(5, 'd'), today() - pandas.to_timedelta(1, 'd')):
+    for date in pandas.date_range(today() - pandas.to_timedelta(5, 'd'),
+                                  today() - pandas.to_timedelta(1, 'd')):
         params = {'lat': 53.460, 'lon': -2.766, 'dt': int(date.timestamp()), 'appid': api_key, 'units': 'metric'}
         url = f'https://api.openweathermap.org/data/2.5/onecall/timemachine?{urllib.parse.urlencode(params)}'
-        hourly_data = json.loads(requests.get(url).text)['hourly']
+        json_data = json.loads(requests.get(url).text)
+        print(json_data)
+        hourly_data = json_data['hourly']
         for hour, weather in enumerate(hourly_data):
             temp_data[dmy(date + pandas.to_timedelta(hour, 'h'))] = weather['temp']
     temp_data['name'] = 'mid temp'
     return temp_data
 
 
-def get_co2_data(start_date, postcode=home_postcode, remove_incomplete_rows=True):
+def get_co2_data(start_date: Timestamp, postcode: str = home_postcode,
+                 remove_incomplete_rows: bool = True) -> DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     Leave postcode blank to get national data.
     Specify remove_incomplete_rows=False to fill in -1 values where there are data gaps."""
@@ -281,11 +290,12 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(10, 'd')
+    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(5, 'd')
     # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
+    print(get_temp_data())
