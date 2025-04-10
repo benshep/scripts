@@ -1,5 +1,3 @@
-#!python3
-# -*- coding: utf-8 -*-
 import os
 import subprocess
 from random import randrange
@@ -8,11 +6,11 @@ from phrydy import MediaFile  # to get media data
 from time import time, sleep
 from platform import node
 
-from media import is_media_file, is_album_folder
+from media import is_media_file, is_album_folder, disc_track
+from folders import music_folder
 
 
 def pick_random_cd(cd_mode=True):
-    music_folder = os.path.join(os.environ['UserProfile'], 'Music')
     cd_folders = find_folders(cd_mode, music_folder)
 
     while True:
@@ -25,7 +23,7 @@ def pick_random_cd(cd_mode=True):
         if cd_mode and 'nocd' in files:
             continue  # don't have the CD
         track_list = sorted([MediaFile(f) for f in files if is_media_file(f)],
-                            key=lambda media: int(media.track) if media.track else 0)
+                            key=lambda media: disc_track(media, include_disc=True))
         if not track_list:
             continue
         os.system(f'title {folder.replace("&", "^&")}')  # set title of window

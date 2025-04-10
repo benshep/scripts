@@ -2,23 +2,66 @@ import re
 import requests
 import json
 from datetime import datetime, timedelta
-from typing import TypedDict
+from typing import TypedDict, Mapping, Any
 import google_api
-from merseyflow_auth import token, account_id
+from merseyflow_auth import username, password
 
-Crossing = TypedDict('Crossing', {'Direction': str,
-                                  'Fare': float,
-                                  'PlateNo': str,
-                                  'TransactionDate': str,  # e.g. '/Date(1738496168763-0000)/'
-                                  'TransactionId': int
-                                  })
+Crossing = TypedDict('Crossing', {
+    'Direction': str,
+    'Fare': float,
+    'PlateNo': str,
+    'TransactionDate': str,  # e.g. '/Date(1738496168763-0000)/'
+    'TransactionId': int
+})
+AccountInfo = TypedDict('AccountInfo', {
+    'AccountId': int,
+    'AccountNumber': str,
+    'AccountType': str,  # e.g. Personal
+    'AccountBalance': int,
+    'FirstName': str,
+    'LastName': str,
+    'PrimaryContactId': int,
+    'PrimaryAddressId': int,
+    'FinancialStatusId': str,  # e.g. Active
+    'IsInGracePeriod': bool,
+    'HasBadAddress': bool,
+    'SecureKey': str
+})
 
-def get_recent_crossings(days_back=30) -> list[Crossing]:
+
+class CommunicationFailure(Exception):
+    """Something went wrong when talking to the server."""
+    pass
+
+
+def server_response(page: str,
+                    payload: dict[str, str | int],
+                    headers: Mapping[str, str | bytes | None] | None = None) -> dict[str, Any]:
+    """Send a request to the Merseyflow server and return a response."""
+    response = requests.post('https://api-bridge.merseyflow.co.uk/' + page, payload, headers=headers)
+    response_json = json.loads(response.text)
+    # print(response_json)
+    status = response_json['ResponseStatus']
+    if not status['ErrorCode'] == '00':
+        raise CommunicationFailure(f'Server returned error: {status["Message"]}')
+    return response_json
+
+
+def get_token() -> AccountInfo:
+    """Login to the Merseyflow API and return a token."""
+    payload = {"UserName": username, "Password": password}
+    response_json = server_response('json/reply/UserLogin', payload)
+    # response looks like {'Account': {...}, 'ResponseStatus': {'ErrorCode': '00'}}
+    return response_json['Account']
+
+
+def get_recent_crossings(days_back: int = 30) -> list[Crossing]:
     """Fetch data on my recent Mersey Gateway crossings from the Merseyflow website."""
-    url = 'https://api-bridge.merseyflow.co.uk/GetCrossingHistory?format=json'
     now = datetime.now()
     start_date = now - timedelta(days=days_back)
-    payload = {"AccountId": account_id,
+    account_info = get_token()
+    headers = {'X-Authentication-Token': account_info['SecureKey']}
+    payload = {"AccountId": account_info['AccountId'],
                "PageSize": 50,
                "PageNumber": 1,
                "StartDate": str(start_date.date()),  # yyyy-mm-dd
@@ -26,14 +69,12 @@ def get_recent_crossings(days_back=30) -> list[Crossing]:
                "Sorting": "",
                "PlateNumber": ""
                }
-    headers = {'X-Authentication-Token': token}
-    response = requests.post(url, payload, headers=headers)
-    response_json = json.loads(response.text)
-    crossings = response_json['CrossingHistories']
+    response = server_response('GetCrossingHistory?format=json', payload, headers=headers)
+    crossings = response['CrossingHistories']
     return crossings
 
 
-def log_crossings():
+def log_crossings() -> str:
     """Log the most recent crossings to a Google spreadsheet."""
     sheet_id = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'  # 🌉 Mersey Gateway spreadsheet
     sheet_name = 'Sheet1'
@@ -73,4 +114,4 @@ def log_crossings():
 
 
 if __name__ == '__main__':
-    print(log_crossings())
+    print(get_recent_crossings())
