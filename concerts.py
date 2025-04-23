@@ -244,7 +244,7 @@ def find_new_releases():
             for release in releases:
                 release_title = f"{release['artist']} - {release['title']}"
                 if release_title not in release_list:
-                    toast += release_title
+                    toast += release_title + '\n'
                     youtube_url = 'https://music.youtube.com/search?q=' + urllib.parse.quote_plus(release_title)
                     release_text = f"[{release_title}]({youtube_url}), out {release['date']}\n"
                     open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
