@@ -45,7 +45,7 @@ from todos_from_notes import todos_from_notes
 from get_payslips import get_payslips
 from catering_bookings import get_bookings
 from package_updates import find_new_python_packages
-from page_changes import check_page_changes
+from page_changes import check_page_changes, live_update
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
@@ -90,6 +90,7 @@ def run_tasks():
             sleep(10)
             exit()
 
+        title_toast = ''
         for i in range(len(data)):
             try:
                 values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
@@ -144,7 +145,10 @@ def run_tasks():
                 case str():  # success and toast summarising actions
                     result = 'Success'
                     print(return_value)
-                    pushbullet.push_note(f'{icon} {function_name}', return_value)
+                    if len(return_value) >= 15:  # toast for long messages, otherwise title bar
+                        pushbullet.push_note(f'{icon} {function_name}', return_value)
+                    else:
+                        title_toast = return_value  # note: only works for one per loop, use sparingly!
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
@@ -165,7 +169,7 @@ def run_tasks():
         next_task_time += timedelta(seconds=hash(node()) % 300)
         next_time_str = next_task_time.strftime("%H:%M")
         print(f'Waiting until {next_time_str}')
-        os.system(f'title ⌛️ {next_time_str}')  # set title of window
+        os.system(f'title {title_toast} ⌛️ {next_time_str}')  # set title of window
         while datetime.now() < next_task_time:
             sleep(60)
 
