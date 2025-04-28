@@ -73,6 +73,7 @@ def run_tasks():
     period_col = column_names.index('Period')
     pushbullet = Pushbullet(api_key)
 
+    title_toast = ''
     while True:
         print('Fetching data from spreadsheet')
         try:
@@ -90,7 +91,6 @@ def run_tasks():
             sleep(10)
             exit()
 
-        title_toast = ''
         for i in range(len(data)):
             try:
                 values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
