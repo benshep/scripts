@@ -1,19 +1,19 @@
-# Update get_iplayer to new version
-
 import subprocess
 import os
 from shutil import copyfile
+
 import requests
 from send2trash import send2trash
 from folders import user_profile, docs_folder
 
-def replace_in_tag(text, tag_name, new_inner):
+def replace_in_tag(text: str, tag_name: str, new_inner: str) -> str:
     start_tag, end_tag = f'<{tag_name}>', f'</{tag_name}>'
     tag_start_pos, tag_end_pos = text.find(start_tag), text.find(end_tag)
     return text[:tag_start_pos] + start_tag + new_inner + text[tag_end_pos:]
 
 
 def new_version():
+    """Update get_iplayer to new version."""
     # folders
     app_name = 'get_iplayer'
     choco_name = 'getiplayer'
@@ -46,6 +46,9 @@ def new_version():
         if link_name.startswith(app_name):
             version = link_name.split(' ')[1]
             break
+    else:
+        print('Version info not found in release notes')
+        return
 
     print(f'{app_name} {version=}')
     nuspec = replace_in_tag(nuspec, 'version', version)
