@@ -46,6 +46,10 @@ def get_ticketmaster_events(artist_name):
                 attraction['name'] != artist_name for attraction in info.get('attractions', [])):
             continue
         venue = info['venues'][0]
+        if 'location' not in venue:
+            print(venue)
+            print(f'No location info for {venue["name"]}')
+            continue
         location = venue['location']
         longitude = radians(float(location['longitude']))
         latitude = radians(float(location['latitude']))
@@ -258,5 +262,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
-    print(find_new_releases())
+    print(get_upcoming_shows())
     # print(update_gig_calendar())
