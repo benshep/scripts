@@ -52,8 +52,8 @@ sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsh
 sheet_name = 'Sheet1'
 
 start_dir = os.getcwd()
-imports = {inspect.getfile(f) for _, f in locals().items() if inspect.isfunction(f)}
-imports = {file: os.path.getmtime(file) for file in imports if 'envs' not in file}  # my code, not library stuff
+import_dict = {func: inspect.getfile(func) for func in locals().values() if inspect.isfunction(func)}
+imports = {file: os.path.getmtime(file) for file in import_dict.values() if 'envs' not in file}  # my code, not library stuff
 imports[__file__] = os.path.getmtime(__file__)  # this file too
 
 
@@ -74,6 +74,8 @@ def run_tasks():
     pushbullet = Pushbullet(api_key)
 
     title_toast = ''
+    # first argument: comma-separated list of functions to run (because they were modified)
+    force_run = [] if len(sys.argv) < 2 else sys.argv[1].split(',')
     while True:
         print('Fetching data from spreadsheet')
         try:
@@ -103,10 +105,10 @@ def run_tasks():
             last_result = properties.get('Last result')
             now = datetime.now()
             next_run_time = datetime.strptime(properties.get('Next run'), time_format)
-            if next_run_time > now and last_result in ('Success', 'Postponed'):
+            function_name = properties.get('Function name')
+            if next_run_time > now and last_result in ('Success', 'Postponed') and function_name not in force_run:
                 next_task_time = min(next_task_time, next_run_time)
                 continue
-            function_name = properties.get('Function name')
             last_run_time = datetime.strptime(properties.get('Last run'), time_format)
             if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
                 print(f'{function_name} already running since {last_run_time} - skipping for now')
@@ -165,6 +167,7 @@ def run_tasks():
             print(result)
             update_cell(i + 2, get_column('Last result'), result)
 
+        force_run = []  # only force run for first loop
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
         next_task_time += timedelta(seconds=hash(node()) % 300)
         next_time_str = next_task_time.strftime("%H:%M")
@@ -176,10 +179,12 @@ def run_tasks():
         # restart code
         for file, mod_time in imports.items():
             if mod_time != os.path.getmtime(file):
+                functions = ','.join([func.__name__ for func, filename in import_dict.items() if filename == file])
                 os.system('title 🔁 Restarting')  # set title of window
-                print(f'Change detected in {file}\nRestarting\n\n')
+                print(f'Change detected in {file}, functions {functions}\nRestarting\n\n')
                 os.chdir(start_dir)
-                subprocess.Popen([sys.executable] + sys.argv)
+                # force rerunning those functions
+                subprocess.Popen([sys.executable, sys.argv[0], functions])
                 exit()
 
 
