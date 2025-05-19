@@ -616,7 +616,7 @@ def read_exclude_list(exclude_list):
 def check_folders_for_bitrot(computer_name, verbosity=1):
     if computer_name != node():
         print('Wrong argument for this computer')
-        return False
+        return datetime.datetime.now() + datetime.timedelta(days=1)  # try again tomorrow
 
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     for folder in (r'STFC\Documents', 'Misc', 'Pictures', 'Music'):
