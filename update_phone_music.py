@@ -288,12 +288,12 @@ def check_radio_files(scrobbled_titles):
             which_artist[tags.album] = tags.artist
             print(f'[{file_count}] {tags.artist} - {tags.album}')
             # is it a new album fairly far down the list?
-            if ('(bumped)' not in file  # don't bump anything more than once
+            if ('(bumped from ' not in file  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
                     and bump_dates and bump_dates[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file}\n'
-                os.rename(file, f'{new_date} (bumped) {file[11:]}')
+                os.rename(file, f'{new_date} (bumped from {file[:10]}) {file[11:]}')
 
         if tags_changed and not test_mode:
             tags.save()
