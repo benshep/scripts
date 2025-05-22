@@ -1,5 +1,3 @@
-#!python3
-# -*- coding: utf-8 -*-
 import contextlib
 import os
 import re
@@ -22,32 +20,6 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 
 import socket
 from folders import user_profile
-
-# REWRITE:
-# Database class to store music
-# add_file(filename): scan file and add to database
-#
-# first walk through music folder
-# for each file:
-# (album, album artist, folder) is key
-# store file size, mtime, track number, duration too
-# remove short 'albums' with 1 or 2 tracks
-#
-# for each album:
-# get total size, duration, number of tracks
-# get my play count
-# get earliest last modified date
-#
-# remove recently-played albums
-# delete folders from Commute with recently-played albums
-# copy (or link?) albums of given length to Commute and 40 minutes
-# remove albums that are in Commute and 40 minutes
-#
-# now create links for Music for phone folder
-# don't assign global score yet - just use a mid-value (0.5)
-# work from highest to lowest scoring, add up total size, set threshold
-# for albums around the threshold, check global plays
-# need to repeat process to fine-tune?
 
 test_mode = False  # don't change anything!
 
@@ -271,8 +243,6 @@ def check_radio_files(scrobbled_titles):
 
         file_count += 1
         # min_date = min_date or file_date  # set to first one
-        if file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
-            bump_date.append(file_date)  # but maintain a list, don't bump everything here
         # weeks = (file_date - min_date).days // 7
 
         tags = phrydy.MediaFile(file)
@@ -280,7 +250,7 @@ def check_radio_files(scrobbled_titles):
         # total_hours += tags.length / 3600
 
         track_title = media.artist_title(tags)
-        if track_title.lower() in scrobbled_titles:
+        if track_title in scrobbled_titles:
             print(f'[{file_count}] ✔ {track_title}')
             if not first_unheard:  # only found played files so far
                 scrobbled_radio.append(file)  # possibly delete this one
@@ -289,6 +259,8 @@ def check_radio_files(scrobbled_titles):
         elif not first_unheard:
             print(f'[{file_count}] ❌ {track_title}')
             first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
+        elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
+            bump_date.append(file_date)  # but maintain a list, don't bump everything here
 
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
