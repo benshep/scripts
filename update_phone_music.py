@@ -7,10 +7,10 @@ import mediafile
 import pylast
 import json  # to save data
 import shutil
+from dateutil.relativedelta import relativedelta  # for adding months to dates
 
 import folders
 import media
-import google_api
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -229,7 +229,7 @@ def check_radio_files(scrobbled_titles):
     # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
     file_count = 0
     # min_date = None
-    bump_date = []
+    bump_dates = []
     toast = ''
     # total_hours = 0
     which_artist = {}
@@ -260,7 +260,9 @@ def check_radio_files(scrobbled_titles):
             print(f'[{file_count}] ❌ {track_title}')
             first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
         elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
-            bump_date.append(file_date)  # but maintain a list, don't bump everything here
+            bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
+            if bump_date not in bump_dates:
+                bump_dates.append(file_date)  # but maintain a list, don't bump everything here
 
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
@@ -288,8 +290,8 @@ def check_radio_files(scrobbled_titles):
             # is it a new album fairly far down the list?
             if ('(bumped)' not in file  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
-                    and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
-                new_date = bump_date.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
+                    and bump_dates and bump_dates[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
+                new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file}\n'
                 os.rename(file, f'{new_date} (bumped) {file[11:]}')
 
