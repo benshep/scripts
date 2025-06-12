@@ -262,7 +262,7 @@ def check_radio_files(scrobbled_titles):
         elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
             bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
             if bump_date not in bump_dates:
-                bump_dates.append(file_date)  # but maintain a list, don't bump everything here
+                bump_dates.append(bump_date)  # but maintain a list, don't bump everything here
 
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
