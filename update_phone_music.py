@@ -1,5 +1,3 @@
-#!python3
-# -*- coding: utf-8 -*-
 import contextlib
 import os
 import re
@@ -9,10 +7,10 @@ import mediafile
 import pylast
 import json  # to save data
 import shutil
+from dateutil.relativedelta import relativedelta  # for adding months to dates
 
 import folders
 import media
-import google_api
 from lastfm import lastfm  # contains secrets, so don't show them here
 from datetime import datetime, timedelta
 from collections import OrderedDict
@@ -22,32 +20,6 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 
 import socket
 from folders import user_profile
-
-# REWRITE:
-# Database class to store music
-# add_file(filename): scan file and add to database
-#
-# first walk through music folder
-# for each file:
-# (album, album artist, folder) is key
-# store file size, mtime, track number, duration too
-# remove short 'albums' with 1 or 2 tracks
-#
-# for each album:
-# get total size, duration, number of tracks
-# get my play count
-# get earliest last modified date
-#
-# remove recently-played albums
-# delete folders from Commute with recently-played albums
-# copy (or link?) albums of given length to Commute and 40 minutes
-# remove albums that are in Commute and 40 minutes
-#
-# now create links for Music for phone folder
-# don't assign global score yet - just use a mid-value (0.5)
-# work from highest to lowest scoring, add up total size, set threshold
-# for albums around the threshold, check global plays
-# need to repeat process to fine-tune?
 
 test_mode = False  # don't change anything!
 
@@ -257,7 +229,7 @@ def check_radio_files(scrobbled_titles):
     # loop over radio files - first check if they've been scrobbled, then try to correct tags where titles aren't set
     file_count = 0
     # min_date = None
-    bump_date = []
+    bump_dates = []
     toast = ''
     # total_hours = 0
     which_artist = {}
@@ -271,8 +243,6 @@ def check_radio_files(scrobbled_titles):
 
         file_count += 1
         # min_date = min_date or file_date  # set to first one
-        if file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
-            bump_date.append(file_date)  # but maintain a list, don't bump everything here
         # weeks = (file_date - min_date).days // 7
 
         tags = phrydy.MediaFile(file)
@@ -280,7 +250,7 @@ def check_radio_files(scrobbled_titles):
         # total_hours += tags.length / 3600
 
         track_title = media.artist_title(tags)
-        if track_title.lower() in scrobbled_titles:
+        if track_title in scrobbled_titles:
             print(f'[{file_count}] ✔ {track_title}')
             if not first_unheard:  # only found played files so far
                 scrobbled_radio.append(file)  # possibly delete this one
@@ -289,6 +259,10 @@ def check_radio_files(scrobbled_titles):
         elif not first_unheard:
             print(f'[{file_count}] ❌ {track_title}')
             first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
+        elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
+            bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
+            if bump_date not in bump_dates:
+                bump_dates.append(bump_date)  # but maintain a list, don't bump everything here
 
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
@@ -314,12 +288,12 @@ def check_radio_files(scrobbled_titles):
             which_artist[tags.album] = tags.artist
             print(f'[{file_count}] {tags.artist} - {tags.album}')
             # is it a new album fairly far down the list?
-            if ('(bumped)' not in file  # don't bump anything more than once
+            if ('(bumped from ' not in file  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
-                    and bump_date and bump_date[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
-                new_date = bump_date.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
+                    and bump_dates and bump_dates[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
+                new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file}\n'
-                os.rename(file, f'{new_date} (bumped) {file[11:]}')
+                os.rename(file, f'{new_date} (bumped from {file[:10]}) {file[11:]}')
 
         if tags_changed and not test_mode:
             tags.save()
