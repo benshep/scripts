@@ -36,11 +36,11 @@ if on_windows:
 # Get EXIF orientation and transpose the image accordingly
 # http://stackoverflow.com/questions/4228530/pil-thumbnail-is-rotating-my-image
 
-flip_horizontal = lambda im: im.transpose(Image.FLIP_LEFT_RIGHT)
-flip_vertical = lambda im: im.transpose(Image.FLIP_TOP_BOTTOM)
-rotate_180 = lambda im: im.transpose(Image.ROTATE_180)
-rotate_90 = lambda im: im.transpose(Image.ROTATE_90)
-rotate_270 = lambda im: im.transpose(Image.ROTATE_270)
+flip_horizontal = lambda im: im.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+flip_vertical = lambda im: im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+rotate_180 = lambda im: im.transpose(Image.Transpose.ROTATE_180)
+rotate_90 = lambda im: im.transpose(Image.Transpose.ROTATE_90)
+rotate_270 = lambda im: im.transpose(Image.Transpose.ROTATE_270)
 transpose = lambda im: im.rotate_90(flip_horizontal(im))
 transverse = lambda im: im.rotate_90(flip_vertical(im))
 orientation_funcs = [None, lambda x: x, flip_horizontal, rotate_180,
