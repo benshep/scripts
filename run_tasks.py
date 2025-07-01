@@ -129,7 +129,7 @@ def run_tasks():
                 parameters = float(parameters_raw)
             except ValueError:  # it's not a float, assume string
                 parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
-            os.system(f'title {icon} {function_name}')  # set title of window
+            set_window_title(f'{icon} {function_name}')
             print('')
             print(now_str, function_name, parameters)
             try:
@@ -177,7 +177,7 @@ def run_tasks():
         next_task_time += timedelta(seconds=hash(node()) % 300)
         next_time_str = next_task_time.strftime("%H:%M")
         print(f'Waiting until {next_time_str}')
-        os.system(f'title {title_toast} ⌛️ {next_time_str}')  # set title of window
+        set_window_title(f'{title_toast} ⌛️ {next_time_str}')
         while datetime.now() < next_task_time:
             sleep(60)
 
@@ -185,12 +185,18 @@ def run_tasks():
         for file, mod_time in imports.items():
             if mod_time != os.path.getmtime(file):
                 functions = ','.join([func.__name__ for func, filename in import_dict.items() if filename == file])
-                os.system('title 🔁 Restarting')  # set title of window
+                set_window_title('🔁 Restarting')
                 print(f'Change detected in {file}, functions {functions}\nRestarting\n\n')
                 os.chdir(start_dir)
                 # force rerunning those functions
                 subprocess.Popen([sys.executable, sys.argv[0], functions])
                 exit()
+
+
+def set_window_title(text: str) -> None:
+    """Set the title of the Python command window (Windows only)."""
+    if sys.platform == 'win32':
+        os.system(f'title {text}')
 
 
 if __name__ == '__main__':
