@@ -35,7 +35,8 @@ from rugby_fixtures import update_saints_calendar
 from concerts import update_gig_calendar, find_new_releases
 from mersey_gateway import log_crossings
 
-if docs_folder:
+at_home = docs_folder is None  # no work documents
+if not at_home:
     # 'work' tasks
     sys.path.append(os.path.join(docs_folder, 'Scripts'))
     from oracle_staff_check import annual_leave_check, otl_submit
@@ -66,7 +67,7 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Enabled',
+    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Work', 'Home',
                     'Last run', 'Machine', 'Last result', 'Next run']
 
     def get_column(name):
@@ -104,7 +105,7 @@ def run_tasks():
                 print(e)
                 break
             properties = dict(zip(column_names, values))
-            if properties.get('Enabled', False) != 'TRUE':
+            if properties.get('Home' if at_home else 'Work', False) != 'TRUE':
                 continue
             last_result = properties.get('Last result')
             now = datetime.now()
