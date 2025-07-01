@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from platform import node
 
 import psutil
-import google_api
+import google_api  # pip install google-api-python-client
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from folders import docs_folder
@@ -22,6 +22,8 @@ with contextlib.suppress(ImportError):
     from rich.traceback import install  # rich tracebacks
 
     install()
+
+# 'home' tasks
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
@@ -33,19 +35,21 @@ from rugby_fixtures import update_saints_calendar
 from concerts import update_gig_calendar, find_new_releases
 from mersey_gateway import log_crossings
 
-sys.path.append(os.path.join(docs_folder, 'Scripts'))
-from oracle_staff_check import annual_leave_check, otl_submit
-from get_budget_data import get_budget_data
-from check_leave_dates import check_leave_dates
-from fill_availability import fill_availability
-from check_on_site_support import check_on_site_support
-from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
-from get_access_data import check_prev_week
-from todos_from_notes import todos_from_notes
-from get_payslips import get_payslips
-from catering_bookings import get_bookings
-from package_updates import find_new_python_packages
-from page_changes import check_page_changes, live_update
+if docs_folder:
+    # 'work' tasks
+    sys.path.append(os.path.join(docs_folder, 'Scripts'))
+    from oracle_staff_check import annual_leave_check, otl_submit
+    from get_budget_data import get_budget_data
+    from check_leave_dates import check_leave_dates
+    from fill_availability import fill_availability
+    from check_on_site_support import check_on_site_support
+    from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
+    from get_access_data import check_prev_week
+    from todos_from_notes import todos_from_notes
+    from get_payslips import get_payslips
+    from catering_bookings import get_bookings
+    from package_updates import find_new_python_packages
+    from page_changes import check_page_changes, live_update
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
