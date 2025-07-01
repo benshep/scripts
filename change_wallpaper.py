@@ -28,6 +28,8 @@ from random import randint
 import screeninfo
 from PIL import Image, ImageDraw, ImageFont
 
+from folders import user_profile
+
 on_windows = os.name == 'nt'
 if on_windows:
     from win32api import GetMonitorInfo, MonitorFromPoint  # to find taskbar height
@@ -89,7 +91,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
     font_name = 'Roboto-Regular' if target == 'phone' else 'segoeui' if on_windows else 'Ubuntu-R'
     font = ImageFont.truetype(f'{font_name}.ttf', 24)
 
-    def write_caption(im, text, x, y, align_right=False):
+    def write_caption(im: Image, text: str, x: int, y: int, align_right: bool = False):
         draw = ImageDraw.Draw(im)
         print(f' Caption "{text}" at {x}, {y}')
         # put a black drop shadow behind so the text can be read on any background
@@ -261,17 +263,17 @@ def change_wallpaper(target: str = 'desktop') -> None:
             canvas.save('00.jpg')
             canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
 
-        elif on_windows:  # use USER32 call to set desktop background
+        elif on_windows:  # use USER32 call to set a desktop background
             ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper_filename, 3)
 
 
-def find_mosaic_images(full_name, image_size, image_list, num_in_mosaic):
+def find_mosaic_images(full_name: str, image_size, image_list, num_in_mosaic):
     file_path, filename = os.path.split(full_name)
     if num_in_mosaic == 1:
         return [filename]
     #     print(f" Looking for {num_in_mosaic} images with dimensions {image_size}")
     dir_files = [os.path.basename(name) for name, _ in image_list if os.path.dirname(name) == file_path]
-    # Fetch files from list starting with the chosen one and working outwards
+    # Fetch files from a list starting with the chosen one and working outwards
     index = dir_files.index(filename)
     indices = sorted(range(len(dir_files)), key=lambda j: abs(index - j))
     if len(indices) < num_in_mosaic:
@@ -376,8 +378,6 @@ def on_remote_desktop():
 
 
 def get_folders(target):
-    # find user's "My Documents" dir
-    user_profile = os.environ['UserProfile' if on_windows else 'HOME']
     # where pictures are kept
     pics_folder = os.path.join(user_profile, 'Pictures')
     # in case it's a symlink
