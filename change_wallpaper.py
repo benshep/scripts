@@ -28,28 +28,31 @@ from random import randint
 import screeninfo
 from PIL import Image, ImageDraw, ImageFont
 
+from folders import user_profile
+
 on_windows = os.name == 'nt'
 if on_windows:
+    from win32api import GetMonitorInfo, MonitorFromPoint  # to find taskbar height
     import ctypes.wintypes
 
 # Get EXIF orientation and transpose the image accordingly
 # http://stackoverflow.com/questions/4228530/pil-thumbnail-is-rotating-my-image
 
-flip_horizontal = lambda im: im.transpose(Image.FLIP_LEFT_RIGHT)
-flip_vertical = lambda im: im.transpose(Image.FLIP_TOP_BOTTOM)
-rotate_180 = lambda im: im.transpose(Image.ROTATE_180)
-rotate_90 = lambda im: im.transpose(Image.ROTATE_90)
-rotate_270 = lambda im: im.transpose(Image.ROTATE_270)
+flip_horizontal = lambda im: im.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+flip_vertical = lambda im: im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+rotate_180 = lambda im: im.transpose(Image.Transpose.ROTATE_180)
+rotate_90 = lambda im: im.transpose(Image.Transpose.ROTATE_90)
+rotate_270 = lambda im: im.transpose(Image.Transpose.ROTATE_270)
 transpose = lambda im: im.rotate_90(flip_horizontal(im))
 transverse = lambda im: im.rotate_90(flip_vertical(im))
 orientation_funcs = [None, lambda x: x, flip_horizontal, rotate_180,
                      flip_vertical, transpose, rotate_270, transverse, rotate_90]
 
 
-def apply_orientation(im):
+def apply_orientation(im: Image) -> Image:
     """
-    Extract the orientation EXIF tag from the image, which should be a PIL Image instance,
-    and if there is an orientation tag that would rotate the image, apply that rotation to
+    Extract the orientation EXIF tag from the image, which should be a PIL Image instance.
+    If there is an orientation tag that would rotate the image, apply that rotation to
     the Image instance given to do an in-place rotation.
 
     :param Image im: Image instance to inspect
@@ -65,9 +68,9 @@ def apply_orientation(im):
     return im
 
 
-def change_wallpaper(target='desktop'):
+def change_wallpaper(target: str = 'desktop') -> None:
     """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
-    target can be desktop, lockscreen or phone."""
+    The parameter target can be desktop, lockscreen or phone."""
     print(f'Wallpaper Changer, {target=}')
 
     pics_folder, wallpaper_dir = get_folders(target)
@@ -88,7 +91,7 @@ def change_wallpaper(target='desktop'):
     font_name = 'Roboto-Regular' if target == 'phone' else 'segoeui' if on_windows else 'Ubuntu-R'
     font = ImageFont.truetype(f'{font_name}.ttf', 24)
 
-    def write_caption(im, text, x, y, align_right=False):
+    def write_caption(im: Image, text: str, x: int, y: int, align_right: bool = False):
         draw = ImageDraw.Draw(im)
         print(f' Caption "{text}" at {x}, {y}')
         # put a black drop shadow behind so the text can be read on any background
@@ -191,8 +194,18 @@ def change_wallpaper(target='desktop'):
                 for long, short in [datetime.date(2016, m + 1, 1).strftime('%B %b').split(' ') for m in range(12)]:
                     caption = caption.replace(long, short)
 
-            caption_x, caption_y = (108, 60) if target == 'phone' else (
-            mosaic_left + 20, mosaic_top + mosaic_height - 60)
+            if target == 'phone':
+                caption_x, caption_y = 108, 60
+            else:
+                caption_x = mosaic_left + 20
+                caption_y = mosaic_top + mosaic_height - 60
+                if on_windows:
+                    monitor_info = GetMonitorInfo(MonitorFromPoint((mon.x, mon.y)))
+                    monitor_top, monitor_height = monitor_info['Monitor'][1::2]
+                    work_area_top, work_area_height = monitor_info['Work'][1::2]
+                    if monitor_top == work_area_top:
+                        taskbar_height = monitor_height - work_area_height
+                        caption_y -= (taskbar_height - 22)
             write_caption(canvas, caption, caption_x, caption_y)
             if target == 'phone':  # save each time rather than one big mosaic - want separate portrait/landscape images
                 # Also write the date and time into the image
@@ -250,17 +263,17 @@ def change_wallpaper(target='desktop'):
             canvas.save('00.jpg')
             canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
 
-        elif on_windows:  # use USER32 call to set desktop background
+        elif on_windows:  # use USER32 call to set a desktop background
             ctypes.windll.user32.SystemParametersInfoW(20, 0, wallpaper_filename, 3)
 
 
-def find_mosaic_images(full_name, image_size, image_list, num_in_mosaic):
+def find_mosaic_images(full_name: str, image_size, image_list, num_in_mosaic):
     file_path, filename = os.path.split(full_name)
     if num_in_mosaic == 1:
         return [filename]
     #     print(f" Looking for {num_in_mosaic} images with dimensions {image_size}")
     dir_files = [os.path.basename(name) for name, _ in image_list if os.path.dirname(name) == file_path]
-    # Fetch files from list starting with the chosen one and working outwards
+    # Fetch files from a list starting with the chosen one and working outwards
     index = dir_files.index(filename)
     indices = sorted(range(len(dir_files)), key=lambda j: abs(index - j))
     if len(indices) < num_in_mosaic:
@@ -302,7 +315,7 @@ def get_exclude_list(pics_folder):
     return exclude_list
 
 
-def find_images(pics_folder):
+def find_images(pics_folder: str):
     # weight by sum of size and date:
     # bigger files (likely to be better quality) get a higher weighting
     # as do more recent files (we've already seen older ones quite a lot, so they get a lower weighting)
@@ -323,7 +336,7 @@ def find_images(pics_folder):
     return list(zip(file_list, accumulate(weights)))
 
 
-def create_canvas(monitors):
+def create_canvas(monitors: list[screeninfo.Monitor]) -> tuple[Image, int, int]:
     left = min(m.x for m in monitors)
     right = max(m.x + m.width for m in monitors)
     top = min(m.y for m in monitors)
@@ -335,7 +348,7 @@ def create_canvas(monitors):
     return canvas, left, top
 
 
-def get_monitors(target):
+def get_monitors(target: str) -> list[screeninfo.Monitor]:
     """Figure out monitor geometry."""
     if target == 'phone':
         width, height = 800, 1560
@@ -365,8 +378,6 @@ def on_remote_desktop():
 
 
 def get_folders(target):
-    # find user's "My Documents" dir
-    user_profile = os.environ['UserProfile' if on_windows else 'HOME']
     # where pictures are kept
     pics_folder = os.path.join(user_profile, 'Pictures')
     # in case it's a symlink
