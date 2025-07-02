@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from platform import node
 
 import psutil
-import google_api
+import google_api  # pip install google-api-python-client
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from folders import docs_folder
@@ -22,6 +22,8 @@ with contextlib.suppress(ImportError):
     from rich.traceback import install  # rich tracebacks
 
     install()
+
+# 'home' tasks
 from change_wallpaper import change_wallpaper
 from update_phone_music import update_phone_music
 from copy_60_minutes import copy_60_minutes
@@ -32,20 +34,23 @@ from erase_trailers import erase_trailers
 from rugby_fixtures import update_saints_calendar
 from concerts import update_gig_calendar, find_new_releases
 from mersey_gateway import log_crossings
-
-sys.path.append(os.path.join(docs_folder, 'Scripts'))
-from oracle_staff_check import annual_leave_check, otl_submit
-from get_budget_data import get_budget_data
-from check_leave_dates import check_leave_dates
-from fill_availability import fill_availability
-from check_on_site_support import check_on_site_support
-from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
-from get_access_data import check_prev_week
-from todos_from_notes import todos_from_notes
-from get_payslips import get_payslips
-from catering_bookings import get_bookings
 from package_updates import find_new_python_packages
-from page_changes import check_page_changes, live_update
+
+at_home = docs_folder is None  # no work documents
+if not at_home:
+    # 'work' tasks
+    sys.path.append(os.path.join(docs_folder, 'Scripts'))
+    from oracle_staff_check import annual_leave_check, otl_submit
+    from get_budget_data import get_budget_data
+    from check_leave_dates import check_leave_dates
+    from fill_availability import fill_availability
+    from check_on_site_support import check_on_site_support
+    from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
+    from get_access_data import check_prev_week
+    from todos_from_notes import todos_from_notes
+    from get_payslips import get_payslips
+    from catering_bookings import get_bookings
+    from page_changes import check_page_changes, live_update
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
@@ -62,7 +67,7 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
-    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Enabled',
+    column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Work', 'Home',
                     'Last run', 'Machine', 'Last result', 'Next run']
 
     def get_column(name):
@@ -100,7 +105,7 @@ def run_tasks():
                 print(e)
                 break
             properties = dict(zip(column_names, values))
-            if properties.get('Enabled', False) != 'TRUE':
+            if properties.get('Home' if at_home else 'Work', False) != 'TRUE':
                 continue
             last_result = properties.get('Last result')
             now = datetime.now()
@@ -124,7 +129,7 @@ def run_tasks():
                 parameters = float(parameters_raw)
             except ValueError:  # it's not a float, assume string
                 parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
-            os.system(f'title {icon} {function_name}')  # set title of window
+            set_window_title(f'{icon} {function_name}')
             print('')
             print(now_str, function_name, parameters)
             try:
@@ -172,7 +177,7 @@ def run_tasks():
         next_task_time += timedelta(seconds=hash(node()) % 300)
         next_time_str = next_task_time.strftime("%H:%M")
         print(f'Waiting until {next_time_str}')
-        os.system(f'title {title_toast} ⌛️ {next_time_str}')  # set title of window
+        set_window_title(f'{title_toast} ⌛️ {next_time_str}')
         while datetime.now() < next_task_time:
             sleep(60)
 
@@ -180,12 +185,18 @@ def run_tasks():
         for file, mod_time in imports.items():
             if mod_time != os.path.getmtime(file):
                 functions = ','.join([func.__name__ for func, filename in import_dict.items() if filename == file])
-                os.system('title 🔁 Restarting')  # set title of window
+                set_window_title('🔁 Restarting')
                 print(f'Change detected in {file}, functions {functions}\nRestarting\n\n')
                 os.chdir(start_dir)
                 # force rerunning those functions
                 subprocess.Popen([sys.executable, sys.argv[0], functions])
                 exit()
+
+
+def set_window_title(text: str) -> None:
+    """Set the title of the Python command window (Windows only)."""
+    if sys.platform == 'win32':
+        os.system(f'title {text}')
 
 
 if __name__ == '__main__':
