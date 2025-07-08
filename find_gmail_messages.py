@@ -15,15 +15,14 @@ def list_messages():
     next_page_token = ''
     log = open(log_file, 'a')
     while True:
-        all_mail = messages_api.list(userId='me', q='', pageToken=next_page_token, maxResults=500).execute()  # 5 quota units
-        print(len(all_mail['messages']), 'messages listed')
+        all_mail = messages_api.list(userId='me', q='before:2007/05/25', pageToken=next_page_token, maxResults=500).execute()  # 5 quota units
+        # print(len(all_mail['messages']), 'messages listed')
         for message in all_mail['messages']:
             # usage limit: 250 quota units per second, moving average
             sleep(20 / 250)
             message_detail = messages_api.get(userId='me', id=message['id']).execute()  # 5 quota units
-            try:
-                from_address = next(h['value'] for h in message_detail['payload']['headers'] if h['name'] == 'From')
-            except StopIteration:  # no from address(?)
+            from_address = get_header_value(message_detail, 'From')
+            if from_address is None:
                 continue
             if '<' in from_address:  # strip out Name <from@server.com>
                 from_address = from_address[from_address.find('<') + 1:from_address.find('>')]
@@ -35,10 +34,18 @@ def list_messages():
             log.write(f'{from_address}\t{message_count}\n')
             if message_count > 200:
                 print(from_address)
+        print(get_header_value(message_detail, 'Date'), from_address, get_header_value(message_detail, 'Subject'))
         if 'nextPageToken' not in all_mail:
             break
         next_page_token = all_mail['nextPageToken']
     log.close()
+
+
+def get_header_value(message_detail, field):
+    try:
+        return next(h['value'] for h in message_detail['payload']['headers'] if h['name'] == field)
+    except StopIteration:  # no from address(?)
+        return None
 
 
 if __name__ == '__main__':

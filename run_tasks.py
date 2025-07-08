@@ -34,12 +34,12 @@ from erase_trailers import erase_trailers
 from rugby_fixtures import update_saints_calendar
 from concerts import update_gig_calendar, find_new_releases
 from mersey_gateway import log_crossings
-from package_updates import find_new_python_packages
 
 at_home = docs_folder is None  # no work documents
 if not at_home:
     # 'work' tasks
     sys.path.append(os.path.join(docs_folder, 'Scripts'))
+    from package_updates import find_new_python_packages
     from oracle_staff_check import annual_leave_check, otl_submit
     from get_budget_data import get_budget_data
     from check_leave_dates import check_leave_dates
@@ -91,7 +91,7 @@ def run_tasks():
             continue
         assert headers == column_names
         min_period = min(float(row[period_col]) for row in data)
-        next_task_time = datetime.now() + timedelta(days=min_period)
+        next_task_time = datetime.now() + timedelta(days=7)  # set a long time off, reduce as we go through task list
         battery = psutil.sensors_battery()
         if battery is not None and not battery.power_plugged:
             print('No tasks will run on battery power. Closing.')
@@ -141,6 +141,7 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
+            next_task_time = min(next_task_time, next_run_time)
             match return_value:
                 case False:  # postpone until next scheduled run
                     result = 'Postponed'
