@@ -1,5 +1,6 @@
 import os
 import time
+from difflib import get_close_matches
 from typing import Any
 
 import phrydy  # to get media data
@@ -133,7 +134,9 @@ def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder]
             print(subfolder)
             os.chdir(subfolder)
             files = [file for file in os.listdir() if is_media_file(file)]
-            played_count = len([filename for filename in files if artist_title(filename).lower() in scrobbles])
+            # sometimes Last.fm artists/titles aren't quite the same as mine - look for close matches
+            played_count = len([filename for filename in files
+                                if get_close_matches(artist_title(filename).lower(), scrobbles, n=1, cutoff=0.9)])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
             if played_count >= file_count / 2:
@@ -293,4 +296,4 @@ def check_previous() -> None:
 
 
 if __name__ == '__main__':
-    check_previous()
+    copy_60_minutes()
