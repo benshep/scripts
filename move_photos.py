@@ -11,7 +11,7 @@ from time import sleep
 from typing import Generator
 from send2trash import send2trash
 
-from folders import pics_folder
+from folders import user_profile
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from copy_60_minutes import get_pushes  # TODO: put in its own file
@@ -19,6 +19,7 @@ from copy_60_minutes import get_pushes  # TODO: put in its own file
 nzp = '#' if sys.platform == 'win32' else '-'  # character for no zero padding in dates - platform-specific!
 script_start = datetime.now() - timedelta(hours=1)
 pushbullet = Pushbullet(api_key)
+pics_folder = os.path.join(user_profile, 'Pictures')
 temp_folder = os.path.join(pics_folder, str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
 app_title = '📷 Move photos'
 
@@ -81,7 +82,7 @@ def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[
         destination_folder = os.path.join(pics_folder, folder_name)
         os.makedirs(destination_folder, exist_ok=True)
         moved_list.append(move(filename, destination_folder))
-        file_counter[destination_folder] += 1
+        file_counter[folder_name] += 1
     os.chdir('..')
     os.rmdir(temp_folder)
     pushbullet.push_note(app_title, '\n'.join(f'{folder}: {count} files' for folder, count in file_counter.items()))
