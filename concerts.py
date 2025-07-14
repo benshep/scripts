@@ -262,5 +262,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
-    print(get_upcoming_shows())
+    print(find_new_releases())
     # print(update_gig_calendar())

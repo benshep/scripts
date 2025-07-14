@@ -1,7 +1,7 @@
-#!python3
-# -*- coding: utf-8 -*-
 import os
 import time
+from difflib import get_close_matches
+from typing import Any
 
 import phrydy  # to get media data
 import requests
@@ -18,22 +18,25 @@ from send2trash import send2trash
 from folders import user_profile, music_folder
 
 copy_log_file = 'copied_already.txt'
+Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
 
 
-def find_with_length(albums, low, high):
+def find_with_length(albums: dict[tuple[str, str | None, str | None], dict[str, float]],
+                     low: int, high: int) -> tuple[str, str | None, str | None] | None:
     """Find an album with a length between the two specified bounds."""
-    try:
-        # random sample up to len(albums) - effectively shuffles the list
-        return next(a for a, f in random.sample(list(albums.items()), len(albums)) if low <= sum(f.values()) <= high)
-    except StopIteration:
-        return None
+    # random sample up to len(albums) - effectively shuffles the list
+    return next(
+        (album for album, files in
+         random.sample(list(albums.items()), len(albums))
+         if low <= sum(files.values()) <= high),
+        None)
 
 
 def copy_album(album: tuple[str, str, str], files, existing_folder=None):
     """Copy a given album to the copy folder."""
     bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use these in filenames
 
-    def remove_bad_chars(filename: str):
+    def remove_bad_chars(filename: str) -> str:
         return filename.translate(bad_chars)
 
     folder, artist, title = album
@@ -65,7 +68,7 @@ def copy_album(album: tuple[str, str, str], files, existing_folder=None):
     return copied_name
 
 
-def scan_music_folder(max_count=0):
+def scan_music_folder(max_count: int = 0) -> dict[tuple[str, str | None, str | None], dict[str, float]]:
     bytes_to_minutes = 8 / (1024 * 128 * 60)
     os.chdir(music_folder)
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
@@ -81,7 +84,7 @@ def scan_music_folder(max_count=0):
 
     print(f'{len(copied_already)} albums in copied_already list')
 
-    def is_included(walk_tuple):
+    def is_included(walk_tuple: tuple[str, list[str], list[str]]) -> bool:
         folder_name = walk_tuple[0]
         return not folder_name[len(music_folder) + 1:].startswith(exclude_prefixes)
 
@@ -117,7 +120,7 @@ def scan_music_folder(max_count=0):
     return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
 
 
-def check_folder_list(copy_folder_list):
+def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder]]:
     """Go through each copy folder in turn. Delete subfolders from it if they've been played."""
     scrobbles = get_scrobbles()
     toast = ''
@@ -131,7 +134,9 @@ def check_folder_list(copy_folder_list):
             print(subfolder)
             os.chdir(subfolder)
             files = [file for file in os.listdir() if is_media_file(file)]
-            played_count = len([filename for filename in files if artist_title(filename).lower() in scrobbles])
+            # sometimes Last.fm artists/titles aren't quite the same as mine - look for close matches
+            played_count = len([filename for filename in files
+                                if get_close_matches(artist_title(filename).lower(), scrobbles, n=1, cutoff=0.9)])
             file_count = len(files)
             print(f'Played {played_count}/{file_count} tracks')
             if played_count >= file_count / 2:
@@ -147,18 +152,19 @@ def check_folder_list(copy_folder_list):
     return toast, folders_to_fill
 
 
-def get_scrobbles():
+def get_scrobbles() -> list[str]:
     """Get recently played tracks (as reported by Last.fm)."""
     played_tracks = lastfm.get_user('ning').get_recent_tracks(limit=200)
     return [f'{track.track.artist.name} - {track.track.title}'.lower() for track in played_tracks]
 
 
-def get_subfolders():
+def get_subfolders() -> list[str]:
     """Return the subfolders in a folder that have a date prefix."""
     return [folder for folder in os.listdir() if folder.startswith('20') and os.path.isdir(folder)]
 
 
-def copy_albums(copy_folder_list, albums):
+def copy_albums(copy_folder_list: list[Folder],
+                albums: dict[tuple[str, str | None, str | None], dict[str, float]]) -> str | Any:
     """Select random albums up to the given length for each folder."""
     toast = ''
     for copy_folder in copy_folder_list:
@@ -198,12 +204,11 @@ def copy_albums(copy_folder_list, albums):
     return toast
 
 
-def copy_60_minutes():
-    Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
+def copy_60_minutes() -> str | datetime:
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
     copy_folder_list = [Folder(os.path.join(user_profile, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
                         Folder(os.path.join(user_profile, '40 minutes'), 35, 40, 2)]
-    print(copy_folder_list)
+    print(*copy_folder_list, sep='\n')
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
@@ -215,7 +220,8 @@ def copy_60_minutes():
     return toast
 
 
-def list_by_length(albums, max_length=0):
+def list_by_length(albums: dict[tuple[str, str | None, str | None], dict[str, float]],
+                   max_length: int = 0) -> None:
     """List the number of albums by length."""
     length_counter = Counter()
     for key, file_list in albums.items():
@@ -227,7 +233,10 @@ def list_by_length(albums, max_length=0):
         print(length, length_counter[length], sep='\t')
 
 
-def get_pushes(pb, modified_after=None, limit=None, filter_inactive=True, wait_for_reset=False, verbose=False):
+def get_pushes(pb: pushbullet.Pushbullet, modified_after: float | None = None, limit: int | None = None,
+               filter_inactive: bool = True,
+               wait_for_reset: bool = False,
+               verbose: bool = False) -> list[dict]:
     """Version of get_pushes from pushbullet.py that allows for rate limiting.
     See https://docs.pushbullet.com/#ratelimiting
     If wait_for_reset is True, it will wait until the rate limit gets reset,
@@ -273,7 +282,7 @@ def get_pushes(pb, modified_after=None, limit=None, filter_inactive=True, wait_f
     return pushes_list
 
 
-def check_previous():
+def check_previous() -> None:
     """Fetch previous toasts, and determine how many hours were added to the radio files on average."""
     pb = pushbullet.Pushbullet(api_key)
     start = datetime.now() - timedelta(days=1000)
@@ -287,4 +296,4 @@ def check_previous():
 
 
 if __name__ == '__main__':
-    check_previous()
+    copy_60_minutes()

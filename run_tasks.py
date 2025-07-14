@@ -39,6 +39,7 @@ at_home = docs_folder is None  # no work documents
 if not at_home:
     # 'work' tasks
     sys.path.append(os.path.join(docs_folder, 'Scripts'))
+    from package_updates import find_new_python_packages
     from oracle_staff_check import annual_leave_check, otl_submit
     from get_budget_data import get_budget_data
     from check_leave_dates import check_leave_dates
@@ -49,7 +50,6 @@ if not at_home:
     from todos_from_notes import todos_from_notes
     from get_payslips import get_payslips
     from catering_bookings import get_bookings
-    from package_updates import find_new_python_packages
     from page_changes import check_page_changes, live_update
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
@@ -91,7 +91,7 @@ def run_tasks():
             continue
         assert headers == column_names
         min_period = min(float(row[period_col]) for row in data)
-        next_task_time = datetime.now() + timedelta(days=min_period)
+        next_task_time = datetime.now() + timedelta(days=7)  # set a long time off, reduce as we go through task list
         battery = psutil.sensors_battery()
         if battery is not None and not battery.power_plugged:
             print('No tasks will run on battery power. Closing.')
@@ -141,6 +141,7 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
+            next_task_time = min(next_task_time, next_run_time)
             match return_value:
                 case False:  # postpone until next scheduled run
                     result = 'Postponed'

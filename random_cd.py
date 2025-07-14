@@ -62,7 +62,9 @@ def scrobble_cd(track_list):
 
 def find_folders(cd_mode, music_folder):
     """Walk through music folders on the local drive and return a list."""
-    exclude_prefixes = tuple(open(os.path.join(music_folder, 'not_cd_folders.txt')).read().split('\n'))
+    not_cd_folders_file = os.path.join(music_folder, 'not_cd_folders.txt')
+    exclude_prefixes = tuple(open(not_cd_folders_file).read().split('\n')) \
+        if os.path.exists(not_cd_folders_file) else ()
     if not cd_mode:
         exclude_prefixes = exclude_prefixes[1:]  # first is _Copied
     root_len = len(music_folder) + 1

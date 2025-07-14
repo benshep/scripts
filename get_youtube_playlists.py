@@ -56,27 +56,29 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         track = int(name.split(' ')[0])  # 01 Title.ext
         media = MediaFile(filename)
         media.albumartist = self.artist
-        # hack for EPIC: original album names have saga names too, we don't want to overwrite them
-        if self.album not in media.album:
-            media.album = self.album
+        if media.album is not None:
+            # hack for EPIC: original album names have saga names too, we don't want to overwrite them
+            if self.album not in media.album:
+                media.album = self.album
+            pos = media.album.find('Official')
+            if pos > 1:  # e.g. Album Name (Official Audio)
+                media.album = media.album[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
         media.track = track
         title = media.title
-        if ' - ' in title:
-            # deal with titles like "Artist - Title" or "Title - Artist"
-            # (but can't automatically tell, so check first whether artist is defined)
-            first, last = title.split(' - ', maxsplit=1)
-            if first == self.artist:
-                title = last
-            elif last == self.artist:
-                title = first
-        pos = title.find('Official')
-        if pos > 1:  # e.g. Song Name (Official Audio)
-            title = title[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
-        title = title.strip('"')  # "Song Name" -> Song Name
-        media.title = title
-        pos = media.album.find('Official')
-        if pos > 1:  # e.g. Album Name (Official Audio)
-            media.album = media.album[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
+        if title is not None:
+            if ' - ' in title:
+                # deal with titles like "Artist - Title" or "Title - Artist"
+                # (but can't automatically tell, so check first whether artist is defined)
+                first, last = title.split(' - ', maxsplit=1)
+                if first == self.artist:
+                    title = last
+                elif last == self.artist:
+                    title = first
+            pos = title.find('Official')
+            if pos > 1:  # e.g. Song Name (Official Audio)
+                title = title[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
+            title = title.strip('"')  # "Song Name" -> Song Name
+            media.title = title
         self.to_screen(f'Tagged {name} with {self.artist = }, {media.album = }, {track=}, {title=}')
         crop_cover(media)
         media.save()
@@ -218,5 +220,5 @@ def get_playlist_info(url):
 
 
 if __name__ == '__main__':
-    get_youtube_playlists()
+    print(get_youtube_playlists())
     # test()

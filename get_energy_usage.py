@@ -176,10 +176,10 @@ def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
               'period_to': ymd(end_date, True), 'order_by': 'period'}
     url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
-    print(url)
+    # print(url)
     response = requests.get(url, auth=(energy_credentials.octopus_api_key, ''))
     json = response.json()
-    print(json)
+    # print(json)
     if json['count'] == 0:  # no results
         return []
     df = pandas.json_normalize(json, record_path='results')
@@ -290,7 +290,7 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=True))
+    print(get_usage_data(remove_incomplete_rows=False))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -298,4 +298,4 @@ if __name__ == '__main__':
     #     time.sleep(30 * 60)
     # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(5, 'd')
     # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
-    print(get_temp_data())
+    # print(get_temp_data())

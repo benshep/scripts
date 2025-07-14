@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 
 # If modifying these scopes, delete the file token.pickle.
 apis_url = 'https://www.googleapis.com/auth'
-scopes = [f'{apis_url}/spreadsheets', f"{apis_url}/calendar"]
+scopes = [f'{apis_url}/spreadsheets', f"{apis_url}/calendar", f"{apis_url}/gmail.readonly"]
 
 creds = None
 # The file token.json stores the user's access and refresh tokens, and is
@@ -35,12 +35,12 @@ sheets = spreadsheets.values()
 calendar = build('calendar', 'v3', credentials=creds)
 
 
-def get_data(sheet_id, sheet_name, data_range):
+def get_data(sheet_id : str, sheet_name : str, data_range : str) -> list[list[str]]:
     """Fetch a range of data from a specified workbook and worksheet."""
     return sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!{data_range}').execute()['values']
 
 
-def update_cell(sheet_id, sheet_name, cell, value):
+def update_cell(sheet_id : str, sheet_name : str, cell : str, value):
     """Update a cell in a specified sheet with the given value."""
     range_spec = f'{sheet_name}!{cell}' if sheet_name else cell
     payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': range_spec}
