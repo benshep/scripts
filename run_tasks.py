@@ -7,7 +7,7 @@ import cryptography.utils
 import warnings
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
 from time import sleep
-from traceback import format_exc
+from traceback import format_exc, extract_tb
 from datetime import datetime, timedelta
 from platform import node
 
@@ -137,6 +137,7 @@ def run_tasks():
                 return_value = eval(f'{function_name}({parameters})')
             except Exception as exception:  # something went wrong with the task!
                 return_value = exception
+                exception_type, exception_value, exception_traceback = sys.exc_info()
                 error_lines = format_exc().split('\n')
                 result = '\n'.join(error_lines[4:])
 
@@ -163,7 +164,13 @@ def run_tasks():
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
                     if fail_count % 10 == 0:
-                        note_text = f'{function_name} failed {fail_count} times on {node()}'
+                        # output e.g. ValueError in task.py:module:47 -> import.py:module:123
+                        quick_trace = ' -> '.join(
+                            ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
+                            for frame in extract_tb(exception_traceback)[:2])
+                        note_text = f'{function_name} failed {fail_count} times on {node()}\n' + \
+                            f'{exception_type.__name__} in {quick_trace}\n' + \
+                            str(exception_value)
                         if fail_count == 20:
                             update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
                             note_text += f'\nDisabled at {location.lower()}'
