@@ -98,6 +98,7 @@ def run_tasks():
             sleep(10)
             exit()
 
+        location = 'Home' if at_home else 'Work'
         for i in range(len(data)):
             try:
                 values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
@@ -105,7 +106,7 @@ def run_tasks():
                 print(e)
                 break
             properties = dict(zip(column_names, values))
-            if properties.get('Home' if at_home else 'Work', False) != 'TRUE':
+            if properties.get(location, False) != 'TRUE':
                 continue
             last_result = properties.get('Last result')
             now = datetime.now()
@@ -161,9 +162,12 @@ def run_tasks():
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
-                    if fail_count > 9:
-                        pushbullet.push_note('👁️ run_tasks',
-                                             f'{function_name} failed {fail_count} times on {node()}')
+                    if fail_count % 10 == 0:
+                        note_text = f'{function_name} failed {fail_count} times on {node()}'
+                        if fail_count == 20:
+                            update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
+                            note_text += f'\nDisabled at {location.lower()}'
+                        pushbullet.push_note('👁️ run_tasks', note_text)
                     print(result)  # the exception traceback
                     result = f'Failure {fail_count}'
 
