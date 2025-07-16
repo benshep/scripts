@@ -114,7 +114,8 @@ def update_saints_calendar():
                  'description': match.id,
                  'start': {'dateTime': match.time.isoformat()},
                  'end': {'dateTime': (match.time + timedelta(hours=2)).isoformat()}}
-        if not (calendar_event := next((event for event in my_events if event['description'] == match.id), None)):
+        if not (calendar_event := next((event for event in my_events
+                                        if event.get('description', '') == match.id), None)):
             toast += f'New match: {match_title}, {format_time(match.time)}\n'
             google_calendar.insert(calendarId=calendar_id, body=event).execute()
             continue
