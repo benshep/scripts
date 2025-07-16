@@ -165,9 +165,9 @@ def run_tasks():
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
                     if fail_count % 10 == 0:
                         # output e.g. ValueError in task.py:module:47 -> import.py:module:123
-                        quick_trace = ' -> '.join(
+                        quick_trace = ' → '.join(
                             ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
-                            for frame in extract_tb(exception_traceback)[:2])
+                            for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
                         note_text = f'{function_name} failed {fail_count} times on {node()}\n' + \
                             f'{exception_type.__name__} in {quick_trace}\n' + \
                             str(exception_value)
@@ -178,6 +178,7 @@ def run_tasks():
                     print(result)  # the exception traceback
                     result = f'Failure {fail_count}'
 
+            next_task_time = min(next_task_time, next_run_time)
             next_run_str = next_run_time.strftime(time_format)
             print('Next run time:', next_run_str)
             update_cell(i + 2, get_column('Next run'), next_run_str)
