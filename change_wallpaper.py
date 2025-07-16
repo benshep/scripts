@@ -195,7 +195,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                     caption = caption.replace(long, short)
 
             if target == 'phone':
-                caption_x, caption_y = 108, 60
+                caption_x, caption_y = 108, 75
             else:
                 caption_x = mosaic_left + 20
                 caption_y = mosaic_top + mosaic_height - 60
@@ -211,7 +211,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 # Also write the date and time into the image
                 now = datetime.datetime.now()
                 caption = now.strftime('%d/%m %H:%M')
-                write_caption(canvas, caption, caption_x, mon.height - 60)
+                write_caption(canvas, caption, caption_x, mon.height - 50)
                 # Save into a numbered filename every run (max 200), in the appropriate folder (Landscape or Portrait)
                 # Find the most recent
                 wallpaper_subfolder = os.path.join(wallpaper_dir, 'Landscape' if mon_landscape else 'Portrait')
@@ -237,7 +237,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                     dt = now - datetime.datetime.fromtimestamp(os.path.getmtime(wallpaper_filename))
                     hours, _ = divmod(dt.seconds, 3600)
                     dt_text = f'{dt.days:d}d {hours:d}h'
-                    write_caption(canvas, dt_text, mon.width - caption_x, mosaic_height - 60, align_right=True)
+                    write_caption(canvas, dt_text, mon.width - caption_x, mosaic_height - 50, align_right=True)
 
                 print(f' Saving as {wallpaper_filename}')
                 canvas.save(wallpaper_filename)
