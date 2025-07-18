@@ -351,8 +351,9 @@ def create_canvas(monitors: list[screeninfo.Monitor]) -> tuple[Image, int, int]:
 def get_monitors(target: str) -> list[screeninfo.Monitor]:
     """Figure out monitor geometry."""
     if target == 'phone':
-        width, height = 800, 1560
-        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height)]
+        width, height = 720, 1612  # Motorola G24
+        # Change every hour i.e. ~15 per day. Run once per day now
+        monitors = [screeninfo.Monitor(x=0, width=width, y=0, height=height)] * 15
                     # screeninfo.Monitor(x=0, width=height, y=0, height=width)]  # landscape one for tablet screen
     else:
         monitors = screeninfo.get_monitors()  # 'windows' if on_windows else 'drm')
