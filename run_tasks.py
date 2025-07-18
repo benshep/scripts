@@ -7,7 +7,7 @@ import cryptography.utils
 import warnings
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
 from time import sleep
-from traceback import format_exc
+from traceback import format_exc, extract_tb
 from datetime import datetime, timedelta
 from platform import node
 
@@ -98,6 +98,7 @@ def run_tasks():
             sleep(10)
             exit()
 
+        location = 'Home' if at_home else 'Work'
         for i in range(len(data)):
             try:
                 values = google_api.get_data(sheet_id, sheet_name, f'A{i + 2}:{last_col}{i + 2}')[0]
@@ -105,7 +106,7 @@ def run_tasks():
                 print(e)
                 break
             properties = dict(zip(column_names, values))
-            if properties.get('Home' if at_home else 'Work', False) != 'TRUE':
+            if properties.get(location, False) != 'TRUE':
                 continue
             last_result = properties.get('Last result')
             now = datetime.now()
@@ -136,6 +137,7 @@ def run_tasks():
                 return_value = eval(f'{function_name}({parameters})')
             except Exception as exception:  # something went wrong with the task!
                 return_value = exception
+                exception_type, exception_value, exception_traceback = sys.exc_info()
                 error_lines = format_exc().split('\n')
                 result = '\n'.join(error_lines[4:])
 
@@ -161,12 +163,22 @@ def run_tasks():
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
-                    if fail_count > 9:
-                        pushbullet.push_note('👁️ run_tasks',
-                                             f'{function_name} failed {fail_count} times on {node()}')
+                    if fail_count % 10 == 0:
+                        # output e.g. ValueError in task.py:module:47 -> import.py:module:123
+                        quick_trace = ' → '.join(
+                            ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
+                            for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
+                        note_text = f'{function_name} failed {fail_count} times on {node()}\n' + \
+                            f'{exception_type.__name__} in {quick_trace}\n' + \
+                            str(exception_value)
+                        if fail_count == 20:
+                            update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
+                            note_text += f'\nDisabled at {location.lower()}'
+                        pushbullet.push_note('👁️ run_tasks', note_text)
                     print(result)  # the exception traceback
                     result = f'Failure {fail_count}'
 
+            next_task_time = min(next_task_time, next_run_time)
             next_run_str = next_run_time.strftime(time_format)
             print('Next run time:', next_run_str)
             update_cell(i + 2, get_column('Next run'), next_run_str)
