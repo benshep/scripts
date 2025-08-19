@@ -82,7 +82,7 @@ def log_crossings() -> str:
     assert headers == ['ID', 'Date', 'Direction', 'Plate number', 'Cost']
     id_list = [int(row[0].replace(',', '')) for row in data]
     new_row = len(data) + 2  # one-based when using update_cell function - this is the first empty row
-    last_date = data[-1][1]
+    last_date = datetime.strptime(data[-1][1], '%d/%m/%Y %H:%M:%S')
 
     crossings = get_recent_crossings()
     total_added = 0
@@ -109,7 +109,7 @@ def log_crossings() -> str:
         new_row += 1
         total_added += 1
     if total_added > 0:
-        toast += f'{total_added} crossings since {last_date}'
+        toast += f'{total_added} crossings since {last_date.strftime("%d %b").lstrip("0")}'
     return toast
 
 
