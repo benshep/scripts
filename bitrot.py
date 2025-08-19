@@ -43,6 +43,8 @@ from multiprocessing import freeze_support
 from importlib.metadata import version, PackageNotFoundError
 from platform import node
 
+import folders
+
 DEFAULT_CHUNK_SIZE = 16384  # block size in HFS+; 4X the block size in ext4
 DOT_THRESHOLD = 200
 IGNORED_FILE_SYSTEM_ERRORS = {errno.ENOENT, errno.EACCES}
@@ -619,10 +621,17 @@ def check_folders_for_bitrot(computer_name, verbosity=1):
         return datetime.datetime.now() + datetime.timedelta(days=1)  # try again tomorrow
 
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
+    toast = ''
     for folder in (r'STFC\Documents', 'Misc', 'Pictures', 'Music'):
         print(folder)
         os.chdir(os.path.join(os.environ['UserProfile'], folder))
-        Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
+        try:
+            Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
+        except BitrotException as exception:
+            bad_files = exception.args[2]
+            open('bitrot-errors.txt', 'w').write('\n'.join(bad_files))
+            toast += f'{folder}: {len(bad_files)} bad files\n'
+    return toast
 
 
 if __name__ == '__main__':
