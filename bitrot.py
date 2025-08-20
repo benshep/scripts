@@ -629,7 +629,7 @@ def check_folders_for_bitrot(computer_name, verbosity=1):
             Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
         except BitrotException as exception:
             bad_files = exception.args[2]
-            open('bitrot-errors.txt', 'w').write('\n'.join(bad_files))
+            open(f'bitrot-errors-{node()}.txt', 'w').write('\n'.join(bad_files))
             toast += f'{folder}: {len(bad_files)} bad files\n'
     return toast
 
