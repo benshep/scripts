@@ -3,6 +3,7 @@ import json
 import subprocess
 import contextlib
 
+import phrydy.mediafile
 import yt_dlp.utils
 from yt_dlp import YoutubeDL
 from phrydy import MediaFile
@@ -116,7 +117,11 @@ def get_youtube_playlists(just_crop_art=False):
         artist_titles = []
         for file in files:
             if is_media_file(file):
-                tags = MediaFile(file)
+                try:
+                    tags = MediaFile(file)
+                except phrydy.mediafile.UnreadableFileError as exception:
+                    print(f"Couldn't read {file}", exception)
+                    continue
                 if just_crop_art:
                     crop_cover(tags)
                     continue
