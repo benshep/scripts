@@ -2,6 +2,7 @@ import json
 import time
 import urllib.parse
 from typing import Any
+from enum import IntEnum, StrEnum
 
 import pandas
 import requests
@@ -205,24 +206,50 @@ def get_temp_data() -> dict[str, str]:
     return temp_data
 
 
-def get_co2_data(start_date: Timestamp, postcode: str = home_postcode,
+class RegionId(IntEnum):
+    """Region names as defined by the Carbon Intensity API.
+    See https://carbon-intensity.github.io/api-definitions/#region-list"""
+    north_scotland = 1
+    south_scotland = 2
+    north_west_england = 3
+    north_east_england = 4
+    yorkshire = 5
+    north_wales = 6
+    south_wales = 7
+    west_midlands = 8
+    east_midlands = 9
+    east_england = 10
+    south_west_england = 11
+    south_england = 12
+    london = 13
+    south_east_england = 14
+    england = 15
+    scotland = 16
+    wales = 17
+
+
+def get_co2_data(start_date: Timestamp, geography: str | int | RegionId = home_postcode,
                  remove_incomplete_rows: bool = True) -> DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
-    Leave postcode blank to get national data.
-    Specify remove_incomplete_rows=False to fill in -1 values where there are data gaps."""
+    :param geography: Can be a postcode or one of the region IDs.
+    Leave geography blank to get national data.
+    :param remove_incomplete_rows: Specify False to fill in -1 values where there are data gaps."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
     end_date -= pandas.to_timedelta(1, 'd')
-    area = 'regional/' if postcode else ''
-    suffix = f'/postcode/{postcode}' if postcode else ''
+    if geography:
+        area = 'regional/'
+        suffix = f'/postcode/{geography}' if isinstance(geography, str) else f'/regionid/{geography}'
+    else:
+        area, suffix = '', ''
     url = f'{carbon_int_url}/{area}intensity/{ymd(start_date)}T00:00Z/{ymd(end_date)}T23:30Z{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
     # path is data.data for regional
-    df = pandas.json_normalize(json, record_path=['data', 'data'] if postcode else ['data'])
+    df = pandas.json_normalize(json, record_path=['data', 'data'] if geography else ['data'])
     df['to'] = pandas.to_datetime(df['to'])
     # use 'actual' value where available with national. For regional, we only see 'forecast' values
-    df['intensity'] = df['intensity.forecast'] if postcode else df['intensity.actual'].fillna(df['intensity.forecast'])
+    df['intensity'] = df['intensity.forecast'] if geography else df['intensity.actual'].fillna(df['intensity.forecast'])
     pivot = pandas.pivot_table(df, index=df['to'].dt.date, columns=df['to'].dt.time, values='intensity')
     # Add an extra day (sometimes necessary when data is missing)
     # pivot.loc[pivot.index[0] + pandas.to_timedelta(1, 'd')] = [pandas.NA] * 48
@@ -260,12 +287,12 @@ def get_regional_intensity(start_time='now', postcode=home_postcode):
 def get_old_data_avg():
     """Get the two-week average of carbon data."""
     start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
-    start_date = pandas.to_datetime('2018-05-18')
+    start_date = pandas.to_datetime('2025-01-01')
     while start_date < today():
         # start_date -= pandas.to_timedelta(14, 'd')
         # data = get_co2_data(start_date, postcode='OX11')
         # south = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, postcode='EH9')
+        data = get_co2_data(start_date, geography=RegionId.south_scotland)
         scotland = data.mean().mean()  # average of whole DataFrame
         # data = get_co2_data(start_date, postcode='')  # national
         # national = data.mean().mean()  # average of whole DataFrame
@@ -276,6 +303,17 @@ def get_old_data_avg():
               sep='\t')
         start_date += pandas.to_timedelta(14, 'd')
         # return
+
+
+def get_regions_data_avg():
+    """Get the two-week average of carbon data for all regions."""
+    start_date = pandas.to_datetime('2025-01-01')
+    while start_date < today():
+        mean_data = [get_co2_data(start_date, geography=region).mean().mean()
+                     for region in range(min(RegionId), max(RegionId) + 1)]
+
+        print(start_date, *mean_data, sep='\t')
+        start_date += pandas.to_timedelta(14, 'd')
 
 
 def get_mix(start_time='now', postcode=home_postcode):
@@ -290,9 +328,9 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=False))
+    # print(get_usage_data(remove_incomplete_rows=False))
     # print(get_regional_intensity())
-    # get_old_data_avg()
+    get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
