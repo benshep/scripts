@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from difflib import get_close_matches
 from typing import Any
@@ -204,10 +205,27 @@ def copy_albums(copy_folder_list: list[Folder],
     return toast
 
 
-def copy_60_minutes() -> str | datetime:
+def find_copy_folders() -> list[Folder]:
+    """Look through the Radio folder to find folders named like '55-70 minutes x6'. Return a list of those folders."""
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
-    copy_folder_list = [Folder(os.path.join(user_profile, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
-                        Folder(os.path.join(user_profile, '40 minutes'), 35, 40, 2)]
+    radio_folder = os.path.join(user_profile, 'Radio')
+    os.chdir(radio_folder)
+    folder_list = []
+    for folder in os.listdir():
+        if not os.path.isdir(folder):
+            continue
+        if not (match := re.match(r'(\d+)-(\d+) minutes x(\d+)', folder)):
+            continue
+        folder_list.append(Folder(os.path.join(radio_folder, folder),
+                                  int(match.group(1)) + extra_time, int(match.group(2)) + extra_time,
+                                  int(match.group(3))))
+    return folder_list
+
+
+def copy_60_minutes() -> str | datetime:
+    """Find albums of the specified length to copy into subfolders of the Radio folder.
+    The idea is to have whole albums to listen to on my bike commute to work."""
+    copy_folder_list = find_copy_folders()
     print(*copy_folder_list, sep='\n')
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
