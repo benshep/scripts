@@ -43,7 +43,11 @@ from multiprocessing import freeze_support
 from importlib.metadata import version, PackageNotFoundError
 from platform import node
 
+from send2trash import send2trash
+
 import folders
+
+check_folders = (folders.misc_folder, folders.pics_folder, folders.music_folder)
 
 DEFAULT_CHUNK_SIZE = 16384  # block size in HFS+; 4X the block size in ext4
 DOT_THRESHOLD = 200
@@ -615,24 +619,54 @@ def read_exclude_list(exclude_list):
     return [line.rstrip('\n') for line in open(exclude_list)]
 
 
-def check_folders_for_bitrot(computer_name, verbosity=1):
-    if computer_name != node():
-        print('Wrong argument for this computer')
-        return datetime.datetime.now() + datetime.timedelta(days=1)  # try again tomorrow
-
+def check_folders_for_bitrot(verbosity=1):
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     toast = ''
-    for folder in (r'STFC\Documents', 'Misc', 'Pictures', 'Music'):
+    for folder in check_folders:
         print(folder)
-        os.chdir(os.path.join(os.environ['UserProfile'], folder))
+        os.chdir(folder)
         try:
             Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
         except BitrotException as exception:
-            bad_files = exception.args[2]
+            bad_files = [os.path.join(folder, file) for file in exception.args[2]]
             open(f'bitrot-errors-{node()}.txt', 'w').write('\n'.join(bad_files))
             toast += f'{folder}: {len(bad_files)} bad files\n'
     return toast
 
 
+def restore_good_files():
+    """Go through a bitrot-errors file produced on another computer.
+    We assume the copies on this computer are good ones.
+    Make a copy of each good file by appending .restored to the file basename.
+    The originals can be deleted on the computer with the bad copy."""
+    for folder in check_folders:
+        os.chdir(folder)
+        for error_list_file in os.listdir('.'):
+            if not (error_list_file.startswith('bitrot-errors-') and error_list_file.endswith('.txt')):
+                continue
+            error_node = error_list_file[14:-4]  # i.e. HAL in bitrot-errors-HAL.txt
+            print('Found error list for', error_node)
+            restoring = error_node != node()
+            if restoring:
+                print('Restoring my copies')
+            else:
+                print('Looking for restored copies')
+            for bad_file in open(error_list_file).read().splitlines():
+                bad_file = bad_file.replace('\\', '/')  # Linux can't deal with \ but Windows can deal with /
+                basename, ext = os.path.splitext(bad_file)
+                restored_file = f'{basename}.restored.{ext}'
+                if restoring:
+                    shutil.copy2(bad_file, restored_file)
+                    print('  Made a copy of my', bad_file)
+                else:
+                    if os.path.exists(restored_file):
+                        send2trash(bad_file)
+                        os.rename(restored_file, bad_file)
+                        print('  Restored', bad_file)
+                    else:
+                        print('  No good copy found of', bad_file)
+
+
 if __name__ == '__main__':
-    check_folders_for_bitrot('DLAST0023', verbosity=2)
+    check_folders_for_bitrot(verbosity=2)
+    # restore_good_files()
