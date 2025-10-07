@@ -25,14 +25,14 @@ def ymd(date, time=False):
     return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
 
-def get_home_fixtures():
+def get_home_fixtures(sport: str, team: str, team_full_name: str) -> list[Fixture]:
     """Get a list of home fixtures for the St Helens rugby league teams using the BBC Sports API."""
     today = datetime.today()
     end_date = today + timedelta(weeks=12)
     params = {'selectedEndDate': ymd(end_date),
               'selectedStartDate': ymd(today),
               'todayDate': ymd(today),
-              'urn': 'urn:bbc:sportsdata:rugby-league:team:st-helens'}
+              'urn': f'urn:bbc:sportsdata:{sport}:team:{team}'}
     url = 'https://www.bbc.co.uk/wc-data/container/sport-data-scores-fixtures?' + urllib.parse.urlencode(params)
     print(url)
     data = json.loads(requests.get(url).text)
@@ -46,10 +46,13 @@ def get_home_fixtures():
                 break
         home_team = match['home']['fullName']
         away_team = match['away']['fullName']
+        # print(f'{home_team} vs {away_team}')
         # datetime format: 2025-02-15T17:30:00.000+00:00
-        start_time = datetime.strptime(match['startDateTime'], '%Y-%m-%dT%H:%M:%S.000%z')
+        start_time = datetime.strptime(match['startDateTime']
+                                       .replace('.000', ''),  # sometimes we get ms, sometimes not!
+                                       '%Y-%m-%dT%H:%M:%S%z')
         bbc_id = match['id']
-        if home_team == 'St Helens':
+        if home_team == team_full_name:
             fixtures.append(Fixture(bbc_id, start_time, home_team, away_team, tournament))
     return fixtures
 
@@ -107,7 +110,11 @@ def format_time(time: datetime):
 def update_saints_calendar():
     toast = ''
     my_events = get_calendar_events()
-    for match in get_local_fixtures():
+    fixture_list = get_local_fixtures() + \
+        get_home_fixtures('rugby-league', 'st-helens', 'St Helens') + \
+        get_home_fixtures('football', 'liverpool-ladies', 'Liverpool')
+
+    for match in fixture_list:
         # find existing event in my calendar
         match_title = f'{match.home} vs {match.away} ({match.tournament})'
         event = {'summary': match_title,
@@ -128,4 +135,6 @@ def update_saints_calendar():
 
 
 if __name__ == '__main__':
-    print(*get_local_fixtures(), sep='\n')
+    # print(*get_home_fixtures('rugby-league', 'st-helens', 'St Helens'), sep='\n')
+    # print(*get_home_fixtures('football', 'liverpool-ladies', 'Liverpool'), sep='\n')
+    print(update_saints_calendar())

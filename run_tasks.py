@@ -124,12 +124,19 @@ def run_tasks():
             update_cell(i + 2, get_column('Last run'), now_str)
             update_cell(i + 2, get_column('Machine'), node())
             update_cell(i + 2, get_column('Last result'), 'Running')
+
             parameters_raw = properties.get('Parameters', '')
+            if parameters_raw.startswith('@'):  # run on a particular computer
+                if parameters_raw[1:] != node():  # but not this one
+                    continue
+                parameters = ''
+            else:
+                try:
+                    parameters = float(parameters_raw)
+                except ValueError:  # it's not a float, assume string
+                    parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
+
             icon = properties.get('Icon', '')
-            try:
-                parameters = float(parameters_raw)
-            except ValueError:  # it's not a float, assume string
-                parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
             set_window_title(f'{icon} {function_name}')
             print('')
             print(now_str, function_name, parameters)
