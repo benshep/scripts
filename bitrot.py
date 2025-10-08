@@ -46,6 +46,7 @@ from platform import node
 from send2trash import send2trash
 
 import folders
+from tools import human_format
 
 check_folders = (folders.misc_folder, folders.pics_folder, folders.music_folder)
 
@@ -201,6 +202,12 @@ def list_paths(paths, list_type):
     for path in paths:
         # renamed_paths are tuples (old_name, new_name)
         print(f' from {path[0]} to {path[1]}' if isinstance(path, tuple) else f' {path}')
+
+
+def get_terminal_width():
+    """Return the width of the current terminal."""
+    terminal_size = shutil.get_terminal_size()
+    return terminal_size.columns
 
 
 class Bitrot(object):
@@ -367,9 +374,7 @@ class Bitrot(object):
             return
 
         # show current file in progress too
-        terminal_size = shutil.get_terminal_size()
-        # but is it too big for terminal window?
-        cols = terminal_size.columns
+        cols = get_terminal_width()
         max_path_size = cols - len(size_fmt) - 1
         if len(current_path) > max_path_size:
             # show first half and last half, separated by ellipsis
@@ -390,8 +395,11 @@ class Bitrot(object):
             self, total_size, all_count, error_count, new_paths, updated_paths,
             renamed_paths, missing_paths):
         """Print a report on what happened.  All paths should be Unicode here."""
-        print('\rFinished. {:.2f} MiB of data read. {} errors found.'
-              ''.format(total_size / 1024 / 1024, error_count))
+        size_txt = human_format(total_size, binary=True, split_with=' ')
+        report = f'Finished. {size_txt}iB of data read. {error_count} errors found.'
+        # pad out with spaces, otherwise previous filenames won't be erased
+        report += ' ' * (get_terminal_width() - len(report))
+        print('\r' + report)
         if self.verbosity == 1:
             print(
                 f'{all_count} entries in the database, {len(new_paths)} new, {len(updated_paths)} updated, '
