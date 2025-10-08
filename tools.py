@@ -20,3 +20,10 @@ def human_format(num: float, precision: int = 0, split_with: str = '', binary: b
 def match(a: str, b: str) -> bool:
     """Case-insensitive string comparison."""
     return (a or '').lower() == (b or '').lower()  # replace None with blank string
+
+
+bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use these in filenames
+
+
+def remove_bad_chars(filename: str) -> str:
+    return filename.translate(bad_chars)
