@@ -1,7 +1,6 @@
 import contextlib
 import os
 import re
-from math import log10
 import phrydy  # for media file tagging
 import mediafile
 import pylast
@@ -20,23 +19,9 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 
 import socket
 from folders import user_profile
+from tools import human_format
 
 test_mode = False  # don't change anything!
-
-
-def human_format(num, precision=0):
-    """Convert a number into a human-readable format, with k, M, G, T suffixes for
-    thousands, millions, billions, trillions respectively."""
-    mag = log10(abs(num)) if num else 0  # zero magnitude when num == 0
-    precision += max(0, int(-23 - mag))  # add more precision for very tiny numbers: 1.23e-28 => 0.0001y
-    mag = max(-8, min(8, mag // 3))  # clip within limits of SI prefixes
-    si_prefixes = dict(zip(range(-8, 9), 'y,z,a,f,p,n,µ,m,,k,M,G,T,P,E,Z,Y'.split(',')))
-    return f'{num / 10 ** (3 * mag):.{precision}f}{si_prefixes[mag]}'
-
-
-def match(a: str, b: str):
-    """Case-insensitive string comparison."""
-    return (a or '').lower() == (b or '').lower()  # replace None with blank string
 
 
 class Album:
