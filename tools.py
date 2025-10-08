@@ -11,9 +11,9 @@ def human_format(num: float, precision: int = 0, split_with: str = '', binary: b
     :return: Human-readable string"""
     base = 1024 if binary else 1000
     mag = log(abs(num), base ** (1/3)) if num else 0  # zero magnitude when num == 0
-    precision += max(0, int(-23 - mag))  # add more precision for very tiny numbers: 1.23e-28 => 0.0001y
-    mag = max(-8, min(8, int(mag // 3)))  # clip within limits of SI prefixes
-    si_prefixes = ' kMGTPEZYyzafpnµm'  # index 1..8 for big numbers, -8..-1 for small ones
+    precision += max(0, int(-29 - mag))  # add more precision for very tiny numbers: 1.23e-28 => 0.0001y
+    mag = max(-10, min(10, int(mag // 3)))  # clip within limits of SI prefixes
+    si_prefixes = ' kMGTPEZYRQqryzafpnµm'  # index 1..10 for big numbers, -10..-1 for small ones
     return f'{num / base ** mag:.{precision}f}{split_with}{si_prefixes[mag]}'.strip()
 
 
