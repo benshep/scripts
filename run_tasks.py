@@ -51,6 +51,7 @@ if not at_home:
     from get_payslips import get_payslips
     from catering_bookings import get_bookings
     from page_changes import check_page_changes, live_update
+    from oracle import convert_obi_files
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
