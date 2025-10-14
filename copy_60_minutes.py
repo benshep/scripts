@@ -46,7 +46,7 @@ def copy_album(album: tuple[str, str, str], files, existing_folder=None):
         album_filename = remove_bad_chars(title if no_artist else f'{artist} - {title}')
     else:
         album_filename = os.path.basename(folder)
-    album_filename = album_filename[:60].strip()  # shorten path names (Windows limit: 260 chars)
+    album_filename = album_filename[:60].strip('. ')  # shorten path names (Windows limit: 260 chars) and remove dots
     if existing_folder is None:  # making a new folder
         copied_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
         os.mkdir(copied_name)
