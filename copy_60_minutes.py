@@ -182,7 +182,7 @@ def copy_albums(copy_folder_list: list[Folder],
                     break
                 elif duration < copy_folder.min_length:
                     # less than we want? look for another one to fill the rest of the time
-                    print(key, int(duration))
+                    print(*key, int(duration))
                     gap_min_length = copy_folder.min_length - duration
                     gap_max_length = copy_folder.max_length - duration
                     second_key = find_with_length(albums, gap_min_length, gap_max_length)
@@ -191,7 +191,7 @@ def copy_albums(copy_folder_list: list[Folder],
                         continue
                     second_file_list = albums.pop(second_key)
                     new_duration = sum(second_file_list.values())
-                    print(second_key, int(new_duration))
+                    print(*second_key, int(new_duration))
                     duration += new_duration
                     # do first one first!
                     folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))
