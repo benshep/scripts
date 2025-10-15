@@ -51,6 +51,7 @@ if not at_home:
     from get_payslips import get_payslips
     from catering_bookings import get_bookings
     from page_changes import check_page_changes, live_update
+    from oracle import convert_obi_files
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
@@ -191,6 +192,9 @@ def run_tasks():
             update_cell(i + 2, get_column('Next run'), next_run_str)
             print(result)
             update_cell(i + 2, get_column('Last result'), result)
+
+        if node() == 'eddie':
+            break  # just run once on cron
 
         force_run = []  # only force run for first loop
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
