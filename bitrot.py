@@ -148,7 +148,7 @@ def list_existing_paths(directory, expected=(), ignored=(),
 
                 # check attributes - is it a cloud-only file? (e.g. from OneDrive)
                 # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                if not follow_links and st.st_file_attributes & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
+                if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
                     ignore_reason = ignore_reason or 'cloud-only'
 
                 if not stat.S_ISREG(st.st_mode):
