@@ -46,8 +46,9 @@ from platform import node
 from send2trash import send2trash
 
 import folders
+from tools import human_format
 
-check_folders = (r'STFC\Documents', 'Misc', 'Pictures', 'Music')
+check_folders = (folders.misc_folder, folders.pics_folder, folders.music_folder)
 
 DEFAULT_CHUNK_SIZE = 16384  # block size in HFS+; 4X the block size in ext4
 DOT_THRESHOLD = 200
@@ -107,7 +108,7 @@ def get_sqlite3_cursor(path, copy=False):
 
 
 def list_existing_paths(directory, expected=(), ignored=(),
-                        verbosity=1, follow_links=False):
+                        verbosity=1, follow_links=False, index=0, section_count=1) -> tuple[set[str], int]:
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
     Returns a tuple with a set of existing files in `directory` and its subdirectories
@@ -117,6 +118,10 @@ def list_existing_paths(directory, expected=(), ignored=(),
     Doesn't add entries listed in `ignored`.  Doesn't add symlinks or cloud-only files if
     `follow_links` is False (the default).  All entries present in `expected`
     must be files (can't be directories or symlinks).
+
+    section_count specifies how many 'sections' to do this in
+    index specifies which section to do this time
+    Each path is hashed and modulo section_count to determine its section.
     """
     paths = set()
     total_size = 0
@@ -138,6 +143,8 @@ def list_existing_paths(directory, expected=(), ignored=(),
                 if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
                     raise
             else:
+                if hash(p) % section_count != index:
+                    continue  # not doing this section
                 # split path /dir1/dir2/file.txt into
                 # ['dir1', 'dir2', 'file.txt']
                 # and match on any of these components
@@ -147,7 +154,7 @@ def list_existing_paths(directory, expected=(), ignored=(),
 
                 # check attributes - is it a cloud-only file? (e.g. from OneDrive)
                 # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                if not follow_links and st.st_file_attributes & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
+                if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
                     ignore_reason = ignore_reason or 'cloud-only'
 
                 if not stat.S_ISREG(st.st_mode):
@@ -203,9 +210,16 @@ def list_paths(paths, list_type):
         print(f' from {path[0]} to {path[1]}' if isinstance(path, tuple) else f' {path}')
 
 
+def get_terminal_width():
+    """Return the width of the current terminal."""
+    terminal_size = shutil.get_terminal_size()
+    return terminal_size.columns
+
+
 class Bitrot(object):
     def __init__(self, verbosity=1, test=False, follow_links=False, commit_interval=300,
-                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None, workers=os.cpu_count()):
+                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None, workers=os.cpu_count(),
+                 index=0, section_count=1):
         if exclude_list is None:
             exclude_list = []
         self.verbosity = verbosity
@@ -217,6 +231,8 @@ class Bitrot(object):
         self.exclude_list = exclude_list
         self._last_reported_size = ''
         self._last_commit_ts = 0
+        self.index = index
+        self.section_count = section_count
         self.pool = ProcessPoolExecutor(max_workers=workers)
 
     def maybe_commit(self, conn):
@@ -254,8 +270,10 @@ class Bitrot(object):
                 '.', expected=missing_paths,
                 ignored=[bitrot_db, bitrot_sha512] + self.exclude_list,
                 follow_links=self.follow_links,
-                verbosity=self.verbosity
+                verbosity=self.verbosity,
+                index=self.index, section_count=self.section_count
             )
+            print(f'Checking {len(paths)} files, total size {human_format(total_size, precision=1, binary=True)}b')
         paths_uni = {normalize_path(p) for p in paths}
         futures = [self.pool.submit(compute_one, p, self.chunk_size) for p in paths]
 
@@ -367,9 +385,7 @@ class Bitrot(object):
             return
 
         # show current file in progress too
-        terminal_size = shutil.get_terminal_size()
-        # but is it too big for terminal window?
-        cols = terminal_size.columns
+        cols = get_terminal_width()
         max_path_size = cols - len(size_fmt) - 1
         if len(current_path) > max_path_size:
             # show first half and last half, separated by ellipsis
@@ -390,8 +406,11 @@ class Bitrot(object):
             self, total_size, all_count, error_count, new_paths, updated_paths,
             renamed_paths, missing_paths):
         """Print a report on what happened.  All paths should be Unicode here."""
-        print('\rFinished. {:.2f} MiB of data read. {} errors found.'
-              ''.format(total_size / 1024 / 1024, error_count))
+        size_txt = human_format(total_size, binary=True, split_with=' ')
+        report = f'Finished. {size_txt}iB of data read. {error_count} errors found.'
+        # pad out with spaces, otherwise previous filenames won't be erased
+        report += ' ' * (get_terminal_width() - len(report))
+        print('\r' + report)
         if self.verbosity == 1:
             print(
                 f'{all_count} entries in the database, {len(new_paths)} new, {len(updated_paths)} updated, '
@@ -622,14 +641,16 @@ def read_exclude_list(exclude_list):
 def check_folders_for_bitrot(verbosity=1):
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     toast = ''
+    section_count = 100  # do in this many sections
+    index = datetime.datetime.today().toordinal() % section_count
     for folder in check_folders:
         print(folder)
-        base_folder = os.path.join(os.environ['UserProfile'], folder)
-        os.chdir(base_folder)
+        os.chdir(folder)
         try:
-            Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
+            Bitrot(exclude_list=exclude_list, verbosity=verbosity, workers=max(os.cpu_count() - 1, 1),
+                   index=index, section_count=section_count).run()
         except BitrotException as exception:
-            bad_files = [os.path.join(base_folder, file) for file in exception.args[2]]
+            bad_files = [os.path.join(folder, file) for file in exception.args[2]]
             open(f'bitrot-errors-{node()}.txt', 'w').write('\n'.join(bad_files))
             toast += f'{folder}: {len(bad_files)} bad files\n'
     return toast
@@ -641,8 +662,7 @@ def restore_good_files():
     Make a copy of each good file by appending .restored to the file basename.
     The originals can be deleted on the computer with the bad copy."""
     for folder in check_folders:
-        print(folder)
-        os.chdir(os.path.join(os.environ['UserProfile'], folder))
+        os.chdir(folder)
         for error_list_file in os.listdir('.'):
             if not (error_list_file.startswith('bitrot-errors-') and error_list_file.endswith('.txt')):
                 continue
@@ -670,5 +690,5 @@ def restore_good_files():
 
 
 if __name__ == '__main__':
-    check_folders_for_bitrot(verbosity=2)
+    check_folders_for_bitrot(verbosity=0)
     # restore_good_files()
