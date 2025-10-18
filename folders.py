@@ -5,6 +5,7 @@ downloads_folder = os.path.join(user_profile, 'Downloads')
 
 music_folder = os.path.join(user_profile, 'Music')
 misc_folder = os.path.join(user_profile, 'Misc')
+pics_folder = os.path.join(user_profile, 'Pictures')
 radio_folder = os.path.join(user_profile, 'Radio')
 docs_folder = os.path.join(user_profile, 'STFC', 'Documents')
 if os.path.exists(docs_folder):

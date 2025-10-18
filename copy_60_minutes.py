@@ -1,7 +1,9 @@
+import asyncio
 import os
+import re
 import time
 from difflib import get_close_matches
-from typing import Any
+from typing import Any, Generator, AsyncGenerator
 
 import phrydy  # to get media data
 import requests
@@ -45,7 +47,7 @@ def copy_album(album: tuple[str, str, str], files, existing_folder=None):
         album_filename = remove_bad_chars(title if no_artist else f'{artist} - {title}')
     else:
         album_filename = os.path.basename(folder)
-    album_filename = album_filename[:60].strip()  # shorten path names (Windows limit: 260 chars)
+    album_filename = album_filename[:60].strip('. ')  # shorten path names (Windows limit: 260 chars) and remove dots
     if existing_folder is None:  # making a new folder
         copied_name = datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename
         os.mkdir(copied_name)
@@ -68,10 +70,74 @@ def copy_album(album: tuple[str, str, str], files, existing_folder=None):
     return copied_name
 
 
-def scan_music_folder(max_count: int = 0) -> dict[tuple[str, str | None, str | None], dict[str, float]]:
-    bytes_to_minutes = 8 / (1024 * 128 * 60)
-    os.chdir(music_folder)
+def get_tags(folder, file):
+    bytes_to_minutes = 8 / (1024 * 128 * 60)  # some buggy mp3s - assume 128kbps
+    filename = os.path.join(folder, file)
+    try:
+        media = phrydy.MediaFile(filename)
+    except Exception as e:
+        print(f'No media info for {file}', e)
+        return None
+    # use album artist (if available) so we can compare 'Various Artist' albums
+    return (str(folder), str(file), str(media.albumartist or media.artist), str(media.album),
+            media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes)
+
+
+async def get_album_files():
+    """Scan media files in the current folder and subfolders. Yield a tuple: (folder, artist, album_name)."""
+    loop = asyncio.get_event_loop()
+    base_folder = os.getcwd()
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
+    included = filter(lambda t: not t[0][len(base_folder) + 1:].startswith(exclude_prefixes), os.walk(base_folder))
+    line_len = 0
+    i = 0
+    file_list = [(folder, file)
+                 for folder, _, file_list in included
+                 for file in filter(is_media_file, file_list)]
+    tags = []
+    for folder, file in file_list:
+        if i % 100 == 0:
+            output = folder[len(base_folder) + 1:]
+            output += (line_len - len(output)) * ' '  # pad to length of previous output
+            line_len = len(output)
+            print(output, end='\r')  # keep on same line
+        tags.append(loop.run_in_executor(None, get_tags, *(folder, file)))
+        i += 1
+    return filter(None, await asyncio.gather(*tags))
+
+
+def get_album_files_sync():
+    """Scan media files in the current folder and subfolders. Yield a tuple: (folder, artist, album_name)."""
+    bytes_to_minutes = 8 / (1024 * 128 * 60)
+    base_folder = os.getcwd()
+    exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
+    included = filter(lambda t: not t[0][len(base_folder) + 1:].startswith(exclude_prefixes), os.walk(base_folder))
+    line_len = 0
+    i = 0
+    for folder, folder_list, file_list in included:
+        for file in filter(is_media_file, file_list):
+            if i % 100 == 0:
+                output = folder[len(base_folder) + 1:]
+                output += (line_len - len(output)) * ' '  # pad to length of previous output
+                line_len = len(output)
+                print(output, end='\r')  # keep on same line
+            filename = os.path.join(folder, file)
+            try:
+                tags = phrydy.MediaFile(filename)
+            except Exception as e:
+                print(f'No media info for {file}', e)
+                continue
+            # use album artist (if available) so we can compare 'Various Artist' albums
+            artist = tags.albumartist or tags.artist
+            album_name = tags.album
+            # some buggy mp3s - assume 128kbps
+            duration = tags.length / 60 if tags.length else os.path.getsize(filename) * bytes_to_minutes
+            yield str(folder), str(artist), str(album_name), str(file), duration
+            i += 1
+
+
+def scan_music_folder() -> dict[tuple[str, str | None, str | None], dict[str, float]]:
+    os.chdir(music_folder)
     base, ext = os.path.splitext(copy_log_file)
     # deal with multiple copies of the log (typically Syncthing-generated)
     copied_already = set()
@@ -84,37 +150,39 @@ def scan_music_folder(max_count: int = 0) -> dict[tuple[str, str | None, str | N
 
     print(f'{len(copied_already)} albums in copied_already list')
 
-    def is_included(walk_tuple: tuple[str, list[str], list[str]]) -> bool:
-        folder_name = walk_tuple[0]
-        return not folder_name[len(music_folder) + 1:].startswith(exclude_prefixes)
+    albums = {}
+    for folder, file, artist, album_name, duration in asyncio.run(get_album_files()):
+        key = (folder, artist, album_name)
+        if '\t'.join(key) in copied_already:
+            continue
+        # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
+        albums.setdefault(key, {})[file] = duration
+    print('')  # next line
+    # remove albums with only one track
+    return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
+
+
+def scan_music_folder_sync() -> dict[tuple[str, str | None, str | None], dict[str, float]]:
+    os.chdir(music_folder)
+    base, ext = os.path.splitext(copy_log_file)
+    # deal with multiple copies of the log (typically Syncthing-generated)
+    copied_already = set()
+    for name in os.listdir(music_folder):
+        if name.startswith(base) and name.endswith(ext):
+            copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
+            if name != copy_log_file:  # get rid of other copies and keep the original
+                send2trash(name)
+    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
+
+    print(f'{len(copied_already)} albums in copied_already list')
 
     albums = {}
-    line_len = 0
-    for folder, folder_list, file_list in filter(is_included, os.walk(music_folder)):
-        if max_count and len(albums) >= max_count:
-            break
-        if len(albums) % 10 == 0:
-            output = folder[len(music_folder) + 1:]
-            output += (line_len - len(output)) * ' '  # pad to length of previous output
-            line_len = len(output)
-            print(output, end='\r')  # keep on same line
-        for file in filter(is_media_file, file_list):
-            filename = os.path.join(folder, file)
-            try:
-                tags = phrydy.MediaFile(filename)
-            except Exception as e:
-                print(f'No media info for {file}', e)
-                continue
-            # use album artist (if available) so we can compare 'Various Artist' albums
-            artist = tags.albumartist or tags.artist
-            album_name = tags.album
-            # some buggy mp3s - assume 128kbps
-            duration = tags.length / 60 if tags.length else os.path.getsize(filename) * bytes_to_minutes
-            key = (folder, artist, album_name)
-            if '\t'.join(map(str, key)) in copied_already:
-                continue
-            # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
-            albums.setdefault(key, {})[file] = duration
+    for folder, artist, album_name, file, duration in get_album_files_sync():
+        key = (folder, artist, album_name)
+        if '\t'.join(key) in copied_already:
+            continue
+        # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
+        albums.setdefault(key, {})[file] = duration
     print('')  # next line
     # remove albums with only one track
     return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
@@ -181,7 +249,7 @@ def copy_albums(copy_folder_list: list[Folder],
                     break
                 elif duration < copy_folder.min_length:
                     # less than we want? look for another one to fill the rest of the time
-                    print(key, int(duration))
+                    print(*key, int(duration))
                     gap_min_length = copy_folder.min_length - duration
                     gap_max_length = copy_folder.max_length - duration
                     second_key = find_with_length(albums, gap_min_length, gap_max_length)
@@ -190,7 +258,7 @@ def copy_albums(copy_folder_list: list[Folder],
                         continue
                     second_file_list = albums.pop(second_key)
                     new_duration = sum(second_file_list.values())
-                    print(second_key, int(new_duration))
+                    print(*second_key, int(new_duration))
                     duration += new_duration
                     # do first one first!
                     folder_name = copy_album(second_key, second_file_list, copy_album(key, file_list))
@@ -204,10 +272,27 @@ def copy_albums(copy_folder_list: list[Folder],
     return toast
 
 
-def copy_60_minutes() -> str | datetime:
+def find_copy_folders() -> list[Folder]:
+    """Look through the Radio folder to find folders named like '55-70 minutes x6'. Return a list of those folders."""
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
-    copy_folder_list = [Folder(os.path.join(user_profile, 'Commute'), 55 + extra_time, 70 + extra_time, 6),
-                        Folder(os.path.join(user_profile, '40 minutes'), 35, 40, 2)]
+    radio_folder = os.path.join(user_profile, 'Radio')
+    os.chdir(radio_folder)
+    folder_list = []
+    for folder in os.listdir():
+        if not os.path.isdir(folder):
+            continue
+        if not (match := re.match(r'(\d+)-(\d+) minutes x(\d+)', folder)):
+            continue
+        folder_list.append(Folder(os.path.join(radio_folder, folder),
+                                  int(match.group(1)) + extra_time, int(match.group(2)) + extra_time,
+                                  int(match.group(3))))
+    return folder_list
+
+
+def copy_60_minutes() -> str | datetime:
+    """Find albums of the specified length to copy into subfolders of the Radio folder.
+    The idea is to have whole albums to listen to on my bike commute to work."""
+    copy_folder_list = find_copy_folders()
     print(*copy_folder_list, sep='\n')
     toast, copy_folder_list = check_folder_list(copy_folder_list)
     if not copy_folder_list:
@@ -296,4 +381,7 @@ def check_previous() -> None:
 
 
 if __name__ == '__main__':
-    copy_60_minutes()
+    then = datetime.now()
+    # print(*scan_music_folder_sync().items(), sep='\n')
+    print(*scan_music_folder().items(), sep='\n')
+    print(datetime.now() - then)

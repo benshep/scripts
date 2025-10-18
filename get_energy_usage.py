@@ -1,9 +1,10 @@
+import asyncio
 import json
 import time
 import urllib.parse
-from typing import Any
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 
+import aiohttp
 import pandas
 import requests
 from pandas import DataFrame, Timestamp
@@ -39,7 +40,7 @@ def ymdhm(date):
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data(remove_incomplete_rows=True):
+async def get_usage_data(remove_incomplete_rows=True):
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -55,7 +56,9 @@ def get_usage_data(remove_incomplete_rows=True):
         return
 
     sheet = google_api.spreadsheets.get(spreadsheetId=sheet_id).execute()
-    grid_id = next(g['properties']['sheetId'] for g in sheet['sheets'] if g['properties']['title'] == sheet_name)
+    grid_id = next(grid['properties']['sheetId']
+                   for grid in sheet['sheets']
+                   if grid['properties']['title'] == sheet_name)
 
     def fill_request(start_column, column_count, row_count):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
@@ -69,7 +72,11 @@ def get_usage_data(remove_incomplete_rows=True):
 
     fill_requests = []
     data_titles = 'gas', 'electricity', 'carbon intensity'
-    all_fuel_data = [get_fuel_data(start_date, data_title, remove_incomplete_rows) for data_title in data_titles]
+    all_fuel_data = await asyncio.gather(*[get_fuel_data(start_date, data_title) for data_title in data_titles])
+    # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
+    all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
+                     for fuel_data in all_fuel_data]
+
     print(all_fuel_data)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
@@ -143,11 +150,11 @@ def fill_old_carbon_data():
         return
 
 
-def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
+def get_fuel_data_n3rgy(start_date, fuel):
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
-        return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
+        return get_co2_data(start_date)
     # last_date = start_date + pandas.to_timedelta(30, 'd')
     headers = {'Authorization': energy_credentials.mac_address}  # AUTH is my MAC code
     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
@@ -158,15 +165,14 @@ def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
     df = pandas.json_normalize(response.json(), record_path='values')
     df.timestamp = pandas.to_datetime(df.timestamp)
     data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value')
-    data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
-def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
+async def get_fuel_data(start_date, fuel):
     """Use the Octopus API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
-        return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
+        return get_co2_data(start_date)
 
     # https://www.guylipman.com/octopus/api_guide.html#s3
     # spreadsheet expects *end* times going from 00:00 to 23:30 - shift requested time back by half an hour
@@ -178,15 +184,15 @@ def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
     url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
     # print(url)
-    response = requests.get(url, auth=(energy_credentials.octopus_api_key, ''))
-    json = response.json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, auth=aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')) as response:
+            response_json = await response.json()
     # print(json)
-    if json['count'] == 0:  # no results
+    if response_json['count'] == 0:  # no results
         return []
-    df = pandas.json_normalize(json, record_path='results')
+    df = pandas.json_normalize(response_json, record_path='results')
     df.interval_end = pandas.to_datetime(df.interval_end, utc=True)
     data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time, values='consumption')
-    data = data.dropna() if remove_incomplete_rows else data.fillna(-1)
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
@@ -228,12 +234,10 @@ class RegionId(IntEnum):
     wales = 17
 
 
-def get_co2_data(start_date: Timestamp, geography: str | int | RegionId = home_postcode,
-                 remove_incomplete_rows: bool = True) -> DataFrame:
+def get_co2_data(start_date: Timestamp, geography: str | int | RegionId = home_postcode) -> DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     :param geography: Can be a postcode or one of the region IDs.
-    Leave geography blank to get national data.
-    :param remove_incomplete_rows: Specify False to fill in -1 values where there are data gaps."""
+    Leave geography blank to get national data."""
     end_date = min(today(), start_date + pandas.to_timedelta(14, 'd'))  # can't get more than 14 days at a time
     end_date -= pandas.to_timedelta(1, 'd')
     if geography:
@@ -255,8 +259,7 @@ def get_co2_data(start_date: Timestamp, geography: str | int | RegionId = home_p
     # pivot.loc[pivot.index[0] + pandas.to_timedelta(1, 'd')] = [pandas.NA] * 48
     # pivot = pivot.sort_index()
 
-    # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
-    return pivot.dropna() if remove_incomplete_rows else pivot.fillna(-1)
+    return pivot
 
 
 def get_json(url, retries=3):
@@ -328,9 +331,9 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=False))
+    print(asyncio.run(get_usage_data(remove_incomplete_rows=False)))
     # print(get_regional_intensity())
-    get_old_data_avg()
+    # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)

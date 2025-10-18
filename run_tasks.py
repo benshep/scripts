@@ -1,66 +1,42 @@
-import contextlib
 import subprocess
 import sys
 import os
-import inspect
 import cryptography.utils
+import importlib
+import importlib.util
 import warnings
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
+from datetime import datetime, timedelta
+start_time = datetime.now()
 from time import sleep
 from traceback import format_exc, extract_tb
-from datetime import datetime, timedelta
 from platform import node
 
 import psutil
 import google_api  # pip install google-api-python-client
+from rich import print  # rich-text printing
+from rich.traceback import install  # rich tracebacks
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from folders import docs_folder
 
-with contextlib.suppress(ImportError):
-    from rich import print  # rich-text printing
-    from rich.traceback import install  # rich tracebacks
-
-    install()
-
-# 'home' tasks
-from change_wallpaper import change_wallpaper
-from update_phone_music import update_phone_music
-from copy_60_minutes import copy_60_minutes
-from get_youtube_playlists import get_youtube_playlists
-from get_energy_usage import get_usage_data
-from bitrot import check_folders_for_bitrot
-from erase_trailers import erase_trailers
-from rugby_fixtures import update_saints_calendar
-from concerts import update_gig_calendar, find_new_releases
-from mersey_gateway import log_crossings
-
-at_home = docs_folder is None  # no work documents
-if not at_home:
-    # 'work' tasks
-    sys.path.append(os.path.join(docs_folder, 'Scripts'))
-    from package_updates import find_new_python_packages
-    from oracle_staff_check import annual_leave_check, otl_submit
-    from get_budget_data import get_budget_data
-    from check_leave_dates import check_leave_dates
-    from fill_availability import fill_availability
-    from check_on_site_support import check_on_site_support
-    from events_to_spreadsheet import events_to_spreadsheet, set_pc_unlocked_flag
-    from get_access_data import check_prev_week
-    from todos_from_notes import todos_from_notes
-    from get_payslips import get_payslips
-    from catering_bookings import get_bookings
-    from page_changes import check_page_changes, live_update
-    from oracle import convert_obi_files
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
 sheet_name = 'Sheet1'
 
-start_dir = os.getcwd()
-import_dict = {func: inspect.getfile(func) for func in locals().values() if inspect.isfunction(func)}
-imports = {file: os.path.getmtime(file) for file in import_dict.values() if 'envs' not in file}  # my code, not library stuff
-imports[__file__] = os.path.getmtime(__file__)  # this file too
+install()  # rich text
+
+
+def lazy_import(name):
+    spec = importlib.util.find_spec(name)
+    loader = importlib.util.LazyLoader(spec.loader)
+    spec.loader = loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    module.mod_time = os.path.getmtime(module.__file__)
+    return module
 
 
 def update_cell(row, col, string):
@@ -68,6 +44,44 @@ def update_cell(row, col, string):
 
 
 def run_tasks():
+    # 'home' tasks
+    task_dict = {  # function: module
+        'change_wallpaper': lazy_import('change_wallpaper'),
+        'update_phone_music': lazy_import('update_phone_music'),
+        'copy_60_minutes': lazy_import('copy_60_minutes'),
+        'get_youtube_playlists': lazy_import('get_youtube_playlists'),
+        'get_usage_data': lazy_import('get_energy_usage'),
+        'check_folders_for_bitrot': lazy_import('bitrot'),
+        'erase_trailers': lazy_import('erase_trailers'),
+        'update_saints_calendar': lazy_import('rugby_fixtures'),
+        'update_gig_calendar': lazy_import('concerts'),
+        'find_new_releases': lazy_import('concerts'),
+        'log_crossings': lazy_import('mersey_gateway'),
+    }
+
+    at_home = docs_folder is None  # no work documents
+    if not at_home:
+        # 'work' tasks
+        sys.path.append(os.path.join(docs_folder, 'Scripts'))
+        task_dict |= {
+            'find_new_python_packages': lazy_import('package_updates'),
+            'annual_leave_check, otl_submit': lazy_import('oracle_staff_check'),
+            'get_budget_data': lazy_import('get_budget_data'),
+            'check_leave_dates': lazy_import('check_leave_dates'),
+            'fill_availability': lazy_import('fill_availability'),
+            'check_on_site_support': lazy_import('check_on_site_support'),
+            'events_to_spreadsheet, set_pc_unlocked_flag': lazy_import('events_to_spreadsheet'),
+            'check_prev_week': lazy_import('get_access_data'),
+            'todos_from_notes': lazy_import('todos_from_notes'),
+            'get_payslips': lazy_import('get_payslips'),
+            'get_bookings': lazy_import('catering_bookings'),
+            'check_page_changes, live_update': lazy_import('page_changes'),
+            'convert_obi_files': lazy_import('oracle'),
+        }
+    # track changes to this file too
+    run_tasks_mod_time = os.path.getmtime(__file__)
+
+    start_dir = os.getcwd()
     column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Work', 'Home',
                     'Last run', 'Machine', 'Last result', 'Next run']
 
@@ -83,7 +97,7 @@ def run_tasks():
     # first argument: comma-separated list of functions to run (because they were modified)
     force_run = [] if len(sys.argv) < 2 else sys.argv[1].split(',')
     while True:
-        print('Fetching data from spreadsheet')
+        print('Fetching data from spreadsheet', datetime.now() - start_time)
         try:
             headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
         except Exception as e:
@@ -109,45 +123,55 @@ def run_tasks():
             properties = dict(zip(column_names, values))
             if properties.get(location, False) != 'TRUE':
                 continue
-            last_result = properties.get('Last result')
-            now = datetime.now()
-            next_run_time = datetime.strptime(properties.get('Next run'), time_format)
+
             function_name = properties.get('Function name')
-            if next_run_time > now and last_result in ('Success', 'Postponed') and function_name not in force_run:
-                next_task_time = min(next_task_time, next_run_time)
-                continue
-            last_run_time = datetime.strptime(properties.get('Last run'), time_format)
-            if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
-                print(f'{function_name} already running since {last_run_time} - skipping for now')
-                continue  # running on other PC for <2 hours - let it continue
-
-            now_str = now.strftime(time_format)
-            update_cell(i + 2, get_column('Last run'), now_str)
-            update_cell(i + 2, get_column('Machine'), node())
-            update_cell(i + 2, get_column('Last result'), 'Running')
-
-            parameters_raw = properties.get('Parameters', '')
-            if parameters_raw.startswith('@'):  # run on a particular computer
-                if parameters_raw[1:] != node():  # but not this one
+            function = getattr(task_dict[function_name], function_name)
+            parameters = properties.get('Parameters', '')
+            if parameters.startswith('@'):  # run on a particular computer
+                if parameters[1:] != node():  # but not this one
                     continue
                 parameters = ''
             else:
                 try:
-                    parameters = float(parameters_raw)
+                    parameters = float(parameters)
                 except ValueError:  # it's not a float, assume string
-                    parameters = f'"{parameters_raw}"' if parameters_raw else ''  # wrap in quotes to send to function
+                    pass
+
+            last_result = properties.get('Last result')
+            now = datetime.now()
+            next_run = properties.get('Next run')
+            last_run_time = datetime.strptime(properties.get('Last run'), time_format)
+            if next_run == 'on change':
+                # look for changes in files
+                newest_mod_time = max(os.path.getmtime(file) for file in function.file_list)
+                if datetime.fromtimestamp(newest_mod_time) <= last_run_time:
+                    continue
+                else:
+                    last_triggered = newest_mod_time  # to update in last run column
+            else:  # run on a schedule
+                last_triggered = now.strftime(time_format)
+                next_run_time = datetime.strptime(next_run, time_format)
+            if next_run_time > now and last_result in ('Success', 'Postponed') and function_name not in force_run:
+                next_task_time = min(next_task_time, next_run_time)
+                continue
+
+            if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
+                print(f'{function_name} already running since {last_run_time} - skipping for now')
+                continue  # running on other PC for <2 hours - let it continue
+
+            update_cell(i + 2, get_column('Last run'), last_triggered)
+            update_cell(i + 2, get_column('Machine'), node())
+            update_cell(i + 2, get_column('Last result'), 'Running')
 
             icon = properties.get('Icon', '')
             set_window_title(f'{icon} {function_name}')
-            print('')
-            print(now_str, function_name, parameters)
+            print('\n', last_triggered, function_name, parameters)
             try:
-                return_value = eval(f'{function_name}({parameters})')
+                return_value = function() if parameters == '' else function(parameters)
             except Exception as exception:  # something went wrong with the task!
                 return_value = exception
                 exception_type, exception_value, exception_traceback = sys.exc_info()
-                error_lines = format_exc().split('\n')
-                result = '\n'.join(error_lines[4:])
+                result = format_exc()
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
@@ -187,11 +211,15 @@ def run_tasks():
                     result = f'Failure {fail_count}'
 
             next_task_time = min(next_task_time, next_run_time)
-            next_run_str = next_run_time.strftime(time_format)
-            print('Next run time:', next_run_str)
-            update_cell(i + 2, get_column('Next run'), next_run_str)
+            if next_run != 'on change':  # scheduled task: set next run time
+                next_run_str = next_run_time.strftime(time_format)
+                print('Next run time:', next_run_str)
+                update_cell(i + 2, get_column('Next run'), next_run_str)
             print(result)
             update_cell(i + 2, get_column('Last result'), result)
+
+        if node() == 'eddie':
+            break  # just run once on cron
 
         force_run = []  # only force run for first loop
         # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
@@ -200,17 +228,24 @@ def run_tasks():
         print(f'Waiting until {next_time_str}')
         set_window_title(f'{title_toast} ⌛️ {next_time_str}')
         while datetime.now() < next_task_time:
-            sleep(60)
+            sleep(300)
 
-        # restart code
-        for file, mod_time in imports.items():
-            if mod_time != os.path.getmtime(file):
-                functions = ','.join([func.__name__ for func, filename in import_dict.items() if filename == file])
+            # restart code
+            force_run = []  # only force run for one loop
+            for function, module in task_dict.items():
+                new_mod_time = os.path.getmtime(module.__file__)
+                if module.mod_time != new_mod_time:
+                    force_run += [func for func, mod in task_dict.items() if mod == module]
+                    importlib.reload(module)
+                    task_dict[function].mod_time = new_mod_time
+            if force_run:
+                print(f'\nChange detected in functions', *force_run)
+
+            if run_tasks_mod_time != os.path.getmtime(__file__):
                 set_window_title('🔁 Restarting')
-                print(f'Change detected in {file}, functions {functions}\nRestarting\n\n')
                 os.chdir(start_dir)
                 # force rerunning those functions
-                subprocess.Popen([sys.executable, sys.argv[0], functions])
+                subprocess.Popen([sys.executable, sys.argv[0]])
                 exit()
 
 

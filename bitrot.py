@@ -108,7 +108,7 @@ def get_sqlite3_cursor(path, copy=False):
 
 
 def list_existing_paths(directory, expected=(), ignored=(),
-                        verbosity=1, follow_links=False, index=0, section_count=1) -> tuple[set[str], int]:
+                        verbosity=1, follow_links=False):
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
     Returns a tuple with a set of existing files in `directory` and its subdirectories
@@ -118,10 +118,6 @@ def list_existing_paths(directory, expected=(), ignored=(),
     Doesn't add entries listed in `ignored`.  Doesn't add symlinks or cloud-only files if
     `follow_links` is False (the default).  All entries present in `expected`
     must be files (can't be directories or symlinks).
-
-    section_count specifies how many 'sections' to do this in
-    index specifies which section to do this time
-    Each path is hashed and modulo section_count to determine its section.
     """
     paths = set()
     total_size = 0
@@ -143,8 +139,6 @@ def list_existing_paths(directory, expected=(), ignored=(),
                 if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
                     raise
             else:
-                if hash(p) % section_count != index:
-                    continue  # not doing this section
                 # split path /dir1/dir2/file.txt into
                 # ['dir1', 'dir2', 'file.txt']
                 # and match on any of these components
@@ -218,8 +212,7 @@ def get_terminal_width():
 
 class Bitrot(object):
     def __init__(self, verbosity=1, test=False, follow_links=False, commit_interval=300,
-                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None, workers=os.cpu_count(),
-                 index=0, section_count=1):
+                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None, workers=os.cpu_count()):
         if exclude_list is None:
             exclude_list = []
         self.verbosity = verbosity
@@ -231,8 +224,6 @@ class Bitrot(object):
         self.exclude_list = exclude_list
         self._last_reported_size = ''
         self._last_commit_ts = 0
-        self.index = index
-        self.section_count = section_count
         self.pool = ProcessPoolExecutor(max_workers=workers)
 
     def maybe_commit(self, conn):
@@ -270,10 +261,8 @@ class Bitrot(object):
                 '.', expected=missing_paths,
                 ignored=[bitrot_db, bitrot_sha512] + self.exclude_list,
                 follow_links=self.follow_links,
-                verbosity=self.verbosity,
-                index=self.index, section_count=self.section_count
+                verbosity=self.verbosity
             )
-            print(f'Checking {len(paths)} files, total size {human_format(total_size, precision=1, binary=True)}b')
         paths_uni = {normalize_path(p) for p in paths}
         futures = [self.pool.submit(compute_one, p, self.chunk_size) for p in paths]
 
@@ -641,14 +630,11 @@ def read_exclude_list(exclude_list):
 def check_folders_for_bitrot(verbosity=1):
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     toast = ''
-    section_count = 100  # do in this many sections
-    index = datetime.datetime.today().toordinal() % section_count
     for folder in check_folders:
         print(folder)
         os.chdir(folder)
         try:
-            Bitrot(exclude_list=exclude_list, verbosity=verbosity, workers=max(os.cpu_count() - 1, 1),
-                   index=index, section_count=section_count).run()
+            Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
         except BitrotException as exception:
             bad_files = [os.path.join(folder, file) for file in exception.args[2]]
             open(f'bitrot-errors-{node()}.txt', 'w').write('\n'.join(bad_files))
@@ -690,5 +676,5 @@ def restore_good_files():
 
 
 if __name__ == '__main__':
-    check_folders_for_bitrot(verbosity=0)
+    check_folders_for_bitrot(verbosity=2)
     # restore_good_files()

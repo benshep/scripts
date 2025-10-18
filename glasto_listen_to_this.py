@@ -4,15 +4,10 @@ from subprocess import check_output
 import pylast
 from lastfm import lastfm
 from folders import radio_folder
+from tools import remove_bad_chars
 
 glastonbury_iplayer_url = 'https://www.bbc.co.uk/iplayer/episodes/b007r6vx/glastonbury'
 want_songs = True  # looking for individual songs? False means whole sets
-
-bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use these in filenames
-
-
-def remove_bad_chars(filename: str) -> str:
-    return filename.translate(bad_chars)
 
 
 def listen_to_this():
