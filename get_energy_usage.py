@@ -40,7 +40,11 @@ def ymdhm(date):
     return date.strftime('%Y%m%d%H%M')
 
 
-async def get_usage_data(remove_incomplete_rows=True):
+def get_usage_data(remove_incomplete_rows=True):
+    return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
+
+
+async def get_usage_data_async(remove_incomplete_rows=True):
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
