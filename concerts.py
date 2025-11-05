@@ -211,7 +211,7 @@ def get_new_releases(artist) -> list[Release]:
     }
 
     headers = {'User-Agent': f'get_new_releases/{now.strftime("%Y%m%d")} ( bjashepherd@gmail.com )'}
-    sleep(1)  # MusicBrainz rate limit: 1 request per second  https://wiki.musicbrainz.org/MusicBrainz_API/Rate_Limiting
+    sleep(1.5)  # MusicBrainz rate limit: 1 request per second  https://wiki.musicbrainz.org/MusicBrainz_API/Rate_Limiting
     response = requests.get(url, params=params, headers=headers)
     # print(response.url)
     json = response.json()
