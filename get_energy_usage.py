@@ -249,7 +249,7 @@ def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postco
     if end is None:
         end = today() - pandas.to_timedelta(1, 'day')
     end = min(end, start + pandas.to_timedelta(14, 'day'))  # can't get more than 14 days at a time
-    if end < start:
+    if end <= start:
         return pandas.DataFrame()
     if geography:
         area = 'regional/'
@@ -284,7 +284,8 @@ def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postco
 
 def get_json(url, retries=3):
     """Attempt to fetch JSON data from a URL, retrying a number of times (default 3)."""
-    while (attempt := 0) < retries:
+    attempt = 0
+    while attempt < retries:
         json = requests.get(url).json()
         if 'error' not in json:
             break
@@ -351,7 +352,7 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(asyncio.run(get_usage_data(remove_incomplete_rows=False)))
+    print(get_usage_data(remove_incomplete_rows=False))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
