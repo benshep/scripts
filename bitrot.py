@@ -660,7 +660,7 @@ def check_folders_for_bitrot(verbosity=1, sublist_count=30):
             Bitrot(exclude_list=exclude_list, verbosity=verbosity, sublist_count=sublist_count).run()
         except BitrotException as exception:
             bad_files = [os.path.join(folder, file) for file in exception.args[2]]
-            open(error_file, 'w').write('\n'.join(bad_files))
+            open(error_file, 'w').write('\n'.join(bad_files) + '\n')
             toast += f'{folder}: {len(bad_files)} bad files\n'
         clashes = compare_nodes()
         if clashes:
