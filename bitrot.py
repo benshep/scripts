@@ -244,7 +244,7 @@ class Bitrot(object):
         self._last_commit_ts = time.time()
 
     def run(self):
-        check_sha512_integrity(verbosity=self.verbosity)
+        # check_sha512_integrity(verbosity=self.verbosity)
 
         bitrot_db = get_path()
         bitrot_sha512 = get_path(ext='sha512')
