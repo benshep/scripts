@@ -712,6 +712,7 @@ def compare_nodes() -> list[str]:
             continue
         db = get_sqlite3_cursor(db_file)
         hash_list = db.execute('SELECT path, hash FROM bitrot').fetchall()
+        db.close()
         print(db_file, len(hash_list), 'hashes')
         for path, h in hash_list:
             if path not in hashes:
