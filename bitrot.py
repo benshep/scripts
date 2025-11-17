@@ -107,7 +107,7 @@ def get_sqlite3_cursor(path, copy=False):
     return conn
 
 
-def list_existing_paths(directory, expected=(), ignored=(),
+def list_existing_paths(directory, ignored=(),
                         verbosity=1, follow_links=False):
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
@@ -162,36 +162,6 @@ def list_existing_paths(directory, expected=(), ignored=(),
     return paths, total_size
 
 
-def compute_one(path, chunk_size):
-    """Return a tuple with (unicode path, size, mtime, sha1). Takes a binary path."""
-    p_uni = normalize_path(path)
-    try:
-        st = os.stat(path)
-    except OSError as ex:
-        if ex.errno in IGNORED_FILE_SYSTEM_ERRORS:
-            # The file disappeared between listing existing paths and
-            # this run or is (temporarily?) locked with different
-            # permissions. We'll just skip it for now.
-            print(
-                f'\rwarning: `{p_uni}` is currently unavailable for reading: {ex}',
-                file=sys.stderr,
-            )
-            raise BitrotException from ex
-
-        raise  # Not expected? https://github.com/ambv/bitrot/issues/
-
-    try:
-        new_sha1 = sha1(path, chunk_size)
-    except (IOError, OSError) as e:
-        print(
-            f'\rwarning: cannot compute hash of {p_uni} [{errno.errorcode[e.args[0]]}]',
-            file=sys.stderr,
-        )
-        raise BitrotException from e
-
-    return p_uni, st.st_size, int(st.st_mtime), new_sha1
-
-
 class BitrotException(Exception):
     pass
 
@@ -210,9 +180,44 @@ def get_terminal_width():
     return terminal_size.columns
 
 
+def compute_one(path, chunk_size, sublist_count, sublist_index):
+    """Return a tuple with (unicode path, size, mtime, sha1). Takes a binary path."""
+    p_uni = normalize_path(path)
+    try:
+        st = os.stat(path)
+    except OSError as ex:
+        if ex.errno in IGNORED_FILE_SYSTEM_ERRORS:
+            # The file disappeared between listing existing paths and
+            # this run or is (temporarily?) locked with different
+            # permissions. We'll just skip it for now.
+            print(
+                f'\rwarning: `{p_uni}` is currently unavailable for reading: {ex}',
+                file=sys.stderr,
+            )
+            raise BitrotException from ex
+
+        raise  # Not expected? https://github.com/ambv/bitrot/issues/
+
+    if sublist_count > 1 and sublist_index != hash(path) % sublist_count:
+        return p_uni, st.st_size, int(st.st_mtime), None
+
+    try:
+        new_sha1 = sha1(path, chunk_size)
+    except (IOError, OSError) as e:
+        print(
+            f'\rwarning: cannot compute hash of {p_uni} [{errno.errorcode[e.args[0]]}]',
+            file=sys.stderr,
+        )
+        raise BitrotException from e
+
+    return p_uni, st.st_size, int(st.st_mtime), new_sha1
+
+
 class Bitrot(object):
     def __init__(self, verbosity=1, test=False, follow_links=False, commit_interval=300,
-                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None, workers=os.cpu_count()):
+                 chunk_size=DEFAULT_CHUNK_SIZE, file_list=None, exclude_list=None,
+                 workers=max(os.cpu_count() - 1, 1),
+                 sublist_count=30, sublist_index=None):
         if exclude_list is None:
             exclude_list = []
         self.verbosity = verbosity
@@ -225,6 +230,10 @@ class Bitrot(object):
         self._last_reported_size = ''
         self._last_commit_ts = 0
         self.pool = ProcessPoolExecutor(max_workers=workers)
+        self.sublist_count = sublist_count
+        if sublist_index is None:
+            sublist_index = datetime.datetime.today().toordinal() % self.sublist_count
+        self.sublist_index = sublist_index
 
     def maybe_commit(self, conn):
         if time.time() < self._last_commit_ts + self.commit_interval:
@@ -235,7 +244,7 @@ class Bitrot(object):
         self._last_commit_ts = time.time()
 
     def run(self):
-        check_sha512_integrity(verbosity=self.verbosity)
+        # check_sha512_integrity(verbosity=self.verbosity)
 
         bitrot_db = get_path()
         bitrot_sha512 = get_path(ext='sha512')
@@ -258,13 +267,14 @@ class Bitrot(object):
             total_size = sum(os.path.getsize(filename) for filename in paths)
         else:
             paths, total_size = list_existing_paths(
-                '.', expected=missing_paths,
+                '.',
                 ignored=[bitrot_db, bitrot_sha512] + self.exclude_list,
                 follow_links=self.follow_links,
                 verbosity=self.verbosity
             )
         paths_uni = {normalize_path(p) for p in paths}
-        futures = [self.pool.submit(compute_one, p, self.chunk_size) for p in paths]
+        futures = [self.pool.submit(compute_one, p, self.chunk_size, self.sublist_count, self.sublist_index)
+                   for p in paths]
 
         for future in as_completed(futures):
             try:
@@ -275,6 +285,12 @@ class Bitrot(object):
             current_size += new_size
             if self.verbosity:
                 self.report_progress(current_size, total_size, p_uni)
+
+            if new_sha1 is None:
+                # Didn't compute hash because we weren't doing this sublist
+                # Not a missing file, just skip it and move on
+                missing_paths.discard(p_uni)
+                continue
 
             if p_uni not in missing_paths:
                 # We are not expecting this path, it wasn't in the database yet.
@@ -291,7 +307,7 @@ class Bitrot(object):
                     missing_paths.discard(stored_path)
                 continue
 
-            # At this point we know we're seeing an expected file.
+            # At this point we know we're seeing an expected file. Try to compare hashes.
             missing_paths.discard(p_uni)
             cur.execute('SELECT mtime, hash, timestamp FROM bitrot WHERE path=?', (p_uni,))
             row = cur.fetchone()
@@ -305,6 +321,7 @@ class Bitrot(object):
 
             stored_mtime, stored_sha1, stored_ts = row
             if int(stored_mtime) != new_mtime:
+                # File has been updated: update the hash in the database
                 updated_paths.append(p_uni)
                 cur.execute('UPDATE bitrot SET mtime=?, hash=?, timestamp=? WHERE path=?',
                             (new_mtime, new_sha1, ts(), p_uni))
@@ -312,6 +329,7 @@ class Bitrot(object):
                 continue
 
             if stored_sha1 != new_sha1:
+                # Hashes are different! Report a mismatch
                 errors.append(p_uni)
                 print(
                     f'\rerror: SHA1 mismatch for {p_uni}: expected {stored_sha1}, got {new_sha1}. '
@@ -319,6 +337,7 @@ class Bitrot(object):
                     file=sys.stderr,
                 )
 
+        # Remove deleted files from the database
         for path in missing_paths:
             cur.execute('DELETE FROM bitrot WHERE path=?', (path,))
 
@@ -337,7 +356,7 @@ class Bitrot(object):
                 new_paths,
                 updated_paths,
                 renamed_paths,
-                missing_paths,
+                list(missing_paths),
             )
 
         update_sha512_integrity(verbosity=self.verbosity)
@@ -396,7 +415,10 @@ class Bitrot(object):
             renamed_paths, missing_paths):
         """Print a report on what happened.  All paths should be Unicode here."""
         size_txt = human_format(total_size, binary=True, split_with=' ')
-        report = f'Finished. {size_txt}iB of data read. {error_count} errors found.'
+        report = f'Finished. {size_txt}iB of files in folder. {error_count} errors found.'
+        if self.sublist_count > 1:
+            size_txt = human_format(total_size / self.sublist_count, binary=True, split_with=' ')
+            report += f' Checked sublist {self.sublist_index} of {self.sublist_count}: approx {size_txt}iB.'
         # pad out with spaces, otherwise previous filenames won't be erased
         report += ' ' * (get_terminal_width() - len(report))
         print('\r' + report)
@@ -455,7 +477,7 @@ class Bitrot(object):
 
 def get_path(directory='.', ext='db'):
     """Compose the path to the selected bitrot file."""
-    return os.path.join(directory, f'.bitrot.{ext}')
+    return os.path.join(directory, f'.bitrot-{node()}.{ext}')
 
 
 def stable_sum(bitrot_db=None):
@@ -480,7 +502,7 @@ def check_sha512_integrity(verbosity=1):
         return
 
     if verbosity:
-        print('Checking bitrot.db integrity... ', end='')
+        print(f'Checking integrity of {sha512_path} ... ', end='')
         sys.stdout.flush()
     with open(sha512_path, 'rb') as f:
         old_sha512 = f.read().strip()
@@ -516,7 +538,7 @@ def update_sha512_integrity(verbosity=1):
     new_sha512 = digest.hexdigest().encode('ascii')
     if new_sha512 != old_sha512:
         if verbosity:
-            print('Updating bitrot.sha512... ', end='')
+            print(f'Updating {sha512_path} ... ', end='')
             sys.stdout.flush()
         with open(sha512_path, 'wb') as f:
             f.write(new_sha512)
@@ -627,18 +649,24 @@ def read_exclude_list(exclude_list):
     return [line.rstrip('\n') for line in open(exclude_list)]
 
 
-def check_folders_for_bitrot(verbosity=1):
+def check_folders_for_bitrot(verbosity=1, sublist_count=30):
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     toast = ''
+    error_file = f'bitrot-errors-{node()}.txt'
     for folder in check_folders:
         print(folder)
         os.chdir(folder)
         try:
-            Bitrot(exclude_list=exclude_list, verbosity=verbosity).run()
+            Bitrot(exclude_list=exclude_list, verbosity=verbosity, sublist_count=sublist_count).run()
         except BitrotException as exception:
             bad_files = [os.path.join(folder, file) for file in exception.args[2]]
-            open(f'bitrot-errors-{node()}.txt', 'w').write('\n'.join(bad_files))
+            open(error_file, 'w').write('\n'.join(bad_files) + '\n')
             toast += f'{folder}: {len(bad_files)} bad files\n'
+        clashes = compare_nodes()
+        if clashes:
+            open(error_file, 'a').write('\n'.join(clashes))
+            toast += f'{folder}: {len(clashes)} clashes\n'
+
     return toast
 
 
@@ -675,6 +703,25 @@ def restore_good_files():
                         print('  No good copy found of', bad_file)
 
 
+def compare_nodes() -> list[str]:
+    """Look for any discrepancies between hashes recorded on different nodes."""
+    hashes = {}
+    clashes = []
+    for db_file in os.listdir():
+        if not (db_file.startswith('.bitrot-') and db_file.endswith('.db')):
+            continue
+        db = get_sqlite3_cursor(db_file)
+        hash_list = db.execute('SELECT path, hash FROM bitrot').fetchall()
+        db.close()
+        print(db_file, len(hash_list), 'hashes')
+        for path, h in hash_list:
+            if path not in hashes:
+                hashes[path] = h
+            elif hashes[path] != h:
+                clashes.append(path)
+                print(f'Bad hash for {path}')
+    return clashes
+
 if __name__ == '__main__':
-    check_folders_for_bitrot(verbosity=2)
+    check_folders_for_bitrot()
     # restore_good_files()
