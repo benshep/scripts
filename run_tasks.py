@@ -1,6 +1,8 @@
 import subprocess
 import sys
 import os
+from types import ModuleType
+
 import cryptography.utils
 import importlib
 import importlib.util
@@ -28,7 +30,8 @@ sheet_name = 'Sheet1'
 install()  # rich text
 
 
-def lazy_import(name):
+def lazy_import(name: str) -> ModuleType:
+    """Import a module with the given name."""
     spec = importlib.util.find_spec(name)
     loader = importlib.util.LazyLoader(spec.loader)
     spec.loader = loader
@@ -66,17 +69,12 @@ def run_tasks():
         task_dict |= {
             'find_new_python_packages': lazy_import('package_updates'),
             'annual_leave_check, otl_submit': lazy_import('oracle_staff_check'),
-            'get_budget_data': lazy_import('get_budget_data'),
-            'check_leave_dates': lazy_import('check_leave_dates'),
-            'fill_availability': lazy_import('fill_availability'),
-            'check_on_site_support': lazy_import('check_on_site_support'),
-            'events_to_spreadsheet, set_pc_unlocked_flag': lazy_import('events_to_spreadsheet'),
-            'check_prev_week': lazy_import('get_access_data'),
+            'leave_cross_check': lazy_import('group'),
             'todos_from_notes': lazy_import('todos_from_notes'),
             'get_payslips': lazy_import('get_payslips'),
             'get_bookings': lazy_import('catering_bookings'),
             'check_page_changes, live_update': lazy_import('page_changes'),
-            'convert_obi_files': lazy_import('oracle'),
+            'update_energy_data': lazy_import('energy_data'),
         }
     # track changes to this file too
     run_tasks_mod_time = os.path.getmtime(__file__)
