@@ -69,7 +69,7 @@ def run_tasks():
         task_dict |= {
             'find_new_python_packages': lazy_import('package_updates'),
             'annual_leave_check, otl_submit': lazy_import('oracle_staff_check'),
-            'check_leave_dates': lazy_import('check_leave_dates'),
+            'leave_cross_check': lazy_import('group'),
             'todos_from_notes': lazy_import('todos_from_notes'),
             'get_payslips': lazy_import('get_payslips'),
             'get_bookings': lazy_import('catering_bookings'),
@@ -238,6 +238,7 @@ def run_tasks():
                     task_dict[function].mod_time = new_mod_time
             if force_run:
                 print(f'\nChange detected in functions', *force_run)
+                break  # don't wait until next scheduled run
 
             if run_tasks_mod_time != os.path.getmtime(__file__):
                 set_window_title('🔁 Restarting')

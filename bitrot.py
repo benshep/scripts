@@ -650,23 +650,25 @@ def read_exclude_list(exclude_list):
 
 
 def check_folders_for_bitrot(verbosity=1, sublist_count=30):
+    """Go through the list of folders, checking each one for bitrot."""
     exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
     toast = ''
-    error_file = f'bitrot-errors-{node()}.txt'
+    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a')  # always append - don't overwrite sublist errors
     for folder in check_folders:
         print(folder)
         os.chdir(folder)
         try:
             Bitrot(exclude_list=exclude_list, verbosity=verbosity, sublist_count=sublist_count).run()
         except BitrotException as exception:
+            # Found some errors. Report on them in the error file.
             bad_files = [os.path.join(folder, file) for file in exception.args[2]]
-            open(error_file, 'w').write('\n'.join(bad_files) + '\n')
+            error_file_handle.write(f'Bad files in {folder}:\n' + '\n'.join(bad_files) + '\n')
             toast += f'{folder}: {len(bad_files)} bad files\n'
+        # Check for clashes across all files (not just this sublist)
         clashes = compare_nodes()
         if clashes:
-            open(error_file, 'a').write('\n'.join(clashes))
+            error_file_handle.write(f'Clashes in {folder}:\n' + '\n'.join(clashes) + '\n')
             toast += f'{folder}: {len(clashes)} clashes\n'
-
     return toast
 
 
@@ -715,12 +717,23 @@ def compare_nodes() -> list[str]:
         db.close()
         print(db_file, len(hash_list), 'hashes')
         for path, h in hash_list:
+            # Skip files that meet the ignore criteria
+            if any([should_ignore(path_element)
+                    for path_element in path.split(os.path.sep)[1:]]):  # not the first one as it's always '.'
+                continue
             if path not in hashes:
                 hashes[path] = h
             elif hashes[path] != h:
                 clashes.append(path)
                 print(f'Bad hash for {path}')
     return clashes
+
+
+def should_ignore(path_element: str) -> bool:
+    """Test whether the given path element should be ignored when comparing hashes."""
+    # Ignore 'hidden' files/folders and token files
+    return path_element.startswith('.') or 'token.json' in path_element
+
 
 if __name__ == '__main__':
     check_folders_for_bitrot()
