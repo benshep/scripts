@@ -1,3 +1,4 @@
+import re
 import subprocess
 import os
 from shutil import copyfile
@@ -23,6 +24,7 @@ def new_version():
     choco_folder = os.path.join(misc_folder, choco_name)
     os.chdir(choco_folder)
     [send2trash(filename) for filename in os.listdir() if filename.endswith('.nupkg')]
+    releases_latest = "https://api.github.com/repos/get-iplayer/get_iplayer_win32/releases/latest"
 
     print('Updating GitHub and wiki folders')
     assert subprocess.call('git pull', cwd=app_folder) == 0
@@ -35,19 +37,14 @@ def new_version():
     authors = open(os.path.join(app_folder, 'CONTRIBUTORS')).read().replace('\n', ', ')[:-2]
     nuspec = replace_in_tag(nuspec, 'authors', authors)
 
-    release_notes = open(os.path.join(wiki_folder, 'releasenotes.md')).read().splitlines()
-
+    release_notes = open(os.path.join(wiki_folder, 'releasenotes.md')).read()
     # find first link - should point to the newest version
-    for line in release_notes:
-        start_pos, mid_pos, end_pos = line.find('['), line.find(']('), line.find(')')
-        if -1 in (start_pos, mid_pos, end_pos):
-            continue
-        link_name = line[start_pos+1:mid_pos]
-        link_dest = line[mid_pos+2:end_pos]
+    for link_name, release_detail_file, anchor in re.findall(
+            r'\[(.*)]\((.*)#(.*)\)', release_notes):  # e.g. [get_iplayer 3.36](release330to339#release336)
         if link_name.startswith(app_name):
-            version = link_name.split(' ')[1]
+            version = link_name.split(' ')[1]  # e.g. get_iplayer 3.36
             break
-    else:
+    else:  # didn't break out
         print('Version info not found in release notes')
         return
 
@@ -65,24 +62,22 @@ def new_version():
             sections += 1
             if sections > 2:
                 break
-        description += line.replace('<', '`').replace('>', '`') + '\n'
+        description += re.sub('[<>]', '`', line) + '\n'
 
     nuspec = replace_in_tag(nuspec, 'description', description)
 
-    release_notes_file, link_name = link_dest.split('#')
-    release_notes = open(os.path.join(wiki_folder, f'{release_notes_file}.md'), encoding=encoding).read().splitlines()
-
+    release_notes = open(os.path.join(wiki_folder, f'{release_detail_file}.md'), encoding=encoding).read().splitlines()
     new_release_notes = ''
     in_section = False
     for line in release_notes:
-        if line.startswith(f'<a name="{link_name}"/>'):
+        if line.startswith(f'<a name="{anchor}"/>'):  # look for the anchor name we found in the main release notes
             in_section = True
             continue
         if in_section:
             if line.startswith('<a name="'):  # next section
                 break
             # < and > need to be escaped
-            new_release_notes += line.replace('<', '`').replace('>', '`') + '\n'
+            new_release_notes += re.sub('[<>]', '`', line) + '\n'
 
     print(new_release_notes)
     nuspec = replace_in_tag(nuspec, 'releaseNotes', new_release_notes)
@@ -90,11 +85,7 @@ def new_version():
     open(nuspec_filename, 'w', encoding=encoding).write(nuspec)
 
     # get binary info
-    json = requests.get("https://api.github.com/repos/get-iplayer/get_iplayer_win32/releases/latest").content
-    release = eval(json.replace(b'false', b'False')
-                   .replace(b'null', b'None')
-                   .replace(b'true', b'True'))
-
+    release = requests.get(releases_latest).json()
     urls = [asset['browser_download_url'] for asset in release['assets']]
 
     def get_url_sha(arch):
