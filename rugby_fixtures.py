@@ -1,7 +1,10 @@
-import requests
 import json
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import requests
+
 import google_api
 
 google_calendar = google_api.calendar.events()
@@ -9,12 +12,16 @@ calendar_id = 'family07468001989407757250@group.calendar.google.com'
 
 
 class Fixture:
-    def __init__(self, fixture_id: str, time: datetime, home: str, away: str, tournament: str):
+    """Store information about a sport fixture."""
+
+    def __init__(self, fixture_id: str, time: datetime, home: str, away: str, tournament: str,
+                 time_fixed: bool = True):
         self.id = fixture_id
         self.time = time
         self.home = home
         self.away = away
         self.tournament = tournament
+        self.time_fixed = time_fixed
 
     def __repr__(self):
         return f'Fixture(id={self.id}, time={self.time}, {self.home} vs {self.away}, {self.tournament})'
@@ -46,14 +53,18 @@ def get_home_fixtures(sport: str, team: str, team_full_name: str) -> list[Fixtur
                 break
         home_team = match['home']['fullName']
         away_team = match['away']['fullName']
-        # print(f'{home_team} vs {away_team}')
+        start_date_time = match["startDateTime"].replace('.000', '')  # sometimes we get ms, sometimes not!
+        print(f'{home_team} vs {away_team} at {start_date_time}')
         # datetime format: 2025-02-15T17:30:00.000+00:00
-        start_time = datetime.strptime(match['startDateTime']
-                                       .replace('.000', ''),  # sometimes we get ms, sometimes not!
-                                       '%Y-%m-%dT%H:%M:%S%z')
+        definite_time = 'T' in start_date_time
+        if definite_time:
+            start_time = datetime.strptime(start_date_time, '%Y-%m-%dT%H:%M:%S%z')
+        else:  # start time TBA: just parse the date and assume a 12:00 kick-off
+            start_time = datetime.strptime(start_date_time, '%Y-%m-%d').replace(hour=12,
+                                                                                tzinfo=ZoneInfo('Europe/London'))
         bbc_id = match['id']
         if home_team == team_full_name:
-            fixtures.append(Fixture(bbc_id, start_time, home_team, away_team, tournament))
+            fixtures.append(Fixture(bbc_id, start_time, home_team, away_team, tournament, definite_time))
     return fixtures
 
 
@@ -111,13 +122,13 @@ def update_saints_calendar():
     toast = ''
     my_events = get_calendar_events()
     fixture_list = get_local_fixtures() + \
-        get_home_fixtures('rugby-league', 'st-helens', 'St Helens') + \
-        get_home_fixtures('football', 'liverpool-ladies', 'Liverpool')
+                   get_home_fixtures('rugby-league', 'st-helens', 'St Helens') + \
+                   get_home_fixtures('football', 'liverpool-ladies', 'Liverpool')
 
     for match in fixture_list:
         # find existing event in my calendar
         match_title = f'{match.home} vs {match.away} ({match.tournament})'
-        event = {'summary': match_title,
+        event = {'summary': match_title + ('' if match.time_fixed else ' (time TBA)'),
                  'description': match.id,
                  'start': {'dateTime': match.time.isoformat()},
                  'end': {'dateTime': (match.time + timedelta(hours=2)).isoformat()}}
