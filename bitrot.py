@@ -651,7 +651,9 @@ def read_exclude_list(exclude_list):
 
 def check_folders_for_bitrot(verbosity=1, sublist_count=30):
     """Go through the list of folders, checking each one for bitrot."""
-    exclude_list = read_exclude_list(os.path.join(os.path.split(__file__)[0], 'exclude.txt'))
+    script_dir = os.path.split(__file__)[0]
+    os.chdir(script_dir)
+    exclude_list = read_exclude_list('exclude.txt')
     toast = ''
     error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a')  # always append - don't overwrite sublist errors
     for folder in check_folders:
