@@ -732,7 +732,7 @@ def compare_nodes() -> list[str]:
 def should_ignore(path_element: str) -> bool:
     """Test whether the given path element should be ignored when comparing hashes."""
     # Ignore 'hidden' files/folders and token files
-    return path_element.startswith('.') or 'token.json' in path_element
+    return path_element.startswith(('.', '__')) or 'token.json' in path_element
 
 
 if __name__ == '__main__':

@@ -1,23 +1,23 @@
 import asyncio
 import os
+import random
 import re
 import time
-from difflib import get_close_matches
-from typing import Any, Generator, AsyncGenerator
-
-import phrydy  # to get media data
-import requests
-
-from lastfm import lastfm
-import random
 from collections import namedtuple, Counter
 from datetime import datetime, timedelta
+from difflib import get_close_matches
 from shutil import copy2  # to copy files
-from media import is_media_file, artist_title
+from typing import Any
+
+import phrydy  # to get media data
 import pushbullet
-from pushbullet_api_key import api_key  # local file, keep secret!
+import requests
 from send2trash import send2trash
+
 from folders import user_profile, music_folder
+from lastfm import lastfm
+from media import is_media_file, artist_title
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 copy_log_file = 'copied_already.txt'
 Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
