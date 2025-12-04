@@ -1,12 +1,16 @@
 import subprocess
 import sys
 import os
+from threading import Thread
 from types import ModuleType
 
 import cryptography.utils
 import importlib
 import importlib.util
 import warnings
+
+from rpyc import ThreadedServer
+
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
 from datetime import datetime, timedelta
 start_time = datetime.now()
@@ -76,6 +80,13 @@ def run_tasks():
             'check_page_changes, live_update': lazy_import('page_changes'),
             'update_energy_data': lazy_import('energy_data'),
         }
+        port = 18862
+        print(f'Starting server, {port=}')
+        server = ThreadedServer(lazy_import('outlook').OutlookService,
+                                port=port, protocol_config={'allow_public_attrs': True})
+        thread = Thread(target=server.start)
+        thread.daemon = True
+        thread.start()
     # track changes to this file too
     run_tasks_mod_time = os.path.getmtime(__file__)
 
