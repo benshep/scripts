@@ -32,7 +32,7 @@ def pick_random_cd(got_cds: bool = True):
         os.system(f'title {folder.replace("&", "^&")}')  # set title of window
         print(folder)
         for track in track_list:
-            print(f'{track.track:2}.' if track.track else '  .', track.title)
+            print(number_title(track))
         if got_cds and scrobble_cd(track_list):  # returns False if prompt answered with 'nocd'
             print('\n')
         else:  # no CD: open music player instead
@@ -46,6 +46,14 @@ def pick_random_cd(got_cds: bool = True):
             break  # don't want another one straight away!
 
 
+def number_title(track: MediaFile) -> str:
+    """Return the number and title of a track in string form."""
+    if track.track:
+        return f'{track.track:2}. {track.title}'
+    else:
+        return f'  . {track.title}'
+
+
 def scrobble_cd(track_list: list[MediaFile]) -> bool:
     """Scrobble the tracks on last.fm. Returns False if we get 'no CD' response."""
     start_time = int(time())
@@ -55,11 +63,12 @@ def scrobble_cd(track_list: list[MediaFile]) -> bool:
         open('nocd', 'w').close()
         return False
     num_tracks = len(track_list) if num_tracks == '' else int(num_tracks)
+    print(f'\033[{len(track_list) + 2}A')  # move up to start of track listing
     for track in track_list:
-        if start_time + track.length > time() or (track.track and int(track.track) > num_tracks):
-            break
-        lastfm.scrobble(artist=track.artist, title=track.title, album=track.album, timestamp=start_time)
-        print(f'{track.artist} - {track.title}')
+        do_scrobble = start_time + track.length <= time() and track.track and int(track.track) <= num_tracks
+        if do_scrobble:
+            lastfm.scrobble(artist=track.artist, title=track.title, album=track.album, timestamp=start_time)
+        print(number_title(track), '✔️' if do_scrobble else '❌')
         start_time += track.length
     return True
 
