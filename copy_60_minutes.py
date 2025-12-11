@@ -7,7 +7,7 @@ from collections import namedtuple, Counter
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 from shutil import copy2  # to copy files
-from typing import Any
+from typing import Any, Iterator
 
 import phrydy  # to get media data
 import pushbullet
@@ -69,8 +69,12 @@ def copy_album(album: tuple[str, str, str], files, existing_folder=None):
     open(os.path.join(music_folder, copy_log_file), 'a', encoding='utf-8').write('\t'.join(map(str, album)) + '\n')
     return copied_name
 
+tags_tuple = tuple[str, str, str, str, float]
 
-def get_tags(folder, file):
+
+def get_tags(folder: str, file: str) -> tags_tuple:
+    """For a media file specified by the folder and file, return a tuple consisting of
+    folder, file, album artist (if available - otherwise artist), album title, length in minutes."""
     bytes_to_minutes = 8 / (1024 * 128 * 60)  # some buggy mp3s - assume 128kbps
     filename = os.path.join(folder, file)
     try:
@@ -83,7 +87,7 @@ def get_tags(folder, file):
             media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes)
 
 
-async def get_album_files():
+async def get_album_files() -> Iterator[tags_tuple]:
     """Scan media files in the current folder and subfolders. Yield a tuple: (folder, artist, album_name)."""
     loop = asyncio.get_event_loop()
     base_folder = os.getcwd()
@@ -136,7 +140,10 @@ def get_album_files_sync():
             i += 1
 
 
-def scan_music_folder() -> dict[tuple[str, str | None, str | None], dict[str, float]]:
+def scan_music_folder() -> dict[tuple[str, str, str], dict[str, float]]:
+    """Scan the music folder, returning a dict of albums.
+    Albums are defined by distinct values of (folder, artist, album_name).
+    Each value in the album dict is a dict with filenames as keys and duration in minutes as values."""
     os.chdir(music_folder)
     base, ext = os.path.splitext(copy_log_file)
     # deal with multiple copies of the log (typically Syncthing-generated)
@@ -146,38 +153,14 @@ def scan_music_folder() -> dict[tuple[str, str | None, str | None], dict[str, fl
             copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
+    # Allow one album from the copied_already list back into the list
+    copied_already.remove(random.choice(tuple(copied_already)))
     open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
 
     print(f'{len(copied_already)} albums in copied_already list')
 
     albums = {}
     for folder, file, artist, album_name, duration in asyncio.run(get_album_files()):
-        key = (folder, artist, album_name)
-        if '\t'.join(key) in copied_already:
-            continue
-        # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
-        albums.setdefault(key, {})[file] = duration
-    print('')  # next line
-    # remove albums with only one track
-    return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
-
-
-def scan_music_folder_sync() -> dict[tuple[str, str | None, str | None], dict[str, float]]:
-    os.chdir(music_folder)
-    base, ext = os.path.splitext(copy_log_file)
-    # deal with multiple copies of the log (typically Syncthing-generated)
-    copied_already = set()
-    for name in os.listdir(music_folder):
-        if name.startswith(base) and name.endswith(ext):
-            copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
-            if name != copy_log_file:  # get rid of other copies and keep the original
-                send2trash(name)
-    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
-
-    print(f'{len(copied_already)} albums in copied_already list')
-
-    albums = {}
-    for folder, artist, album_name, file, duration in get_album_files_sync():
         key = (folder, artist, album_name)
         if '\t'.join(key) in copied_already:
             continue
