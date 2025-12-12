@@ -50,9 +50,17 @@ class AlbumKey(NamedTuple):
     def __repr__(self) -> str:
         # show second-level folder if under _Copied
         # e.g. Pink Floyd - The Division Bell (Emma)
-        path = self.folder[len(music_folder) + 1:]
+        path = self.relative_path()
         name = path.split(os.path.sep)[1].strip('#') if path.startswith('_Copied') else ''
         return f'{self.artist} - {self.title}' + (f' ({name})' if name else '')
+
+    def relative_path(self):
+        """Strip the root music folder path from the start of the folder name."""
+        return self.folder[len(music_folder) + 1:]
+
+    def tab_join(self) -> str:
+        r"""Output tab-separated folder-artist-title, but convert \ to / for cross-platform compatibility."""
+        return '\t'.join((self.relative_path().replace("\\", "/"), self.artist, self.title))
 
 
 class Tags(NamedTuple):
@@ -110,7 +118,10 @@ def copy_album(album: AlbumKey, files: Album, existing_folder: str | None = None
                 copy_filename = f'{j + 1 + n:02d} {f}'  # fall back to original name
             copy2(os.path.join(album.folder, f), copy_filename)
         os.chdir('..')
-        open(os.path.join(music_folder, copy_log_file), 'a', encoding='utf-8').write('\t'.join(map(str, album)) + '\n')
+        with open(os.path.join(music_folder, copy_log_file), 'a', encoding='utf-8') as log_handle:
+            # don't write the music root folder, and convert '\' to '/' for cross-platform compatibility
+            folder = album.folder[len(music_folder) + 1:].replace('\\', '/')
+            log_handle.write(f'{folder}\t{album.artist}\t{album.title}\n')
     return copied_name
 
 
@@ -178,17 +189,22 @@ def scan_music_folder() -> dict[AlbumKey, Album]:
     if not test_mode:
         copied_already.remove(rescued)
     open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
-
     print(f'{len(copied_already)} albums in copied_already list')
 
+    ignored = set()
     albums: dict[AlbumKey, Album] = {}
     for tags in asyncio.run(get_album_files()):
         key = AlbumKey(tags.folder, tags.artist, tags.album_title)
-        if '\t'.join(key) in copied_already:
+        if key.tab_join() in copied_already:
+            ignored.add(key.tab_join())
             continue
+        # if key not in albums:
+        #     print(key.tab_join())
         # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
         albums.setdefault(key, {})[tags.file] = tags.length
-    print('')  # next line
+    print(f'\nIgnored {len(ignored)} albums')  # new line after progress bar
+    if test_mode:
+        print('In copied_already list but not found locally:', *(copied_already - ignored), sep='\n')
     # remove albums with only one track
     return {key: file_list for key, file_list in albums.items() if len(file_list) > 1}
 
