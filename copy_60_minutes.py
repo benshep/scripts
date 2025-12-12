@@ -3,11 +3,11 @@ import os
 import random
 import re
 import time
-from collections import namedtuple, Counter
+from collections import Counter
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 from shutil import copy2  # to copy files
-from typing import Any, Iterator, NamedTuple
+from typing import Iterator, NamedTuple
 
 import phrydy  # to get media data
 import pushbullet
@@ -21,14 +21,39 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 from tools import remove_bad_chars
 
 copy_log_file = 'copied_already.txt'
-Folder = namedtuple('Folder', ['address', 'min_length', 'max_length', 'min_count'])
-AlbumKey = namedtuple('AlbumKey', ['folder', 'artist', 'title'])
-AlbumKey.__repr__ = lambda self: f'{self.folder[len(music_folder) + 1:]} {self.artist} - {self.title}'
 Album = dict[str, float]
 
 test_mode = False
 
-# Tags = namedtuple('Tags', ['folder', 'file', 'artist', 'album_title', 'length'])
+
+class Folder(NamedTuple):
+    """A folder to copy albums into."""
+    address: str
+    """The address of the folder."""
+    min_length: int
+    """The minimum length in minutes of albums in this folder."""
+    max_length: int
+    """The maximum length in minutes of albums in this folder."""
+    min_count: int
+    """The minimum count of albums needed in this folder."""
+
+
+class AlbumKey(NamedTuple):
+    """The key used in album dicts."""
+    folder: str
+    """The folder containing the album."""
+    artist: str
+    """The artist of the album."""
+    title: str
+    """The title of the album."""
+
+    def __repr__(self) -> str:
+        # show second-level folder if under _Copied
+        # e.g. Pink Floyd - The Division Bell (Emma)
+        path = self.folder[len(music_folder) + 1:]
+        name = path.split(os.path.sep)[1].strip('#') if path.startswith('_Copied') else ''
+        return f'{self.artist} - {self.title}' + (f' ({name})' if name else '')
+
 
 class Tags(NamedTuple):
     """Selected tags relating to a given media file."""
@@ -101,12 +126,12 @@ def get_tags(folder: str, file: str, report: bool) -> Tags:
     # use album artist (if available) so we can compare 'Various Artist' albums
     if report:
         print('█', end='')  # track progress
-    return Tags(str(folder), str(file), str(media.albumartist or media.artist), str(media.album),
+    return Tags(folder, file, str(media.albumartist or media.artist), str(media.album),
                 media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes)
 
 
 async def get_album_files() -> Iterator[Tags]:
-    """Scan media files in the current folder and subfolders. Yield a tuple: (folder, artist, album_name)."""
+    """Scan media files in the current folder and subfolders. Yield a Tags tuple: (folder, artist, album_name)."""
     loop = asyncio.get_event_loop()
     base_folder = os.getcwd()
     exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
@@ -119,6 +144,7 @@ async def get_album_files() -> Iterator[Tags]:
         if not should_include and test_mode:
             print('Excluding', folder)
         return should_include
+
     include_folder.count = 0
 
     included = filter(include_folder, os.walk(base_folder))
