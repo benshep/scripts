@@ -154,7 +154,9 @@ def scan_music_folder() -> dict[tuple[str, str, str], dict[str, float]]:
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
     # Allow one album from the copied_already list back into the list
-    copied_already.remove(random.choice(tuple(copied_already)))
+    rescued = random.choice(tuple(copied_already))
+    print(f'{rescued=}')
+    copied_already.remove(rescued)
     open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
 
     print(f'{len(copied_already)} albums in copied_already list')
