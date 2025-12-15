@@ -125,7 +125,7 @@ def copy_album(album: AlbumKey, files: Album, existing_folder: str | None = None
     return copied_name
 
 
-def get_tags(folder: str, file: str, report: bool) -> Tags:
+def get_tags(folder: str, file: str, report: bool = False) -> Tags:
     """For a media file specified by the folder and file, return a Tags named tuple."""
     bytes_to_minutes = 8 / (1024 * 128 * 60)  # some buggy mp3s - assume 128kbps
     filename = os.path.join(folder, file)
@@ -139,6 +139,57 @@ def get_tags(folder: str, file: str, report: bool) -> Tags:
         print('█', end='')  # track progress
     return Tags(folder, file, str(media.albumartist or media.artist), str(media.album),
                 media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes)
+
+
+async def get_album_files_new() -> Iterator[Tags]:
+    """Scan media files in the current folder and subfolders. Yield a Tags tuple: (folder, artist, album_name)."""
+    loop = asyncio.get_event_loop()
+    base_folder = os.getcwd()
+    exclude_prefixes = tuple(open('not_cd_folders.txt').read().split('\n')[1:])  # first one is "_Copied" - this is OK
+
+    def include_folder(walk_tuple: tuple[str, list[str], list[str]]) -> bool:
+        """Returns True if the given folder should be included, based on a set of prefixes to exclude."""
+        include_folder.count += 1
+        folder = walk_tuple[0]
+        should_include = not folder[len(base_folder) + 1:].startswith(exclude_prefixes)
+        if not should_include and test_mode:
+            print('Excluding', folder)
+        return should_include
+
+    include_folder.count = 0
+    included = filter(include_folder, os.walk(base_folder))
+
+    albums = {}
+    file_list = [(folder, file)
+                 for folder, _, file_list in included
+                 for file in filter(is_media_file, file_list)]
+    # pick a random track
+    chosen_folder, file = random.choice(file_list)
+    # check the AlbumKey tuple, is it in copied_already list?
+    tags = get_tags(chosen_folder, file)
+    key = AlbumKey(tags.folder, tags.artist, tags.album_title)
+    if key.tab_join() in copied_already:
+        ignored.add(key.tab_join())
+        continue
+    # find other tracks in album - how long is it?
+    folder_files = [file for folder, file in file_list if folder == chosen_folder]
+    folder_tags = await asyncio.gather(*[
+        loop.run_in_executor(None, get_tags, *(folder, file, False))
+        for folder, file in folder_files])
+
+    # add everything in folder to albums list for later reference
+
+    # remove all tracks from list
+
+    # too long - never mind
+
+    # subtract length from min and max
+    # add to copy list
+
+    # more than minimum - that'll do pig
+
+    # less than min
+    # try again, look for another
 
 
 async def get_album_files() -> Iterator[Tags]:
@@ -255,10 +306,10 @@ def get_subfolders() -> list[str]:
 def copy_albums(copy_folder_list: list[Folder], albums: dict[AlbumKey, Album]) -> str:
     """Select random albums up to the given length for each folder."""
     toast = ''
+    failures = []
     for copy_folder in copy_folder_list:
         os.chdir(copy_folder.address)
         to_copy = 10 if test_mode else copy_folder.min_count - len(get_subfolders())
-        failures = []
         while to_copy > 0:
             while len(albums) > 0:  # break out when we're done
                 key: AlbumKey = random.choice(list(albums.keys()))
