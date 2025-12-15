@@ -1,14 +1,13 @@
+import importlib
+import importlib.util
+import os
 import subprocess
 import sys
-import os
+import warnings
 from threading import Thread
 from types import ModuleType
 
 import cryptography.utils
-import importlib
-import importlib.util
-import warnings
-
 from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
@@ -72,12 +71,15 @@ def run_tasks():
         sys.path.append(os.path.join(docs_folder, 'Scripts'))
         task_dict |= {
             'find_new_python_packages': lazy_import('package_updates'),
-            'annual_leave_check, otl_submit': lazy_import('oracle_staff_check'),
+            'annual_leave_check': lazy_import('oracle_staff_check'),
+            'otl_submit': lazy_import('oracle_staff_check'),
             'leave_cross_check': lazy_import('group'),
+            'run_otl_calculator': lazy_import('group'),
             'todos_from_notes': lazy_import('todos_from_notes'),
             'get_payslips': lazy_import('get_payslips'),
             'get_bookings': lazy_import('catering_bookings'),
-            'check_page_changes, live_update': lazy_import('page_changes'),
+            'check_page_changes': lazy_import('page_changes'),
+            'live_update': lazy_import('page_changes'),
             'update_energy_data': lazy_import('energy_data'),
         }
         port = 18862
@@ -243,7 +245,8 @@ def run_tasks():
             force_run = []  # only force run for one loop
             for function, module in task_dict.items():
                 new_mod_time = os.path.getmtime(module.__file__)
-                if module.mod_time != new_mod_time:
+                time_since_modified = datetime.now() - datetime.fromtimestamp(new_mod_time)
+                if new_mod_time != module.mod_time and time_since_modified > timedelta(minutes=15):
                     force_run += [func for func, mod in task_dict.items() if mod == module]
                     importlib.reload(module)
                     task_dict[function].mod_time = new_mod_time
