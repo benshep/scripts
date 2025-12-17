@@ -670,7 +670,7 @@ def check_folders_for_bitrot(verbosity=1, sublist_count=30):
     os.chdir(script_dir)
     exclude_list = read_exclude_list('exclude.txt')
     toast = ''
-    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a')  # always append - don't overwrite sublist errors
+    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a', encoding='utf-8')  # always append - don't overwrite sublist errors
     for folder in check_folders:
         print(folder)
         os.chdir(folder)
