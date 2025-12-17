@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import atexit
 import contextlib
 import datetime
@@ -36,17 +35,15 @@ import stat
 import sys
 import tempfile
 import time
-from os import stat_result
-
-import unicodedata
-from fnmatch import fnmatch
-
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import freeze_support
+from fnmatch import fnmatch
 from importlib.metadata import version, PackageNotFoundError
+from multiprocessing import freeze_support
+from os import stat_result
 from platform import node
 
-from progress.bar import PixelBar, IncrementalBar, Bar
+import unicodedata
+from progress.bar import IncrementalBar, Bar
 from send2trash import send2trash
 
 import folders
@@ -138,8 +135,8 @@ def list_existing_paths(directory, ignored=(),
                 binary_stderr.write("\n")
                 continue
             path_list.append(p)
-    bar = IncrementalBar('Listing files', max=len(path_list), suffix='%(index)d/%(max)d') if verbosity else None
-    stat_list = [get_stat(p, bar, follow_links) for p in path_list]
+    with IncrementalBar('Listing files', max=len(path_list), suffix='%(index)d/%(max)d') as bar:
+        stat_list = [get_stat(p, bar if verbosity else None, follow_links) for p in path_list]
     for p, st in zip(path_list, stat_list):
         # split path /dir1/dir2/file.txt into
         # ['dir1', 'dir2', 'file.txt']
@@ -161,7 +158,6 @@ def list_existing_paths(directory, ignored=(),
             continue
         paths.add(p)
         total_size += st.st_size
-    print('')  # new line after progress bar
     return paths, total_size
 
 
@@ -289,69 +285,68 @@ class Bitrot(object):
         paths_uni = {normalize_path(p) for p in paths}
         futures = [self.pool.submit(compute_one, p, self.chunk_size, self.sublist_count, self.sublist_index)
                    for p in paths]
-        bar = IncrementalBar('Hashing files', max=total_size, suffix='%(percent).1f%%')
-        for future in as_completed(futures):
-            try:
-                p_uni, new_size, new_mtime, new_sha1 = future.result()
-            except BitrotException:
-                continue
+        with IncrementalBar('Hashing files', max=total_size, suffix='%(percent).1f%%') as bar:
+            for future in as_completed(futures):
+                try:
+                    p_uni, new_size, new_mtime, new_sha1 = future.result()
+                except BitrotException:
+                    continue
 
-            current_size += new_size
-            if self.verbosity:
-                bar.next(new_size)
-                # self.report_progress(current_size, total_size, p_uni)
+                current_size += new_size
+                if self.verbosity:
+                    bar.next(new_size)
+                    # self.report_progress(current_size, total_size, p_uni)
 
-            if new_sha1 is None:
-                # Didn't compute hash because we weren't doing this sublist
-                # Not a missing file, just skip it and move on
-                missing_paths.discard(p_uni)
-                continue
-
-            if p_uni not in missing_paths:
-                # We are not expecting this path, it wasn't in the database yet.
-                # It's either new or a rename. Let's handle that.
-                stored_path = self.handle_unknown_path(
-                    cur, p_uni, new_mtime, new_sha1, paths_uni, hashes
-                )
-                self.maybe_commit(conn)
-                if p_uni == stored_path:
-                    new_paths.append(p_uni)
+                if new_sha1 is None:
+                    # Didn't compute hash because we weren't doing this sublist
+                    # Not a missing file, just skip it and move on
                     missing_paths.discard(p_uni)
-                else:
-                    renamed_paths.append((stored_path, p_uni))
-                    missing_paths.discard(stored_path)
-                continue
+                    continue
 
-            # At this point we know we're seeing an expected file. Try to compare hashes.
-            missing_paths.discard(p_uni)
-            cur.execute('SELECT mtime, hash, timestamp FROM bitrot WHERE path=?', (p_uni,))
-            row = cur.fetchone()
-            if not row:
-                print(
-                    '\rwarning: path disappeared from the database while running:',
-                    p_uni,
-                    file=sys.stderr,
-                )
-                continue
+                if p_uni not in missing_paths:
+                    # We are not expecting this path, it wasn't in the database yet.
+                    # It's either new or a rename. Let's handle that.
+                    stored_path = self.handle_unknown_path(
+                        cur, p_uni, new_mtime, new_sha1, paths_uni, hashes
+                    )
+                    self.maybe_commit(conn)
+                    if p_uni == stored_path:
+                        new_paths.append(p_uni)
+                        missing_paths.discard(p_uni)
+                    else:
+                        renamed_paths.append((stored_path, p_uni))
+                        missing_paths.discard(stored_path)
+                    continue
 
-            stored_mtime, stored_sha1, stored_ts = row
-            if int(stored_mtime) != new_mtime:
-                # File has been updated: update the hash in the database
-                updated_paths.append(p_uni)
-                cur.execute('UPDATE bitrot SET mtime=?, hash=?, timestamp=? WHERE path=?',
-                            (new_mtime, new_sha1, ts(), p_uni))
-                self.maybe_commit(conn)
-                continue
+                # At this point we know we're seeing an expected file. Try to compare hashes.
+                missing_paths.discard(p_uni)
+                cur.execute('SELECT mtime, hash, timestamp FROM bitrot WHERE path=?', (p_uni,))
+                row = cur.fetchone()
+                if not row:
+                    print(
+                        '\rwarning: path disappeared from the database while running:',
+                        p_uni,
+                        file=sys.stderr,
+                    )
+                    continue
 
-            if stored_sha1 != new_sha1:
-                # Hashes are different! Report a mismatch
-                errors.append(p_uni)
-                print(
-                    f'\rerror: SHA1 mismatch for {p_uni}: expected {stored_sha1}, got {new_sha1}. '
-                    f'Last good hash checked on {stored_ts}.',
-                    file=sys.stderr,
-                )
-        print('')  # new line after progress bar
+                stored_mtime, stored_sha1, stored_ts = row
+                if int(stored_mtime) != new_mtime:
+                    # File has been updated: update the hash in the database
+                    updated_paths.append(p_uni)
+                    cur.execute('UPDATE bitrot SET mtime=?, hash=?, timestamp=? WHERE path=?',
+                                (new_mtime, new_sha1, ts(), p_uni))
+                    self.maybe_commit(conn)
+                    continue
+
+                if stored_sha1 != new_sha1:
+                    # Hashes are different! Report a mismatch
+                    errors.append(p_uni)
+                    print(
+                        f'\rerror: SHA1 mismatch for {p_uni}: expected {stored_sha1}, got {new_sha1}. '
+                        f'Last good hash checked on {stored_ts}.',
+                        file=sys.stderr,
+                    )
         # Remove deleted files from the database
         for path in missing_paths:
             cur.execute('DELETE FROM bitrot WHERE path=?', (path,))

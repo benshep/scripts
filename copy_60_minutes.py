@@ -264,10 +264,10 @@ async def get_album_files() -> Iterator[Tags]:
                  for folder, _, file_list in included
                  for file in filter(is_media_file, file_list)]
     file_count = len(file_list)
-    bar = progress.bar.IncrementalBar(f'Scanning files in {include_folder.count} folders', max=file_count,
-                                      suffix='%(index)d/%(max)d | %(eta)ss')
-    tags = [loop.run_in_executor(None, get_tags, *(folder, file, bar))
-            for i, (folder, file) in enumerate(file_list)]
+    with progress.bar.IncrementalBar(f'Scanning files in {include_folder.count} folders', max=file_count,
+                                      suffix='%(index)d/%(max)d | %(eta)ss') as bar:
+        tags = [loop.run_in_executor(None, get_tags, *(folder, file, bar))
+                for i, (folder, file) in enumerate(file_list)]
     return filter(None, await asyncio.gather(*tags))
 
 
