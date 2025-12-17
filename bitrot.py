@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import atexit
 import contextlib
 import datetime
@@ -35,6 +36,8 @@ import stat
 import sys
 import tempfile
 import time
+from os import stat_result
+
 import unicodedata
 from fnmatch import fnmatch
 
@@ -43,6 +46,7 @@ from multiprocessing import freeze_support
 from importlib.metadata import version, PackageNotFoundError
 from platform import node
 
+from progress.bar import PixelBar, IncrementalBar, Bar
 from send2trash import send2trash
 
 import folders
@@ -108,7 +112,7 @@ def get_sqlite3_cursor(path, copy=False):
 
 
 def list_existing_paths(directory, ignored=(),
-                        verbosity=1, follow_links=False):
+                              verbosity=1, follow_links=False):
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
     Returns a tuple with a set of existing files in `directory` and its subdirectories
@@ -121,6 +125,7 @@ def list_existing_paths(directory, ignored=(),
     """
     paths = set()
     total_size = 0
+    path_list = []
     for path, _, files in os.walk(directory):
         for f in files:
             p = os.path.join(path, f)
@@ -132,34 +137,43 @@ def list_existing_paths(directory, ignored=(),
                 binary_stderr.write(p)
                 binary_stderr.write("\n")
                 continue
+            path_list.append(p)
+    bar = IncrementalBar('Listing files', max=len(path_list), suffix='%(index)d/%(max)d') if verbosity else None
+    stat_list = [get_stat(p, bar, follow_links) for p in path_list]
+    for p, st in zip(path_list, stat_list):
+        # split path /dir1/dir2/file.txt into
+        # ['dir1', 'dir2', 'file.txt']
+        # and match on any of these components
+        # so we could use 'dir*', '*2', '*.txt', etc. to exclude anything
+        exclude_this = [fnmatch(ff, wildcard) for ff in p.split(os.path.sep) for wildcard in ignored]
+        ignore_reason = 'in exclude list' if any(exclude_this) else ''
 
-            try:
-                st = os.stat(p, follow_symlinks=follow_links)
-            except OSError as ex:
-                if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
-                    raise
-            else:
-                # split path /dir1/dir2/file.txt into
-                # ['dir1', 'dir2', 'file.txt']
-                # and match on any of these components
-                # so we could use 'dir*', '*2', '*.txt', etc. to exclude anything
-                exclude_this = [fnmatch(ff, wildcard) for ff in p.split(os.path.sep) for wildcard in ignored]
-                ignore_reason = 'in exclude list' if any(exclude_this) else ''
+        # check attributes - is it a cloud-only file? (e.g. from OneDrive)
+        # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+        if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
+            ignore_reason = ignore_reason or 'cloud-only'
 
-                # check attributes - is it a cloud-only file? (e.g. from OneDrive)
-                # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
-                    ignore_reason = ignore_reason or 'cloud-only'
-
-                if not stat.S_ISREG(st.st_mode):
-                    ignore_reason = ignore_reason or 'not regular file'
-                if ignore_reason:
-                    if verbosity > 1:
-                        print(f'Ignoring file ({ignore_reason}):', p)
-                    continue
-                paths.add(p)
-                total_size += st.st_size
+        if not stat.S_ISREG(st.st_mode):
+            ignore_reason = ignore_reason or 'not regular file'
+        if ignore_reason:
+            if verbosity > 1:
+                print(f'Ignoring file ({ignore_reason}):', p)
+            continue
+        paths.add(p)
+        total_size += st.st_size
+    print('')  # new line after progress bar
     return paths, total_size
+
+
+def get_stat(p: str, bar: Bar | None = None, follow_links: bool = False) -> stat_result:
+    if bar:
+        bar.next()
+    try:
+        st = os.stat(p, follow_symlinks=follow_links)
+    except OSError as ex:
+        if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
+            raise
+    return st
 
 
 class BitrotException(Exception):
@@ -275,7 +289,7 @@ class Bitrot(object):
         paths_uni = {normalize_path(p) for p in paths}
         futures = [self.pool.submit(compute_one, p, self.chunk_size, self.sublist_count, self.sublist_index)
                    for p in paths]
-
+        bar = IncrementalBar('Hashing files', max=total_size, suffix='%(percent).1f%%')
         for future in as_completed(futures):
             try:
                 p_uni, new_size, new_mtime, new_sha1 = future.result()
@@ -284,7 +298,8 @@ class Bitrot(object):
 
             current_size += new_size
             if self.verbosity:
-                self.report_progress(current_size, total_size, p_uni)
+                bar.next(new_size)
+                # self.report_progress(current_size, total_size, p_uni)
 
             if new_sha1 is None:
                 # Didn't compute hash because we weren't doing this sublist
@@ -336,7 +351,7 @@ class Bitrot(object):
                     f'Last good hash checked on {stored_ts}.',
                     file=sys.stderr,
                 )
-
+        print('')  # new line after progress bar
         # Remove deleted files from the database
         for path in missing_paths:
             cur.execute('DELETE FROM bitrot WHERE path=?', (path,))
