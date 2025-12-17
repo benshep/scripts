@@ -7,6 +7,9 @@ from math import cos, sin, radians, atan2, sqrt
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import TypedDict
+
+from progress.bar import IncrementalBar
+
 from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
 import google_api
@@ -198,7 +201,7 @@ def get_new_releases(artist) -> list[Release]:
     period = timedelta(days=30)
     min_date = (now - period).strftime('%Y-%m-%d')
     max_date = (now + period).strftime('%Y-%m-%d')
-    print(artist_name)
+    # print(artist_name)
     query = ' AND '.join([
         f'artist:"{artist_name}"',
         'type:album', '-type:live',
@@ -241,7 +244,9 @@ def find_new_releases():
         print("No top artists found.")
         return
 
+    bar = IncrementalBar('Looking for new releases', max=len(artists))
     for artist in artists:
+        bar.next()
         releases = get_new_releases(artist)
         if releases:
             all_releases.extend(releases)
@@ -263,4 +268,4 @@ if __name__ == '__main__':
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
     print(find_new_releases())
-    # print(update_gig_calendar())
+    print(update_gig_calendar())
