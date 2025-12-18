@@ -230,6 +230,10 @@ def check_radio_files(scrobbled_titles):
         # min_date = min_date or file_date  # set to first one
         # weeks = (file_date - min_date).days // 7
 
+        # remove archive In Our Time episodes
+        if '(Archive Episode)' in file:
+            toast += delete_file(file)
+
         tags = phrydy.MediaFile(file)
         tags_changed = False
         # total_hours += tags.length / 3600
@@ -284,13 +288,18 @@ def check_radio_files(scrobbled_titles):
             tags.save()
 
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
-        toast += f'🗑️ {os.path.splitext(file)[0]}\n'
-        if not test_mode and os.path.exists(file):
-            send2trash(file)
+        toast += delete_file(file)
     if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
         toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
     # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
     return toast
+
+
+def delete_file(file: str) -> str:
+    """Delete a file, and return a toast line about it."""
+    if not test_mode and os.path.exists(file):
+        send2trash(file)
+    return f'🗑️ {os.path.splitext(file)[0]}\n'
 
 
 def get_scrobbled_titles(lastfm_user, limit=999) -> list[str]:
