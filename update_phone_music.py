@@ -233,6 +233,7 @@ def check_radio_files(scrobbled_titles):
         # remove archive In Our Time episodes
         if '(Archive Episode)' in file:
             toast += delete_file(file)
+            continue
 
         tags = phrydy.MediaFile(file)
         tags_changed = False
