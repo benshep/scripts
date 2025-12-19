@@ -7,6 +7,7 @@ import aiohttp
 import pandas
 import requests
 from pandas import DataFrame, Timestamp
+from progress.bar import IncrementalBar
 
 import energy_credentials
 import google_api
@@ -64,7 +65,7 @@ async def get_usage_data_async(remove_incomplete_rows=True):
 
     def fill_request(start_column, column_count, row_count):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
-        print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
+        # print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
         return {'autoFill': {'useAlternateSeries': False, 'sourceAndDestination': {
                                  'source': {'sheetId': grid_id, 'startRowIndex': fill_top_row,
                                             'endRowIndex': fill_top_row + 1,  # half-open
@@ -105,9 +106,12 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     google_api.update_cells(sheet_id, sheet_name, update_range, new_dates)
     fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
     fill_requests.append(fill_request(253, 4, fill_row_count))  # Octopus Tracker rates (IT:IW)
-    # Fill formulae from first row
-    request_body = {'requests': [fill_requests]}
-    google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
+    # Fill formulae from last populated row
+    with IncrementalBar('Filling formulae in spreadsheet', max=len(fill_requests)) as bar:
+        for request in fill_requests:
+            bar.next()
+            request_body = {'requests': [[request]]}
+            google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
     # Get the summary cell to go in a toast
     summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
@@ -352,7 +356,7 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=False))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:

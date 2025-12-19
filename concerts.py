@@ -7,6 +7,9 @@ from math import cos, sin, radians, atan2, sqrt
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import TypedDict
+
+from progress.bar import IncrementalBar
+
 from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
 import google_api
@@ -97,13 +100,14 @@ def find_upcoming_concerts(artists):
     """Find upcoming concerts in NW England for given artists"""
     concerts_in_nw = {}
 
-    for artist in artists:
-        artist_name = artist.item.name
-        # print(artist_name)
-        events = get_ticketmaster_events(artist_name)
-        if events:
-            concerts_in_nw[artist_name] = events
-
+    with IncrementalBar('Finding events', max=len(artists)) as bar:
+        for artist in artists:
+            bar.next()
+            artist_name = artist.item.name
+            # print(artist_name)
+            events = get_ticketmaster_events(artist_name)
+            if events:
+                concerts_in_nw[artist_name] = events
     return concerts_in_nw
 
 
@@ -198,7 +202,7 @@ def get_new_releases(artist) -> list[Release]:
     period = timedelta(days=30)
     min_date = (now - period).strftime('%Y-%m-%d')
     max_date = (now + period).strftime('%Y-%m-%d')
-    print(artist_name)
+    # print(artist_name)
     query = ' AND '.join([
         f'artist:"{artist_name}"',
         'type:album', '-type:live',
@@ -241,19 +245,21 @@ def find_new_releases():
         print("No top artists found.")
         return
 
-    for artist in artists:
-        releases = get_new_releases(artist)
-        if releases:
-            all_releases.extend(releases)
-            for release in releases:
-                release_title = f"{release['artist']} - {release['title']}"
-                if release_title not in release_list:
-                    toast += release_title + '\n'
-                    youtube_url = 'https://music.youtube.com/search?q=' + urllib.parse.quote_plus(release_title)
-                    release_text = f"[{release_title}]({youtube_url}), out {release['date']}\n"
-                    open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
-        # else:
-            # print(f"No new releases found for {artist.item.name}.")
+    with IncrementalBar('Looking for new releases', max=len(artists)) as bar:
+        for artist in artists:
+            bar.next()
+            releases = get_new_releases(artist)
+            if releases:
+                all_releases.extend(releases)
+                for release in releases:
+                    release_title = f"{release['artist']} - {release['title']}"
+                    if release_title not in release_list:
+                        toast += release_title + '\n'
+                        youtube_url = 'https://music.youtube.com/search?q=' + urllib.parse.quote_plus(release_title)
+                        release_text = f"[{release_title}]({youtube_url}), out {release['date']}\n"
+                        open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
+            # else:
+                # print(f"No new releases found for {artist.item.name}.")
     return toast
 
 if __name__ == '__main__':
@@ -262,5 +268,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
-    print(find_new_releases())
-    # print(update_gig_calendar())
+    # print(find_new_releases())
+    print(update_gig_calendar())

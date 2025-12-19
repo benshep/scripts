@@ -35,14 +35,15 @@ import stat
 import sys
 import tempfile
 import time
-import unicodedata
-from fnmatch import fnmatch
-
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from multiprocessing import freeze_support
+from fnmatch import fnmatch
 from importlib.metadata import version, PackageNotFoundError
+from multiprocessing import freeze_support
+from os import stat_result
 from platform import node
 
+import unicodedata
+from progress.bar import IncrementalBar, Bar
 from send2trash import send2trash
 
 import folders
@@ -108,7 +109,7 @@ def get_sqlite3_cursor(path, copy=False):
 
 
 def list_existing_paths(directory, ignored=(),
-                        verbosity=1, follow_links=False):
+                              verbosity=1, follow_links=False):
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
     Returns a tuple with a set of existing files in `directory` and its subdirectories
@@ -121,6 +122,7 @@ def list_existing_paths(directory, ignored=(),
     """
     paths = set()
     total_size = 0
+    path_list = []
     for path, _, files in os.walk(directory):
         for f in files:
             p = os.path.join(path, f)
@@ -132,34 +134,42 @@ def list_existing_paths(directory, ignored=(),
                 binary_stderr.write(p)
                 binary_stderr.write("\n")
                 continue
+            path_list.append(p)
+    with IncrementalBar('Listing files', max=len(path_list), suffix='%(index)d/%(max)d') as bar:
+        stat_list = [get_stat(p, bar if verbosity else None, follow_links) for p in path_list]
+    for p, st in zip(path_list, stat_list):
+        # split path /dir1/dir2/file.txt into
+        # ['dir1', 'dir2', 'file.txt']
+        # and match on any of these components
+        # so we could use 'dir*', '*2', '*.txt', etc. to exclude anything
+        exclude_this = [fnmatch(ff, wildcard) for ff in p.split(os.path.sep) for wildcard in ignored]
+        ignore_reason = 'in exclude list' if any(exclude_this) else ''
 
-            try:
-                st = os.stat(p, follow_symlinks=follow_links)
-            except OSError as ex:
-                if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
-                    raise
-            else:
-                # split path /dir1/dir2/file.txt into
-                # ['dir1', 'dir2', 'file.txt']
-                # and match on any of these components
-                # so we could use 'dir*', '*2', '*.txt', etc. to exclude anything
-                exclude_this = [fnmatch(ff, wildcard) for ff in p.split(os.path.sep) for wildcard in ignored]
-                ignore_reason = 'in exclude list' if any(exclude_this) else ''
+        # check attributes - is it a cloud-only file? (e.g. from OneDrive)
+        # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+        if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
+            ignore_reason = ignore_reason or 'cloud-only'
 
-                # check attributes - is it a cloud-only file? (e.g. from OneDrive)
-                # https://learn.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                if not follow_links and getattr(st, 'st_file_attributes', 0) & FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS:
-                    ignore_reason = ignore_reason or 'cloud-only'
-
-                if not stat.S_ISREG(st.st_mode):
-                    ignore_reason = ignore_reason or 'not regular file'
-                if ignore_reason:
-                    if verbosity > 1:
-                        print(f'Ignoring file ({ignore_reason}):', p)
-                    continue
-                paths.add(p)
-                total_size += st.st_size
+        if not stat.S_ISREG(st.st_mode):
+            ignore_reason = ignore_reason or 'not regular file'
+        if ignore_reason:
+            if verbosity > 1:
+                print(f'Ignoring file ({ignore_reason}):', p)
+            continue
+        paths.add(p)
+        total_size += st.st_size
     return paths, total_size
+
+
+def get_stat(p: str, bar: Bar | None = None, follow_links: bool = False) -> stat_result:
+    if bar:
+        bar.next()
+    try:
+        st = os.stat(p, follow_symlinks=follow_links)
+    except OSError as ex:
+        if ex.errno not in IGNORED_FILE_SYSTEM_ERRORS:
+            raise
+    return st
 
 
 class BitrotException(Exception):
@@ -275,68 +285,68 @@ class Bitrot(object):
         paths_uni = {normalize_path(p) for p in paths}
         futures = [self.pool.submit(compute_one, p, self.chunk_size, self.sublist_count, self.sublist_index)
                    for p in paths]
+        with IncrementalBar('Hashing files', max=total_size, suffix='%(percent).1f%%') as bar:
+            for future in as_completed(futures):
+                try:
+                    p_uni, new_size, new_mtime, new_sha1 = future.result()
+                except BitrotException:
+                    continue
 
-        for future in as_completed(futures):
-            try:
-                p_uni, new_size, new_mtime, new_sha1 = future.result()
-            except BitrotException:
-                continue
+                current_size += new_size
+                if self.verbosity:
+                    bar.next(new_size)
+                    # self.report_progress(current_size, total_size, p_uni)
 
-            current_size += new_size
-            if self.verbosity:
-                self.report_progress(current_size, total_size, p_uni)
-
-            if new_sha1 is None:
-                # Didn't compute hash because we weren't doing this sublist
-                # Not a missing file, just skip it and move on
-                missing_paths.discard(p_uni)
-                continue
-
-            if p_uni not in missing_paths:
-                # We are not expecting this path, it wasn't in the database yet.
-                # It's either new or a rename. Let's handle that.
-                stored_path = self.handle_unknown_path(
-                    cur, p_uni, new_mtime, new_sha1, paths_uni, hashes
-                )
-                self.maybe_commit(conn)
-                if p_uni == stored_path:
-                    new_paths.append(p_uni)
+                if new_sha1 is None:
+                    # Didn't compute hash because we weren't doing this sublist
+                    # Not a missing file, just skip it and move on
                     missing_paths.discard(p_uni)
-                else:
-                    renamed_paths.append((stored_path, p_uni))
-                    missing_paths.discard(stored_path)
-                continue
+                    continue
 
-            # At this point we know we're seeing an expected file. Try to compare hashes.
-            missing_paths.discard(p_uni)
-            cur.execute('SELECT mtime, hash, timestamp FROM bitrot WHERE path=?', (p_uni,))
-            row = cur.fetchone()
-            if not row:
-                print(
-                    '\rwarning: path disappeared from the database while running:',
-                    p_uni,
-                    file=sys.stderr,
-                )
-                continue
+                if p_uni not in missing_paths:
+                    # We are not expecting this path, it wasn't in the database yet.
+                    # It's either new or a rename. Let's handle that.
+                    stored_path = self.handle_unknown_path(
+                        cur, p_uni, new_mtime, new_sha1, paths_uni, hashes
+                    )
+                    self.maybe_commit(conn)
+                    if p_uni == stored_path:
+                        new_paths.append(p_uni)
+                        missing_paths.discard(p_uni)
+                    else:
+                        renamed_paths.append((stored_path, p_uni))
+                        missing_paths.discard(stored_path)
+                    continue
 
-            stored_mtime, stored_sha1, stored_ts = row
-            if int(stored_mtime) != new_mtime:
-                # File has been updated: update the hash in the database
-                updated_paths.append(p_uni)
-                cur.execute('UPDATE bitrot SET mtime=?, hash=?, timestamp=? WHERE path=?',
-                            (new_mtime, new_sha1, ts(), p_uni))
-                self.maybe_commit(conn)
-                continue
+                # At this point we know we're seeing an expected file. Try to compare hashes.
+                missing_paths.discard(p_uni)
+                cur.execute('SELECT mtime, hash, timestamp FROM bitrot WHERE path=?', (p_uni,))
+                row = cur.fetchone()
+                if not row:
+                    print(
+                        '\rwarning: path disappeared from the database while running:',
+                        p_uni,
+                        file=sys.stderr,
+                    )
+                    continue
 
-            if stored_sha1 != new_sha1:
-                # Hashes are different! Report a mismatch
-                errors.append(p_uni)
-                print(
-                    f'\rerror: SHA1 mismatch for {p_uni}: expected {stored_sha1}, got {new_sha1}. '
-                    f'Last good hash checked on {stored_ts}.',
-                    file=sys.stderr,
-                )
+                stored_mtime, stored_sha1, stored_ts = row
+                if int(stored_mtime) != new_mtime:
+                    # File has been updated: update the hash in the database
+                    updated_paths.append(p_uni)
+                    cur.execute('UPDATE bitrot SET mtime=?, hash=?, timestamp=? WHERE path=?',
+                                (new_mtime, new_sha1, ts(), p_uni))
+                    self.maybe_commit(conn)
+                    continue
 
+                if stored_sha1 != new_sha1:
+                    # Hashes are different! Report a mismatch
+                    errors.append(p_uni)
+                    print(
+                        f'\rerror: SHA1 mismatch for {p_uni}: expected {stored_sha1}, got {new_sha1}. '
+                        f'Last good hash checked on {stored_ts}.',
+                        file=sys.stderr,
+                    )
         # Remove deleted files from the database
         for path in missing_paths:
             cur.execute('DELETE FROM bitrot WHERE path=?', (path,))
@@ -655,7 +665,7 @@ def check_folders_for_bitrot(verbosity=1, sublist_count=30):
     os.chdir(script_dir)
     exclude_list = read_exclude_list('exclude.txt')
     toast = ''
-    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a')  # always append - don't overwrite sublist errors
+    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a', encoding='utf-8')  # always append - don't overwrite sublist errors
     for folder in check_folders:
         print(folder)
         os.chdir(folder)
