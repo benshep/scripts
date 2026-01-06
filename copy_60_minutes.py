@@ -133,7 +133,7 @@ def reducible_copy_album(existing_folder: str, album_spec: tuple[AlbumKey, Album
     return copy_album(album, files, existing_folder)
 
 
-def get_tags(folder: str, file: str, bar: progress.bar.Bar) -> Tags:
+def get_tags(folder: str, file: str, bar: progress.bar.Bar | None = None) -> Tags | None:
     """For a media file specified by the folder and file, return a Tags named tuple."""
     bytes_to_minutes = 8 / (1024 * 128 * 60)  # some buggy mp3s - assume 128kbps
     filename = os.path.join(folder, file)
@@ -142,8 +142,9 @@ def get_tags(folder: str, file: str, bar: progress.bar.Bar) -> Tags:
     except Exception as e:
         print(f'No media info for {file}', e)
         return None
+    if bar:
+        bar.next()
     # use album artist (if available) so we can compare 'Various Artist' albums
-    bar.next()
     return Tags(folder, file, str(media.albumartist or media.artist), str(media.album),
                 media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes)
 
@@ -170,75 +171,94 @@ def get_album_files_new() -> list[tuple[str, str]]:
                  for file in filter(is_media_file, file_list)]
 
 
-async def copy_albums_new(copy_folder_list: list[Folder], file_list: list[tuple[str, str]]) -> str:
+async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: list[tuple[str, str]]) -> str:
     """Alternative approach to finding new albums that avoids doing a big scan.
     Issues: only checks one file at a time, so can be slow when most of them are being rejected
     (e.g. when looking for a very short album to make up a needed 5-minute slot)."""
     loop = asyncio.get_event_loop()
     toast = ''
-    failures = []
-    albums = {}
+    albums: dict[AlbumKey, Album] = {}
     os.chdir(music_folder)
     copied_already = read_copy_log()
     for copy_folder in copy_folder_list:
+        file_list = supplied_file_list.copy()  # reset file list since we remove from it for each copy_folder
+        print('\n', copy_folder)
         min_length, max_length = copy_folder.min_length, copy_folder.max_length
-        copy_list = {}
+        copy_list: list[dict[AlbumKey, Album]] = []
         os.chdir(copy_folder.address)
         to_copy = 1 if test_mode else copy_folder.min_count - len(get_subfolders())
-        while to_copy > 0:
-            while len(file_list) > 0:  # break out when we're done
-                # pick a random track
-                chosen_folder, chosen_file = random.choice(file_list)
-                # check the AlbumKey tuple, is it in copied_already list?
-                chosen_tags = get_tags(chosen_folder, chosen_file)
-                chosen_key = AlbumKey(chosen_tags.folder, chosen_tags.artist, chosen_tags.album_title)
-                print(chosen_key, end=' ')
-                if chosen_key.tab_join() in copied_already:
-                    print('copied already')
-                    file_list.remove((chosen_folder, chosen_file))
-                    continue
-                if chosen_key not in albums:  # not scanned this folder yet
-                    # find other tracks in album - how long is it?
-                    folder_files = [file for folder, file in file_list if folder == chosen_folder]
-                    folder_tags = await asyncio.gather(*[
-                        loop.run_in_executor(None, get_tags, *(chosen_folder, file, False))
-                        for file in folder_files])
-                    # add everything in folder to albums list for later reference
-                    for tags in folder_tags:
-                        # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
-                        albums.setdefault(AlbumKey(tags.folder, tags.artist, tags.album_title), {})[tags.file] = tags.length
-                # remove all tracks from list so we won't choose it again
-                for file in albums[chosen_key]:
-                    file_list.remove((chosen_folder, file))
-                if len(albums[chosen_key]) < 3:
-                    print('not enough tracks')
-                    continue
-                duration = sum(albums[chosen_key].values())
-                print(round(duration), end=' ')
-                if duration > max_length:  # too long - never mind
-                    print('too long')
-                    continue
-                # subtract length from min and max
-                min_length -= duration
-                max_length -= duration
-                # add to copy list
-                copy_list[chosen_key] = albums[chosen_key]
-                print('copied', end=' ')
-                if min_length < 0:  # more than minimum - that'll do pig
-                    print('and got enough')
+        while to_copy > 0 and len(file_list) > 0:
+
+            # pick a random track
+            chosen_folder, chosen_file = random.choice(file_list)
+
+            # scanned this folder yet?
+            chosen_key = next((key for key, album in albums.items()
+                               if key[0] == chosen_folder and chosen_file in album),
+                              None)
+            if not chosen_key:  # not scanned this folder yet
+                # find other tracks in album - how long is it?
+                folder_files = [file for folder, file in file_list if folder == chosen_folder]
+                folder_tags = await asyncio.gather(*[
+                    loop.run_in_executor(None, get_tags, *(chosen_folder, file, None))
+                    for file in folder_files])
+                # add everything in folder to albums list for later reference
+                for tags in folder_tags:
+                    # albums is a dict of dicts: each subdict stores (file, duration) as (key, value) pairs
+                    key = AlbumKey(tags.folder, tags.artist, tags.album_title)
+                    albums.setdefault(key, {})[tags.file] = tags.length
+                    if tags.file == chosen_file:
+                        chosen_key = key
+
+            # check the AlbumKey tuple, is it in copied_already list?
+            print(chosen_key, end=' ')
+
+            # remove all tracks from list so we won't choose it again
+            for file in albums[chosen_key]:
+                file_list.remove((chosen_folder, file))
+
+            if chosen_key.tab_join() in copied_already:
+                print('❌  copied already')
+                continue
+
+            if len(albums[chosen_key]) < 2:
+                print('❌  not enough tracks')
+                continue
+
+            length = sum(albums[chosen_key].values())
+            print(round(length), end=' ')
+            if length > max_length:  # too long - never mind
+                print('❌  too long')
+                continue
+
+            for copy_dict in copy_list:
+                length_so_far = sum(sum(album.values()) for album in copy_dict.values())
+                new_length = length_so_far + length
+                if new_length <= max_length:  # can still fit this one in
+                    print('✔️ appended to', *copy_dict.keys())
+                    copy_dict[chosen_key] = albums[chosen_key]
                     break
-                print(f'and need {min_length:.0f}-{max_length:.0f} minutes more')
-                # less than min: try again, look for another
-            else:  # didn't break out, ran out of albums
-                return toast + f'⏹ None found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
-            to_copy -= 1
+            else:  # new list
+                copy_list.append({chosen_key: albums[chosen_key]})
+                new_length = length
+                print('✔️ copied into new list')
+            if new_length >= min_length:
+                to_copy -= 1
+                print(f'✔️ Got enough, {to_copy=}')
+
+        if to_copy:  # ran out of albums
+            return toast + f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
+
         # copy from copy_list
-        folder_name = reduce(reducible_copy_album, copy_list.items(), '')
-        total_duration = sum(sum(album.values()) for album in copy_list.values())
-        folder_name_inc_length = f'{folder_name} [{total_duration:.0f}]'
-        if not test_mode:
-            os.rename(folder_name, folder_name_inc_length)
-        toast += f'✔ {folder_name_inc_length[11:]}\n'
+        for copy_dict in copy_list:
+            total_length = sum(sum(album.values()) for album in copy_dict.values())
+            if min_length <= total_length <= max_length:
+                copied_already |= {key.tab_join() for key in copy_dict.keys()}
+                folder_name = reduce(reducible_copy_album, copy_dict.items(), '')
+                folder_name_inc_length = f'{folder_name} [{total_length:.0f}]'
+                if not test_mode:
+                    os.rename(folder_name, folder_name_inc_length)
+                toast += f'✔ {folder_name_inc_length[11:]}\n'
     return toast
 
 
@@ -254,7 +274,7 @@ async def get_album_files() -> Iterator[Tags]:
         folder = walk_tuple[0]
         should_include = not folder[len(base_folder) + 1:].startswith(exclude_prefixes)
         if not should_include and test_mode:
-            print('Excluding', folder)
+            print('Excluding', folder[len(base_folder) + 1:])
         return should_include
 
     include_folder.count = 0
@@ -367,7 +387,7 @@ def copy_albums(copy_folder_list: list[Folder], albums: dict[AlbumKey, Album]) -
     failures = []
     for copy_folder in copy_folder_list:
         os.chdir(copy_folder.address)
-        to_copy = 10 if test_mode else copy_folder.min_count - len(get_subfolders())
+        to_copy = 2 if test_mode else copy_folder.min_count - len(get_subfolders())
         while to_copy > 0:
             while len(albums) > 0:  # break out when we're done
                 key: AlbumKey = random.choice(list(albums.keys()))
@@ -436,12 +456,11 @@ def copy_60_minutes() -> str | datetime:
         return datetime.now().replace(hour=9, minute=0) + timedelta(days=1)  # try again 9am tomorrow
 
     os.chdir(music_folder)
-    if False:  # test_mode:
-        return toast + asyncio.run(copy_albums_new(copy_folder_list, get_album_files_new()))
-    else:
-        albums = scan_music_folder()
-        list_by_length(albums, max_length=80)
-        return toast + copy_albums(copy_folder_list, albums)
+    return toast + asyncio.run(copy_albums_new(copy_folder_list, get_album_files_new()))
+    # old method (scan everything)
+    #     albums = scan_music_folder()
+    #     list_by_length(albums, max_length=80)
+    #     return toast + copy_albums(copy_folder_list, albums)
 
 
 def list_by_length(albums: dict[AlbumKey, Album], max_length: int = 0) -> None:
