@@ -27,3 +27,15 @@ bad_chars = str.maketrans({char: None for char in '*?/\\<>:|"'})  # can't use th
 
 def remove_bad_chars(filename: str) -> str:
     return filename.translate(bad_chars)
+
+
+def odd_even_pages(num_pages: int):
+    """Output the odd and even pages in a range, suitable for printing two pages to a sheet."""
+    print('Odd')
+    print(','.join(str(p + 1) for p in range(num_pages) if p % 4 in (0, 1)))
+    print('Even')
+    print(','.join(str(p + 1) for p in range(num_pages) if p % 4 in (2, 3)))
+
+
+if __name__ == '__main__':
+    odd_even_pages(40)

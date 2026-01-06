@@ -5,22 +5,22 @@ import os
 import subprocess
 import sys
 from collections import Counter
-from shutil import move  # safer than os.rename across different filesystems
 from datetime import datetime, date, timedelta
+from shutil import move  # safer than os.rename across different filesystems
 from time import sleep
 from typing import Generator
+
+from pushbullet import Pushbullet  # to show notifications
 from send2trash import send2trash
 
-from folders import user_profile
-from pushbullet import Pushbullet  # to show notifications
-from pushbullet_api_key import api_key  # local file, keep secret!
 from copy_60_minutes import get_pushes  # TODO: put in its own file
+from folders import user_profile
+from pushbullet_api_key import api_key  # local file, keep secret!
 
-nzp = '#' if sys.platform == 'win32' else '-'  # character for no zero padding in dates - platform-specific!
+on_windows = sys.platform == 'win32'
+nzp = '#' if on_windows else '-'  # character for no zero padding in dates - platform-specific!
 script_start = datetime.now() - timedelta(hours=1)
 pushbullet = Pushbullet(api_key)
-pics_folder = os.path.join(user_profile, 'Pictures')
-temp_folder = os.path.join(pics_folder, str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
 app_title = '📷 Move photos'
 
 
@@ -28,6 +28,11 @@ app_title = '📷 Move photos'
 
 class InvalidResponse(Exception):
     pass
+
+
+name = sys.argv[1] if len(sys.argv) > 1 else 'me'
+pics_folder = os.path.join(user_profile, 'Pictures' if name == 'me' else f'Pictures-{name}')
+temp_folder = os.path.join(pics_folder, str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
 
 
 def organise_photos():
@@ -92,7 +97,11 @@ def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[
 def move_photos_to_temp_folder() -> list[date]:
     """Move pictures off memory card onto local storage."""
     #  move all pics from folders under DCIM to single folder under Pictures
-    folder = r'D:/DCIM' if sys.platform == 'win32' else '/media/ben/SD-4GB/DCIM'
+    if on_windows:
+        folder = r'D:/DCIM'
+    else:
+        card_name = {'me': 'SD-4GB', 'Katie': '9488-CBB1'}
+        folder = f'/media/ben/{card_name[name]}/DCIM'
     os.chdir(folder)
     os.makedirs(temp_folder)
 
