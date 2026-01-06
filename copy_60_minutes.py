@@ -230,7 +230,7 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
                 continue
 
             length = sum(scanned_albums[chosen_key].values())
-            print(round(length), end=' ')
+            print(f'({round(length)} min)', end=' ')
             if length > max_length:
                 print('❌  too long')
                 continue
@@ -245,7 +245,7 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
             else:  # new list
                 maybe_list.append({chosen_key: scanned_albums[chosen_key]})
                 new_length = length
-                print('✔️ copied into new list')
+                print('✔️')
             if new_length >= min_length:
                 to_copy -= 1
                 print(f'✔️ Got enough, {to_copy=}')
@@ -265,7 +265,8 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
                 toast += f'✔ {folder_name_inc_length[11:]}\n'
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
-    print(f'Read {files_scanned} files in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
+    scan_percentage = 100 * files_scanned / len(file_list)
+    print(f'Read {files_scanned} files ({scan_percentage:.1f}% of total) in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
     return toast
 
 
