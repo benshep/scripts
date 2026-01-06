@@ -177,6 +177,7 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
     toast = ''
     scanned_albums: dict[AlbumKey, Album] = {}
     os.chdir(music_folder)
+    base_folder = os.getcwd()  # in case of symlinks: base_folder != music_folder
     copied_already = read_copy_log()
     start_time = datetime.now()
     for copy_folder in copy_folder_list:
@@ -188,8 +189,9 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
         to_copy = 1 if test_mode else copy_folder.min_count - len(get_subfolders())
         while to_copy > 0 and len(file_list) > 0:
 
-            # pick a random track
-            chosen_folder, chosen_file = random.choice(file_list)
+            # pick a random folder and a random track from it
+            chosen_folder = random.choice(list(set(folder for folder, _ in file_list)))
+            chosen_file = random.choice([file for folder, file in file_list if folder == chosen_folder])
 
             # scanned this folder yet?
             bar = None
@@ -200,7 +202,7 @@ async def copy_albums_new(copy_folder_list: list[Folder], supplied_file_list: li
                 # find other tracks in album - how long is it?
                 folder_files = [file for folder, file in file_list if folder == chosen_folder]
                 if len(folder_files) > 20:  # display progress if it's going to take a while
-                    bar = progress.bar.IncrementalBar(chosen_folder[len(music_folder) + 1:],
+                    bar = progress.bar.IncrementalBar(chosen_folder[len(base_folder) + 1:],
                                                       max=len(folder_files),
                                                       suffix='%(index)d/%(max)d | %(eta)ss ')
                 folder_tags = await asyncio.gather(*[
