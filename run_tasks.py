@@ -247,19 +247,23 @@ def run_tasks():
         print(f'Waiting until {next_time_str}')
         set_window_title(f'{title_toast} ⌛️ {next_time_str}')
         while datetime.now() < next_task_time:
-            sleep(10)
+            sleep(300)
 
             # restart code
             force_run = []  # only force run for one loop
             for function, module in task_dict.items():
                 new_mod_time = os.path.getmtime(module.__file__)
                 time_since_modified = datetime.now() - datetime.fromtimestamp(new_mod_time)
-                if new_mod_time != module.mod_time:  # and time_since_modified > timedelta(minutes=15):
+                if new_mod_time != module.mod_time and time_since_modified > timedelta(minutes=15):
                     print('Updated:', function, module)
-                    force_run += [func for func, mod in task_dict.items() if mod == module]
                     print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
-                    importlib.reload(module)
-                    task_dict[function].mod_time = new_mod_time
+                    try:
+                        importlib.reload(module)
+                        force_run += [func for func, mod in task_dict.items() if mod == module]
+                        task_dict[function].mod_time = new_mod_time
+                    except Exception as exception:
+                        # failed to import: maybe still working on it?
+                        print(exception)
             if force_run:
                 print(f'\nChange detected in functions', *force_run)
                 break  # don't wait until next scheduled run
