@@ -179,7 +179,7 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
         min_length, max_length = copy_folder.min_length, copy_folder.max_length
         maybe_list: list[dict[AlbumKey, Album]] = []
         os.chdir(copy_folder.address)
-        to_copy = 1 if test_mode else copy_folder.min_count - len(get_subfolders())
+        to_copy = 10 if test_mode else copy_folder.min_count - len(get_subfolders())
         while to_copy > 0 and len(file_list) > 0:
 
             # pick a random folder and a random track from it
@@ -228,13 +228,17 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
                 print('❌  too long')
                 continue
 
-            for copy_dict in maybe_list:
-                length_so_far = sum(sum(album.values()) for album in copy_dict.values())
-                new_length = length_so_far + length
-                if new_length <= max_length:  # can still fit this one in
-                    print('✔️ appended to', *copy_dict.keys())
-                    copy_dict[chosen_key] = scanned_albums[chosen_key]
-                    break
+            # could we add this to any existing lists?
+            new_lengths = [sum(sum(album.values()) for album in copy_dict.values()) + length
+                           for copy_dict in maybe_list]
+            in_range = [min_length <= new_length <= max_length for new_length in new_lengths]
+            below_max = [new_length <= max_length for new_length in new_lengths]
+            index = in_range.index(True) if any(in_range) else below_max.index(True) if any(below_max) else None
+            if index is not None:
+                copy_dict = maybe_list[index]
+                new_length = new_lengths[index]
+                print('✔️ appended to', *copy_dict.keys())
+                copy_dict[chosen_key] = scanned_albums[chosen_key]
             else:  # new list
                 maybe_list.append({chosen_key: scanned_albums[chosen_key]})
                 new_length = length
