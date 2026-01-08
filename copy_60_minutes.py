@@ -231,9 +231,16 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
             # could we add this to any existing lists?
             new_lengths = [sum(sum(album.values()) for album in copy_dict.values()) + length
                            for copy_dict in maybe_list]
-            in_range = [min_length <= new_length <= max_length for new_length in new_lengths]
-            below_max = [new_length <= max_length for new_length in new_lengths]
-            index = in_range.index(True) if any(in_range) else below_max.index(True) if any(below_max) else None
+            in_range = [new_length if min_length <= new_length <= max_length else False for new_length in new_lengths]
+            below_max = [new_length if new_length <= max_length else False for new_length in new_lengths]
+            if any(in_range):  # go for the longest available
+                print('in range', *map(round, filter(None, in_range)), end=' ')
+                index = in_range.index(max(in_range))
+            elif any(below_max):  # need to fit more in, so go for the shortest - more likely to get something
+                print('below max', *map(round, filter(None, below_max)), end=' ')
+                index = below_max.index(min(below_max))
+            else:
+                index = None
             if index is not None:
                 copy_dict = maybe_list[index]
                 new_length = new_lengths[index]
