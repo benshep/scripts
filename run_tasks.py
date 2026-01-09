@@ -42,6 +42,7 @@ def lazy_import(name: str) -> ModuleType:
     sys.modules[name] = module
     loader.exec_module(module)
     module.mod_time = os.path.getmtime(module.__file__)
+    print('Imported', module, datetime.fromtimestamp(module.mod_time))
     return module
 
 
@@ -51,7 +52,10 @@ def update_cell(row, col, string):
 
 def run_tasks():
     # 'home' tasks
-    task_dict = {  # function: module
+    # Any duplicates should be declared at the top (i.e. not lazy_imported twice)
+    # otherwise the change detection won't work properly
+    concerts_module = lazy_import('concerts')
+    task_dict: dict[str, ModuleType] = {  # function: module
         'change_wallpaper': lazy_import('change_wallpaper'),
         'update_phone_music': lazy_import('update_phone_music'),
         'copy_60_minutes': lazy_import('copy_60_minutes'),
@@ -60,8 +64,8 @@ def run_tasks():
         'check_folders_for_bitrot': lazy_import('bitrot'),
         'erase_trailers': lazy_import('erase_trailers'),
         'update_saints_calendar': lazy_import('rugby_fixtures'),
-        'update_gig_calendar': lazy_import('concerts'),
-        'find_new_releases': lazy_import('concerts'),
+        'update_gig_calendar': concerts_module,
+        'find_new_releases': concerts_module,
         'log_crossings': lazy_import('mersey_gateway'),
     }
 
@@ -69,17 +73,21 @@ def run_tasks():
     if not at_home:
         # 'work' tasks
         sys.path.append(os.path.join(docs_folder, 'Scripts'))
+
+        group_module = lazy_import('group')
+        page_changes_module = lazy_import('page_changes')
+        osc_module = lazy_import('oracle_staff_check')
         task_dict |= {
             'find_new_python_packages': lazy_import('package_updates'),
-            'annual_leave_check': lazy_import('oracle_staff_check'),
-            'otl_submit': lazy_import('oracle_staff_check'),
-            'leave_cross_check': lazy_import('group'),
-            'run_otl_calculator': lazy_import('group'),
+            'annual_leave_check': osc_module,
+            'otl_submit': osc_module,
+            'leave_cross_check': group_module,
+            'run_otl_calculator': group_module,
             'todos_from_notes': lazy_import('todos_from_notes'),
             'get_payslips': lazy_import('get_payslips'),
             'get_bookings': lazy_import('catering_bookings'),
-            'check_page_changes': lazy_import('page_changes'),
-            'live_update': lazy_import('page_changes'),
+            'check_page_changes': page_changes_module,
+            'live_update': page_changes_module,
             'update_energy_data': lazy_import('energy_data'),
         }
         port = 18862
@@ -247,9 +255,15 @@ def run_tasks():
                 new_mod_time = os.path.getmtime(module.__file__)
                 time_since_modified = datetime.now() - datetime.fromtimestamp(new_mod_time)
                 if new_mod_time != module.mod_time and time_since_modified > timedelta(minutes=15):
-                    force_run += [func for func, mod in task_dict.items() if mod == module]
-                    importlib.reload(module)
-                    task_dict[function].mod_time = new_mod_time
+                    print('Updated:', function, module)
+                    print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
+                    try:
+                        importlib.reload(module)
+                        force_run += [func for func, mod in task_dict.items() if mod == module]
+                        task_dict[function].mod_time = new_mod_time
+                    except Exception as exception:
+                        # failed to import: maybe still working on it?
+                        print(exception)
             if force_run:
                 print(f'\nChange detected in functions', *force_run)
                 break  # don't wait until next scheduled run
