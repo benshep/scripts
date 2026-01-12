@@ -1,11 +1,18 @@
 import os
+
 from phrydy import MediaFile
+
+
 # Functions for working with media files
 
 
 def is_media_file(filename: str) -> bool:
     """Return True if the filename ends with a known media file extension."""
     return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma'))
+
+
+async def artist_title_async(file: str | MediaFile, separator: str = ' - ') -> str:
+    return artist_title(file, separator)
 
 
 def artist_title(file: str | MediaFile, separator: str = ' - ') -> str:
