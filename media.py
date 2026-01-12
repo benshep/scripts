@@ -11,10 +11,6 @@ def is_media_file(filename: str) -> bool:
     return filename.lower().endswith(('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma'))
 
 
-async def artist_title_async(file: str | MediaFile, separator: str = ' - ') -> str:
-    return artist_title(file, separator)
-
-
 def artist_title(file: str | MediaFile, separator: str = ' - ') -> str:
     """Return {artist} - {title} string for a given file, converted to lowercase for easy comparison.
     Pass file as a filename or a MediaFile object from phrydy."""
