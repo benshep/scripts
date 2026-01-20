@@ -2,6 +2,7 @@ import asyncio
 import os
 import random
 import re
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timedelta
@@ -132,22 +133,30 @@ async def get_tags(folder: str, file: str, album: dict, copied_already: set[str]
     if too_long or (album['keys'] and all(
             key.tab_join() in copied_already for key in album['keys'])):  # gotcha: all([]) == True
         return None  # to cancel the rest of the get_tags calls for this folder
-    bytes_to_minutes = 8 / (1024 * 128 * 60)  # some buggy mp3s - assume 128kbps
-    filename = os.path.join(folder, file)
-    try:
-        media = phrydy.MediaFile(filename)
-    except Exception as e:
-        print(f'No media info for {file}', e)
+    if not (media := await read_tags(file, folder)):
         return None
     if bar:
         bar.next()
-    length = media.length / 60 if media.length else os.path.getsize(filename) * bytes_to_minutes
+    length = media.length / 60
     album['length'] -= length  # count down from initial value of maximum wanted
     # use album artist (if available) so we can compare 'Various Artist' albums
     album_artist = str(media.albumartist or media.artist)
     album_title = str(media.album)
     album['keys'].add(AlbumKey(folder, album_artist, album_title))
     return Tags(folder, file, album_artist, album_title, length)
+
+
+async def read_tags(file: str, folder: str) -> phrydy.MediaFile | None:
+    """Read tags from a media file."""
+    filename = os.path.join(folder, file)
+    try:
+        media = phrydy.MediaFile(filename)
+    except Exception as e:
+        print(f'No media info for {file}', e)
+        return None
+    if not media.length:
+        media.length = os.path.getsize(filename) * 8 / (1024 * 128)  # some buggy mp3s - assume 128kbps
+    return media
 
 
 def get_album_files() -> list[tuple[str, str]]:
@@ -172,7 +181,8 @@ def get_album_files() -> list[tuple[str, str]]:
             for file in filter(is_media_file, file_list)]
 
 
-async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[tuple[str, str]]) -> str:
+async def copy_albums(copy_folder_list: list[Folder],
+                      supplied_file_list: list[tuple[str, str]]) -> tuple[str, str]:
     """Select random albums up to the given length for each folder.
     Avoids a big scan of tags by picking folders and files at random from a (fast) os.walk list."""
     toast = ''
@@ -184,6 +194,7 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
     copied_already = read_copy_log()
     start_time = datetime.now()
     max_length_overall = max(copy_folder.max_length for copy_folder in copy_folder_list)
+    image_filename = ''
     for copy_folder in copy_folder_list:
         file_list = supplied_file_list.copy()  # reset file list since we remove from it for each copy_folder
         print('\n', copy_folder, sep='')
@@ -280,7 +291,8 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
 
         # copy from copy_list
         for copy_dict in maybe_list:
-            total_length = sum(sum(album.values()) for album in copy_dict.values())
+            lengths = (sum(album.values()) for album in copy_dict.values())
+            total_length = sum(lengths)
             if min_length <= total_length <= max_length:
                 copied_already |= {key.tab_join() for key in copy_dict.keys()}
                 folder_name = reduce(reducible_copy_album, copy_dict.items(), '')
@@ -288,12 +300,24 @@ async def copy_albums(copy_folder_list: list[Folder], supplied_file_list: list[t
                 if not test_mode:
                     os.rename(folder_name, folder_name_inc_length)
                 toast += f'✔ {folder_name_inc_length[11:]}\n'
+                if not image_filename:
+                    for key, album in sorted(copy_dict.items(), reverse=True,
+                                             key=lambda item: sum(item[1].values())):
+                        # Check for embedded images in the tags of the first file
+                        media = await read_tags(list(album.keys())[0], key.folder)
+                        if media.art:
+                            _, image_filename = tempfile.mkstemp()
+                            open(image_filename, 'wb').write(media.art)
+                        else:
+                            # Otherwise, look in the folder
+                            image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
+                                                  if file.lower().endswith(('.png', '.jpg', '.jpeg'))), '')
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
     scan_percentage = 100 * files_scanned / len(file_list)
     print(f'\nRead {files_scanned} files ({scan_percentage:.1f}% of total)'
           f' in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
-    return toast
+    return toast, image_filename
 
 
 def list_lengths(lengths: list[float]) -> str:
@@ -393,7 +417,7 @@ def find_copy_folders() -> list[Folder]:
     return folder_list
 
 
-def copy_60_minutes() -> str | datetime:
+def copy_60_minutes() -> str | tuple[str, str] | datetime:
     return asyncio.run(copy_60_minutes_async())
 
 
@@ -411,11 +435,12 @@ async def copy_60_minutes_async() -> str | datetime:
         return datetime.now().replace(hour=9, minute=0) + timedelta(days=1)  # try again 9am tomorrow
 
     os.chdir(music_folder)
-    toast += await copy_albums(copy_folder_list, get_album_files())
+    copy_toast, image_filename = await copy_albums(copy_folder_list, get_album_files())
+    toast += copy_toast
     if test_mode:
         profiler.stop()
         profiler.open_in_browser()
-    return toast
+    return (toast, image_filename) if image_filename else toast
 
 
 def list_by_length(albums: dict[AlbumKey, Album], max_length: int = 0) -> None:
