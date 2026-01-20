@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import tempfile
 from datetime import datetime, timedelta
 
 import phrydy  # for media file tagging
@@ -16,8 +17,8 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 test_mode = False  # don't change anything!
 
 
-def update_phone_music():
-    """Deleted listened-to radio files, and fill up the music folder to capacity."""
+def update_phone_music() -> str | tuple[str, str]:
+    """Deleted listened-to radio files."""
     scrobbles = get_scrobbled_titles(lastfm.get_user('ning'))
     start_time = datetime.now()
     toast = asyncio.run(check_radio_files(scrobbles))
@@ -25,7 +26,7 @@ def update_phone_music():
     return toast
 
 
-async def check_radio_files(scrobbled_titles):
+async def check_radio_files(scrobbled_titles: list[str]) -> str | tuple[str, str]:
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
     scrobbled_radio = []  # list of played radio files to delete
     first_unheard = ''  # first file in the list that hasn't been played
@@ -38,6 +39,7 @@ async def check_radio_files(scrobbled_titles):
     # min_date = None
     bump_dates = []
     toast = ''
+    image_filename = ''
     # total_hours = 0
     which_artist = {}
 
@@ -109,6 +111,9 @@ async def check_radio_files(scrobbled_titles):
                 new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file}\n'
                 os.rename(file, f'{new_date} (bumped from {file[:10]}) {file[11:]}')
+                if not image_filename and tags.art:
+                    _, image_filename = tempfile.mkstemp()
+                    open(image_filename, 'wb').write(tags.art)
 
         if tags_changed and not test_mode:
             tags.save()
@@ -118,7 +123,7 @@ async def check_radio_files(scrobbled_titles):
     if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
         toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
     # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
-    return toast
+    return (toast, image_filename) if image_filename else toast
 
 
 def delete_file(file: str) -> str:
