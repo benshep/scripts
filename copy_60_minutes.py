@@ -312,6 +312,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                             # Otherwise, look in the folder
                             image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
                                                   if file.lower().endswith(('.png', '.jpg', '.jpeg'))), '')
+                        if image_filename:
+                            break
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
     scan_percentage = 100 * files_scanned / len(file_list)
