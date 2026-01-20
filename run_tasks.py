@@ -210,12 +210,11 @@ def run_tasks():
                         pushbullet.push_note(f'{icon} {function_name}', return_value)
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
-                case (str() as toast, str() as filename):  # success
+                case (str() as toast, str() as filename):  # success with toast and file (e.g. image)
                     result = 'Success'
                     print(toast)
                     print(filename)
-                    response = pushbullet.upload_file(open(filename, 'rb'), 'test.png')
-                    print(response)
+                    response = pushbullet.upload_file(open(filename, 'rb'), os.path.split(filename)[1])
                     pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
