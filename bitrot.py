@@ -677,10 +677,10 @@ def check_folders_for_bitrot(verbosity=1, sublist_count=30):
             error_file_handle.write(f'Bad files in {folder}:\n' + '\n'.join(bad_files) + '\n')
             toast += f'{folder}: {len(bad_files)} bad files\n'
         # Check for clashes across all files (not just this sublist)
-        clashes = compare_nodes()
-        if clashes:
-            error_file_handle.write(f'Clashes in {folder}:\n' + '\n'.join(clashes) + '\n')
-            toast += f'{folder}: {len(clashes)} clashes\n'
+        # clashes = compare_nodes()
+        # if clashes:
+        #     error_file_handle.write(f'Clashes in {folder}:\n' + '\n'.join(clashes) + '\n')
+        #     toast += f'{folder}: {len(clashes)} clashes\n'
     return toast
 
 
@@ -726,7 +726,7 @@ def compare_nodes() -> list[str]:
             continue
         db = get_sqlite3_cursor(db_file)
         hash_list = db.execute('SELECT path, hash FROM bitrot').fetchall()
-        db.close()
+        db.commit()
         print(db_file, len(hash_list), 'hashes')
         for path, h in hash_list:
             # Skip files that meet the ignore criteria

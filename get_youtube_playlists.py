@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import contextlib
+import tempfile
 
 import phrydy.mediafile
 import yt_dlp.utils
@@ -95,19 +96,20 @@ def reject_large(info_dict):
     return message
 
 
-def show_status(progress):
+def show_status(progress: dict[str, str]):
     """Show downloading status."""
     if progress['status'] == 'downloading':
         print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
 
 
-def get_youtube_playlists(just_crop_art=False):
+def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
     info_file = 'download.txt'  # info file contained in each folder
     archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
     # files = os.listdir(folder)
     # for i in range(1):
     toast = ''
+    image_filename = ''
     for folder, _, files in os.walk(music_folder):
         # if just_crop_art is selected, look for archive files too
         if info_file not in files and (not just_crop_art or archive_file not in files):
@@ -193,8 +195,15 @@ def get_youtube_playlists(just_crop_art=False):
                         toast += f'{album_name}: ' + \
                                  (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
                                  (' (with errors)\n' if error_code else '\n')
+                        if not image_filename:
+                            for file in new_files:
+                                media = MediaFile(file)
+                                if media.art:
+                                    _, image_filename = tempfile.mkstemp()
+                                    open(image_filename, 'wb').write(media.art)
+                                    break
 
-    return toast
+    return (toast, image_filename) if image_filename else toast
 
 
 def get_playlist_info(url):
