@@ -19,3 +19,4 @@ mediafile
 yt-dlp
 pushbullet.py
 progress
+filetype
