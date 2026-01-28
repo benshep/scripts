@@ -8,6 +8,7 @@ from threading import Thread
 from types import ModuleType
 
 import cryptography.utils
+import filetype
 from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
@@ -210,6 +211,12 @@ def run_tasks():
                         pushbullet.push_note(f'{icon} {function_name}', return_value)
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
+                case (str() as toast, str() as filename):  # success with toast and file (e.g. image)
+                    result = 'Success'
+                    print(toast)
+                    print(filename)
+                    response = pushbullet.upload_file(open(filename, 'rb'), filetype.guess_mime(filename))
+                    pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
