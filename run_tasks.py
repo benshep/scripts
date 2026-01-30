@@ -215,7 +215,8 @@ def run_tasks():
                     result = 'Success'
                     print(toast)
                     print(filename)
-                    response = pushbullet.upload_file(open(filename, 'rb'), filetype.guess_mime(filename))
+                    with open(filename, 'rb') as file_handle:
+                        response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
                     pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
