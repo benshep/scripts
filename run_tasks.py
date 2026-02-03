@@ -84,6 +84,7 @@ def run_tasks():
             'otl_submit': osc_module,
             'leave_cross_check': group_module,
             'run_otl_calculator': group_module,
+            'check_in': group_module,
             'todos_from_notes': lazy_import('todos_from_notes'),
             'get_payslips': lazy_import('get_payslips'),
             'get_bookings': lazy_import('catering_bookings'),
