@@ -6,6 +6,7 @@ import sys
 import warnings
 from threading import Thread
 from types import ModuleType
+from typing import Callable
 
 import cryptography.utils
 import filetype
@@ -13,6 +14,7 @@ from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
 from datetime import datetime, timedelta
+
 start_time = datetime.now()
 from time import sleep
 from traceback import format_exc, extract_tb
@@ -25,7 +27,6 @@ from rich.traceback import install  # rich tracebacks
 from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 from folders import docs_folder
-
 
 # Spreadsheet ID: https://docs.google.com/spreadsheets/d/XXX/edit#gid=0
 sheet_id = '1T9vTsd6mW0sw6MmVsMshbRBRSoDh7wo9xTxs9tqYr7c'  # Automation spreadsheet
@@ -55,8 +56,12 @@ def run_tasks():
     # 'home' tasks
     # Any duplicates should be declared at the top (i.e. not lazy_imported twice)
     # otherwise the change detection won't work properly
+    # track changes to this file too: need to give the function these attributes
+    run_tasks.__file__ = __file__
+    run_tasks.mod_time = os.path.getmtime(__file__)
     concerts_module = lazy_import('concerts')
-    task_dict: dict[str, ModuleType] = {  # function: module
+    task_dict: dict[str, Callable | ModuleType] = {  # function: module
+        'run_tasks': run_tasks,
         'change_wallpaper': lazy_import('change_wallpaper'),
         'update_phone_music': lazy_import('update_phone_music'),
         'copy_60_minutes': lazy_import('copy_60_minutes'),
@@ -99,8 +104,6 @@ def run_tasks():
         thread = Thread(target=server.start)
         thread.daemon = True
         thread.start()
-    # track changes to this file too
-    run_tasks_mod_time = os.path.getmtime(__file__)
 
     start_dir = os.getcwd()
     column_names = ['Icon', 'Function name', 'Parameters', 'Period', 'Work', 'Home',
@@ -229,8 +232,8 @@ def run_tasks():
                             ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
                             for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
                         note_text = f'{function_name} failed {fail_count} times on {node()}\n' + \
-                            f'{exception_type.__name__} in {quick_trace}\n' + \
-                            str(exception_value)
+                                    f'{exception_type.__name__} in {quick_trace}\n' + \
+                                    str(exception_value)
                         if fail_count == 20:
                             update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
                             note_text += f'\nDisabled at {location.lower()}'
@@ -260,29 +263,38 @@ def run_tasks():
 
             # restart code
             force_run = []  # only force run for one loop
+            now = datetime.now()
             for function, module in task_dict.items():
-                new_mod_time = os.path.getmtime(module.__file__)
-                time_since_modified = datetime.now() - datetime.fromtimestamp(new_mod_time)
-                if new_mod_time != module.mod_time and time_since_modified > timedelta(minutes=15):
+                new_mod_timestamp = os.path.getmtime(module.__file__)
+                new_mod_datetime = datetime.fromtimestamp(new_mod_timestamp)
+                time_since_modified = now - new_mod_datetime
+                if new_mod_timestamp != module.mod_time:
                     print('Updated:', function, module)
-                    print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
-                    try:
-                        importlib.reload(module)
-                        force_run += [func for func, mod in task_dict.items() if mod == module]
-                        task_dict[function].mod_time = new_mod_time
-                    except Exception as exception:
-                        # failed to import: maybe still working on it?
-                        print(exception)
+                    # Might be in the middle of changing it - wait a bit
+                    grace_period = timedelta(minutes=15)
+                    restart_time_str = (new_mod_datetime + grace_period).strftime('%H:%M')
+                    print('Will run after', restart_time_str)
+                    set_window_title(f'{title_toast} ⌛️ {restart_time_str}')
+                    if time_since_modified > grace_period:
+                        if function == 'run_tasks':
+                            set_window_title('🔁 Restarting')
+                            os.chdir(start_dir)
+                            # force rerunning those functions
+                            subprocess.Popen([sys.executable, sys.argv[0]])
+                            exit()
+                        else:
+                            # one of the modules we imported
+                            # print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
+                            try:
+                                importlib.reload(module)
+                                force_run += [func for func, mod in task_dict.items() if mod == module]
+                                task_dict[function].mod_time = new_mod_timestamp
+                            except Exception as exception:
+                                # failed to import: maybe still working on it?
+                                print(exception)
             if force_run:
                 print(f'\nChange detected in functions', *force_run)
                 break  # don't wait until next scheduled run
-
-            if run_tasks_mod_time != os.path.getmtime(__file__):
-                set_window_title('🔁 Restarting')
-                os.chdir(start_dir)
-                # force rerunning those functions
-                subprocess.Popen([sys.executable, sys.argv[0]])
-                exit()
 
 
 def set_window_title(text: str) -> None:
@@ -293,3 +305,4 @@ def set_window_title(text: str) -> None:
 
 if __name__ == '__main__':
     run_tasks()
+
