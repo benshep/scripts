@@ -1,20 +1,20 @@
-import urllib.parse
-from time import sleep
 import os
-import requests
+import urllib.parse
 from base64 import b32hexencode
-from math import cos, sin, radians, atan2, sqrt
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
+from math import cos, sin, radians, atan2, sqrt
+from time import sleep
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
+import googleapiclient.errors
+import requests
 from progress.bar import IncrementalBar
 
+import google_api
+from folders import music_folder
 from lastfm import lastfm
 from ticketmaster import ticketmaster_api_key
-import google_api
-import googleapiclient.errors
-from folders import music_folder
 
 google_calendar = google_api.calendar.events()
 calendar_id = '3a0374a38ea8a8ce023b6173a9a9a6c3c86d118280f0bf104e2091f81c4a8854@group.calendar.google.com'
@@ -75,7 +75,7 @@ def get_ticketmaster_events(artist_name):
         if venue_name.upper() == venue_name:
             venue_name = venue_name.title()  # convert UPPER CASE to Proper Case (but only if name is in ALL CAPS)
         concert_title = event['name']
-        if artist_name not in event['name']:
+        if artist_name.lower() not in event['name'].lower():
             concert_title += f' (feat. {artist_name})'
         if venue_name not in concert_title:
             concert_title += f' at {venue_name}'
