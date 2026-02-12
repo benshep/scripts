@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import contextlib
+import sys
 import tempfile
 
 import phrydy.mediafile
@@ -103,6 +104,10 @@ def show_status(progress: dict[str, str]):
 
 
 def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
+    deno_folder = r'C:\ProgramData\chocolatey\lib\deno'
+    if os.path.exists(deno_folder):
+        os.environ['path'] += ';' + deno_folder  # so that yt_dlp finds the JS runtime
+
     info_file = 'download.txt'  # info file contained in each folder
     archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
@@ -138,7 +143,7 @@ def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
                 for artist, title in artist_titles:
                     if artist and title and artist in video_title and title in video_title:
                         message = f"Already got {artist} - {title} - skipping {video_title}"
-                        print(message)
+                        # print(message)
                         return message
             return reject_large(info_dict)  # also reject anything that's too long
 
