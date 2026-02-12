@@ -659,7 +659,7 @@ def read_exclude_list(exclude_list):
     return [line.rstrip('\n') for line in open(exclude_list)]
 
 
-def check_folders_for_bitrot(verbosity=1, sublist_count=30):
+def check_folders_for_bitrot(verbosity=1, sublist_count=60):
     """Go through the list of folders, checking each one for bitrot."""
     script_dir = os.path.split(__file__)[0]
     os.chdir(script_dir)
