@@ -2,7 +2,10 @@ import os
 from datetime import timedelta, datetime
 from difflib import SequenceMatcher
 from hashlib import sha1
+from random import sample
+from shutil import copy2
 
+from phrydy.mediafile import MediaFile
 from progress.bar import IncrementalBar
 from send2trash import send2trash
 
@@ -33,8 +36,10 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(
     repeats = open(repeat_file, 'r').read().splitlines()
     print(f'{len(repeats)} known repeats')
     start_time = datetime.now()
-    last_index = limit if isinstance(limit, int) else -1
-    for file in sorted(os.listdir())[:last_index]:
+    file_list = os.listdir()
+    last_index = limit if isinstance(limit, int) else len(file_list)
+    file_list = sample(file_list, last_index)
+    for file in file_list:
         if isinstance(limit, timedelta) and datetime.now() - start_time >= limit:
             print('Time limit reached')
             break
@@ -64,8 +69,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(
                     continue
                 this_digest = this_digest.replace(repeat, '', 1)
                 del frames[index:index + length]
-                write_mp3_file(file, frames)
-                cut_length += length
+                cut_length += write_mp3_file(file, frames) or length * 0.13
         if not only_known:
             # compare with previous files
             matcher = SequenceMatcher(autojunk=False)
@@ -75,20 +79,21 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(
             for prev_file, matches in zip(digest.keys(), all_matches):
                 if matches:
                     print(f'- {prev_file} {matches}')
+                    repeated_length = 0
                     for match in matches[::-1]:  # reverse order so we don't mess up the indices
                         repeat = this_digest[match.b:match.b + match.size]
+                        repeated_length += len(repeat)
                         if repeat not in repeats:
                             repeats.append(repeat)
                             open(repeat_file, 'a').write(repeat + '\n')
                         this_digest = this_digest.replace(repeat, '', 1)
                         matcher.set_seq2(this_digest)  # reset the matcher since we've changed the digest
                         del frames[match.b:match.b + match.size]
-                        cut_length += len(repeat)
-                    write_mp3_file(file, frames)
+                    cut_length += write_mp3_file(file, frames) or repeated_length * 0.13
             print('')  # new line after progress bar
         digest[file] = this_digest
         if cut_length:
-            toast += f'{file[:-4]}, {cut_length * 0.026:.0f}s\n'
+            toast += f'{file[:-4]}, {cut_length:.0f}s\n'
     return toast
 
 
@@ -100,13 +105,18 @@ def get_matches(prev_digest, matcher, bar):
             if max_cut > match.size > 38 * hash_size and match.size % hash_size == 0]
 
 
-def write_mp3_file(file: str, frames: list[bytes]) -> None:
+def write_mp3_file(file: str, frames: list[bytes]) -> float:
     """Rewrite an MP3 file."""
     if not test_mode:
+        original_length = MediaFile(file).length
         send2trash(file)  # don't just overwrite it in case something goes wrong!
+        # copy2(file, file + '.orig.mp3')
         open(file, 'wb').write(frame_start.join(frames))
+        return original_length - MediaFile(file).length
+    else:
+        return 0  # don't guess length in test mode
 
 
 if __name__ == '__main__':
-    test_mode = True
-    print(erase_trailers(only_known=False))
+    # test_mode = True
+    print(erase_trailers())
