@@ -75,6 +75,7 @@ def run_tasks():
         'update_gig_calendar': concerts_module,
         'find_new_releases': concerts_module,
         'log_crossings': lazy_import('mersey_gateway'),
+        'find_new_python_packages': lazy_import('package_updates'),
     }
 
     at_home = docs_folder is None  # no work documents
@@ -86,7 +87,6 @@ def run_tasks():
         page_changes_module = lazy_import('page_changes')
         osc_module = lazy_import('oracle_staff_check')
         task_dict |= {
-            'find_new_python_packages': lazy_import('package_updates'),
             'annual_leave_check': osc_module,
             'otl_submit': osc_module,
             'leave_cross_check': group_module,
