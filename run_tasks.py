@@ -19,6 +19,8 @@ start_time = datetime.now()
 from time import sleep
 from traceback import format_exc, extract_tb
 from platform import node
+if node() == 'eddie':
+    from crontab import CronTab
 
 import psutil
 import google_api  # pip install google-api-python-client
@@ -250,6 +252,12 @@ def run_tasks():
             update_cell(i + 2, get_column('Last result'), result)
 
         if node() == 'eddie':
+            # Schedule next run for given hour and minute in crontab
+            # Ignore date portion - if schedule missed, will happen again next day
+            cron = CronTab(user='ben')
+            job = next(cron.find_command('run_tasks'))
+            job.setall(next_run_time.time())  # just time portion
+            cron.write()
             break  # just run once on cron
 
         force_run = []  # only force run for first loop
