@@ -43,7 +43,7 @@ def get_usage_data(remove_incomplete_rows=True):
     return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
 
 
-async def get_usage_data_async(remove_incomplete_rows=True):
+async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | str | bool:
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -56,7 +56,7 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     new_data_row = fill_top_row + 2  # one-based when using update_cell function - this is the first empty row
     start_date = pandas.to_datetime(column_a[-1], dayfirst=True) + pandas.to_timedelta(1, 'day')
     if start_date >= today():  # no need to collect more data
-        return
+        return None
 
     sheet = google_api.spreadsheets.get(spreadsheetId=sheet_id).execute()
     grid_id = next(grid['properties']['sheetId']
@@ -80,7 +80,8 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    print(all_fuel_data)
+    for fuel_data in all_fuel_data:
+        print(repr(fuel_data).replace(' ... ', ' … '))  # get round pandas' terminal width bug
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     if min_size == 0:
@@ -115,14 +116,14 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     # Get the summary cell to go in a toast
     summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
-    if (forecast := get_regional_intensity()) is not None:  # will be None if this API call fails
-        for minmax in ('min', 'max'):
-            row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
-            gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
-            highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
-            summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                       f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
-
+    if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
+        return summary
+    for minmax in ('min', 'max'):
+        row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
+        gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
+        highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
+        summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
+                   f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
     return summary
 
 
@@ -356,12 +357,12 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(5, 'd')
-    # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
+    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
+    print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
     # print(get_temp_data())
