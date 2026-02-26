@@ -7,9 +7,10 @@ from platform import node
 
 import feedparser
 from natsort import natsorted
-from pushbullet import Pushbullet  # to show notifications
 
 import folders
+
+from pushbullet import Pushbullet  # to show notifications
 from pushbullet_api_key import api_key  # local file, keep secret!
 
 
