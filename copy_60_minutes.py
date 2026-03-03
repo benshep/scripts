@@ -343,11 +343,11 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
     # Allow some albums from the copied_already list back into the list
-    rescued = random.sample(tuple(copied_already), rescue_count)
-    print('Rescued:', *rescued, sep='\n' if rescue_count > 1 else ' ')
+    for _ in range(rescue_count):
+        rescued = copied_already.pop()
+        print('Rescued:', rescued)
     if not test_mode:
-        copied_already -= set(rescued)
-    open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
+        open(copy_log_file, 'w', encoding='utf-8').write('\n'.join(copied_already) + '\n')
     print(f'{len(copied_already)} albums in copied_already list')
     return copied_already
 
