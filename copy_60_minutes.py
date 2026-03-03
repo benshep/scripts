@@ -5,6 +5,7 @@ import re
 import tempfile
 import time
 from collections import Counter
+from contextlib import suppress
 from datetime import datetime, timedelta
 from difflib import get_close_matches
 from functools import reduce
@@ -298,7 +299,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                 folder_name = reduce(reducible_copy_album, copy_dict.items(), '')
                 folder_name_inc_length = f'{folder_name} [{total_length:.0f}]'
                 if not test_mode:
-                    os.rename(folder_name, folder_name_inc_length)
+                    with suppress(OSError):  # doesn't matter if an error occurs here
+                        os.rename(folder_name, folder_name_inc_length)
                 toast += f'✔ {folder_name_inc_length[11:]}\n'
                 if not image_filename:
                     for key, album in sorted(copy_dict.items(), reverse=True,
