@@ -17,6 +17,7 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 carbon_int_url = 'https://api.carbonintensity.org.uk'
 octopus_url = 'https://api.octopus.energy/v1'
 home_postcode = 'WA10'
+bars = "▁▂▃▄▅▆▇█"
 
 
 def today():
@@ -75,13 +76,22 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
 
     fill_requests = []
     data_titles = 'gas', 'electricity', 'carbon intensity'
+    max_title_len = max(len(title) for title in data_titles)
     all_fuel_data = await asyncio.gather(*[get_fuel_data(start_date, data_title) for data_title in data_titles])
     # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    for fuel_data in all_fuel_data:
-        print(repr(fuel_data).replace(' ... ', ' … '))  # get round pandas' terminal width bug
+    for title, fuel_data in zip(data_titles, all_fuel_data):
+        if len(fuel_data) > 0:
+            print(title.title().ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
+            vmax = fuel_data.values.max()
+            vmin = fuel_data.values.min()
+            idx = round((len(bars) - 1) * (fuel_data - vmin) / (vmax - vmin))
+            blocks = pandas.DataFrame.map(idx, lambda x: bars[int(x)])
+            for date, block_row, data_row in zip(fuel_data.index, blocks.values, fuel_data.values):
+                day_usage = f'{sum(data_row) / len(data_row):.0f} gCO₂e' if title == 'carbon intensity' else f'{sum(data_row):.1f} kWh'
+                print(str(date), ''.join(block_row), day_usage)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     if min_size == 0:
@@ -119,11 +129,11 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
         return summary
     for minmax in ('min', 'max'):
-        row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
-        gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
+        block_row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
+        gen_mix = pandas.DataFrame.from_dict(block_row['generationmix'])
         highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
-        summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                   f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+        summary += f"\n{minmax.title()}: {block_row['intensity.forecast']} gCO₂e, " \
+                   f"{block_row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
     return summary
 
 
@@ -357,12 +367,12 @@ def get_mix(start_time='now', postcode=home_postcode):
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=True))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
-    print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
+    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
+    # print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
     # print(get_temp_data())
