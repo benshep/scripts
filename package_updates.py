@@ -119,7 +119,7 @@ def pip_outdated() -> set[str]:
 
 def find_new_python_packages() -> str:
     """Return a list of new available packages, from conda, pip and chocolatey."""
-    pip_new = pip_outdated()
+    pip_new = pip_outdated() - {'certifi', 'pycparser'}  # updates usually fail for these
     conda_new = set()
     choco_new = ''
     if sys.platform == 'win32':
@@ -130,8 +130,8 @@ def find_new_python_packages() -> str:
             versions = [new_version, version]
             if versions != natsorted(versions):  # natural sort that puts e.g. 3.13.1 after 3.9.21
                 print(f'{name}: {new_version} available, got {version}')
-                if ('numpy' in name and new_version == '2.0.0') or name == 'certifi':
-                    continue  # numpy upgrades aren't working right now
+                if name == 'certifi':
+                    continue  # certifi upgrades aren't working right now
                 (pip_new if 'pypi' in build_channel else conda_new).add(name)
         choco_new = check_chocolatey_packages()
     return ''.join([
