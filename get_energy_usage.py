@@ -1,12 +1,12 @@
 import asyncio
 import json
 import urllib.parse
+from datetime import datetime
 from enum import IntEnum
 
 import aiohttp
-import pandas
 import requests
-from pandas import DataFrame, Timestamp
+import pandas
 from progress.bar import IncrementalBar
 
 import energy_credentials
@@ -20,27 +20,27 @@ home_postcode = 'WA10'
 bars = "▁▂▃▄▅▆▇█"
 
 
-def today():
+def today() -> pandas.Timestamp:
     """Return a datetime object representing the start of today."""
     return pandas.to_datetime('today').to_period('D').start_time  # - pandas.to_timedelta(3, 'd')
 
 
-def dmy(date, time=True):
+def dmy(date: datetime, time: bool = True):
     """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
     return date.strftime('%d/%m/%Y' + (' %H:%M' if time else ''))
 
 
-def ymd(date, time=False):
+def ymd(date: datetime, time: bool = False):
     """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM."""
     return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
 
-def ymdhm(date):
+def ymdhm(date: datetime):
     """Convert datetime into yyyymmddHHMM format."""
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data(remove_incomplete_rows=True):
+def get_usage_data(remove_incomplete_rows: bool = True) -> None | str | bool:
     return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
 
 
@@ -64,7 +64,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
                    for grid in sheet['sheets']
                    if grid['properties']['title'] == sheet_name)
 
-    def fill_request(start_column, column_count, row_count):
+    def fill_request(start_column: int, column_count: int, row_count: int):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
         # print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
         return {'autoFill': {'useAlternateSeries': False, 'sourceAndDestination': {
@@ -137,7 +137,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     return summary
 
 
-def fill_old_carbon_data():
+def fill_old_carbon_data() -> bool | None:
     """Fill in carbon data retrospectively."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -164,10 +164,10 @@ def fill_old_carbon_data():
 
         start_date += pandas.to_timedelta(14, 'd')
         new_data_row += 14
-        return
+        return None
 
 
-def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
+def get_fuel_data_n3rgy(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
@@ -186,7 +186,7 @@ def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
-async def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
+async def get_fuel_data(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
     """Use the Octopus API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
@@ -252,8 +252,8 @@ class RegionId(IntEnum):
     wales = 17
 
 
-def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postcode,
-                 remove_incomplete_rows: bool = True, do_pivot: bool = True, end: Timestamp | None = None) -> DataFrame:
+def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home_postcode,
+                 remove_incomplete_rows: bool = True, do_pivot: bool = True, end: pandas.Timestamp | None = None) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     :param start: date/time for the start of the period.
     :param end: date/time for the end of the period. A maximum of 14 days will be returned (API limit).
@@ -297,7 +297,7 @@ def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postco
         return pandas.concat([df['intensity'], gen_mix], axis=1)
 
 
-def get_json(url, retries=3):
+def get_json(url: str, retries: int = 3):
     """Attempt to fetch JSON data from a URL, retrying a number of times (default 3)."""
     attempt = 0
     while attempt < retries:
@@ -311,7 +311,7 @@ def get_json(url, retries=3):
     return json
 
 
-def get_regional_intensity(start_time='now', postcode=home_postcode):
+def get_regional_intensity(start_time: pandas.Timestamp | str = 'now', postcode: str = home_postcode) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     start_time = ymd(pandas.to_datetime(start_time), time=True)
     json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
@@ -323,7 +323,7 @@ def get_regional_intensity(start_time='now', postcode=home_postcode):
     return df
 
 
-def get_old_data_avg():
+def get_old_data_avg() -> None:
     """Get the two-week average of carbon data."""
     start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
     start_date = pandas.to_datetime('2025-01-01')
@@ -344,7 +344,7 @@ def get_old_data_avg():
         # return
 
 
-def get_regions_data_avg():
+def get_regions_data_avg() -> None:
     """Get the two-week average of carbon data for all regions."""
     start_date = pandas.to_datetime('2025-01-01')
     while start_date < today():
@@ -355,7 +355,7 @@ def get_regions_data_avg():
         start_date += pandas.to_timedelta(14, 'd')
 
 
-def get_mix(start_time='now', postcode=home_postcode):
+def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.DataFrame:
     """Return the regional energy mix for a 48h period."""
     data = get_regional_intensity(start_time, postcode)
     return pandas.DataFrame.from_dict([
