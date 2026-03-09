@@ -116,7 +116,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     new_dates = [[date] for date in dmy(pandas.to_datetime(fuel_data.index), False).tolist()]
     google_api.update_cells(sheet_id, sheet_name, update_range, new_dates)
     fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
-    fill_requests.append(fill_request(253, 4, fill_row_count))  # Octopus Tracker rates (IT:IW)
+    fill_requests.append(fill_request(254, 4, fill_row_count))  # Octopus Tracker rates (IU:IX)
     # Fill formulae from last populated row
     with IncrementalBar('Filling formulae in spreadsheet', max=len(fill_requests)) as bar:
         for request in fill_requests:
