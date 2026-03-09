@@ -1,7 +1,7 @@
 import asyncio
 import json
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import IntEnum
 
 import aiohttp
@@ -40,11 +40,11 @@ def ymdhm(date: datetime):
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data(remove_incomplete_rows: bool = True) -> None | str | bool:
+def get_usage_data(remove_incomplete_rows: bool = True) -> None | str | datetime:
     return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
 
 
-async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | str | bool:
+async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | str | datetime:
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -94,15 +94,16 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
                 print(str(date), ''.join(block_row), day_usage)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    tomorrow = datetime.now() + timedelta(days=1)
     if min_size == 0:
         empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
         print(f'No new {empty_sets} data received')
-        return False
+        return tomorrow
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
     # check all dates are the same
     if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
         print('Not all dates are identical in energy datasets')
-        return False  # postpone data entry
+        return tomorrow  # postpone data entry
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
