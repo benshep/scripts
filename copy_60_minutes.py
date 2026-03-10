@@ -18,7 +18,7 @@ import requests
 from progress.bar import Bar, IncrementalBar
 from send2trash import send2trash
 
-from folders import user_profile, music_folder
+from folders import music_folder, radio_folder
 from lastfm import lastfm
 from media import is_media_file, artist_title
 from pushbullet_api_key import api_key  # local file, keep secret!
@@ -339,7 +339,7 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
     copied_already = set()
     for name in os.listdir(music_folder):
         if name.startswith(base) and name.endswith(ext):
-            copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
+            copied_already |= set(open(name, encoding='utf-8').read().splitlines())
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
     # Allow some albums from the copied_already list back into the list
@@ -408,7 +408,8 @@ def get_subfolders() -> list[str]:
 def find_copy_folders() -> list[Folder]:
     """Look through the Radio folder to find folders named like '55-70 minutes x6'. Return a list of those folders."""
     extra_time = 0 if 4 <= datetime.now().month <= 10 else 5  # takes longer in winter!
-    radio_folder = os.path.join(user_profile, 'Radio')
+    if not os.path.exists(radio_folder):
+        return []  # doesn't exist on every computer
     os.chdir(radio_folder)
     folder_list = []
     for folder in os.listdir():
@@ -433,12 +434,15 @@ async def copy_60_minutes_async() -> str | datetime:
     if test_mode:
         profiler = Profiler(async_mode='enabled')
         profiler.start()
-    copy_folder_list = find_copy_folders()
+    tomorrow_morning = datetime.now().replace(hour=9, minute=0) + timedelta(days=1)
+    if not (copy_folder_list := find_copy_folders()):
+        print('No folders to copy into on this device')
+        return tomorrow_morning
     print(*copy_folder_list, sep='\n')
     toast, copy_folder_list, remove_count = await check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
-        return datetime.now().replace(hour=9, minute=0) + timedelta(days=1)  # try again 9am tomorrow
+        return tomorrow_morning
 
     os.chdir(music_folder)
     copied_already = read_copy_log(remove_count)
