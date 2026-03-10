@@ -15,6 +15,7 @@ from typing import NamedTuple
 import phrydy  # to get media data
 import pushbullet
 import requests
+from PIL import Image
 from progress.bar import Bar, IncrementalBar
 from send2trash import send2trash
 
@@ -195,14 +196,14 @@ async def copy_albums(copy_folder_list: list[Folder],
     base_folder = os.getcwd()  # in case of symlinks: base_folder != music_folder
     start_time = datetime.now()
     max_length_overall = max(copy_folder.max_length for copy_folder in copy_folder_list)
-    image_filename = ''
+    image_filenames = []
     for copy_folder in copy_folder_list:
         file_list = supplied_file_list.copy()  # reset file list since we remove from it for each copy_folder
         print('\n', copy_folder, sep='')
         min_length, max_length = copy_folder.min_length, copy_folder.max_length
         maybe_list: list[dict[AlbumKey, Album]] = []
         os.chdir(copy_folder.address)
-        to_copy = 1 if test_mode else copy_folder.min_count - len(get_subfolders())
+        to_copy = 2 if test_mode else copy_folder.min_count - len(get_subfolders())
         while to_copy > 0 and len(file_list) > 0:
             start_loop = datetime.now()
 
@@ -302,25 +303,49 @@ async def copy_albums(copy_folder_list: list[Folder],
                     with suppress(OSError):  # doesn't matter if an error occurs here
                         os.rename(folder_name, folder_name_inc_length)
                 toast += f'✔ {folder_name_inc_length[11:]}\n'
-                if not image_filename:
-                    for key, album in sorted(copy_dict.items(), reverse=True,
-                                             key=lambda item: sum(item[1].values())):
-                        # Check for embedded images in the tags of the first file
-                        media = await read_tags(list(album.keys())[0], key.folder)
-                        if media.art:
-                            _, image_filename = tempfile.mkstemp()
-                            open(image_filename, 'wb').write(media.art)
-                        else:
-                            # Otherwise, look in the folder
-                            image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
-                                                  if file.lower().endswith(('.png', '.jpg', '.jpeg'))), '')
-                        if image_filename:
-                            break
+                for key, album in sorted(copy_dict.items(), reverse=True,
+                                         key=lambda item: sum(item[1].values())):
+                    # Check for embedded images in the tags of the first file
+                    media = await read_tags(list(album.keys())[0], key.folder)
+                    if media.art:
+                        _, image_filename = tempfile.mkstemp()
+                        open(image_filename, 'wb').write(media.art)
+                    else:
+                        # Otherwise, look in the folder
+                        image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
+                                              if file.lower().endswith(('.png', '.jpg', '.jpeg'))
+                                               and not file.lower().startswith(('cd.', 'back.'))), '')
+                    if image_filename:
+                        image_filenames.append(image_filename)
+                        continue
+
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
     scan_percentage = 100 * files_scanned / len(file_list)
     print(f'\nRead {files_scanned} files ({scan_percentage:.1f}% of total)'
           f' in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
+
+    if image_filenames:
+        thumbnail_size = 300
+        show_count = min(len(image_filenames), 4)
+        # gallery 1x1, 2x1, 3x1, 2x2 - don't need more than this
+        n_across = [0, 1, 2, 3, 2][show_count]
+        n_down = [0, 1, 1, 1, 2][show_count]
+        x, y = 0, 0
+        gallery = Image.new('RGB', (thumbnail_size * n_across, thumbnail_size * n_down))
+        for image_filename in image_filenames[:show_count]:
+            with suppress(OSError):  # e.g. PIL.UnidentifiedImageError
+                gallery.paste(Image.open(image_filename).resize((thumbnail_size, thumbnail_size)),
+                                (x * thumbnail_size, y * thumbnail_size))
+                if image_filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                    os.remove(image_filename)
+            x += 1
+            if x == n_across:
+                x = 0
+                y += 1
+        _, image_filename = tempfile.mkstemp(suffix='.jpg')
+        gallery.save(image_filename)
+
     return toast, image_filename
 
 
@@ -428,12 +453,12 @@ def copy_60_minutes() -> str | tuple[str, str] | datetime:
     return asyncio.run(copy_60_minutes_async())
 
 
-async def copy_60_minutes_async() -> str | datetime:
+async def copy_60_minutes_async() -> str | tuple[str, str] | datetime:
     """Find albums of the specified length to copy into subfolders of the Radio folder.
     The idea is to have whole albums to listen to on my bike commute to work."""
-    if test_mode:
-        profiler = Profiler(async_mode='enabled')
-        profiler.start()
+    # if test_mode:
+    #     profiler = Profiler(async_mode='enabled')
+    #     profiler.start()
     tomorrow_morning = datetime.now().replace(hour=9, minute=0) + timedelta(days=1)
     if not (copy_folder_list := find_copy_folders()):
         print('No folders to copy into on this device')
@@ -448,9 +473,9 @@ async def copy_60_minutes_async() -> str | datetime:
     copied_already = read_copy_log(remove_count)
     copy_toast, image_filename = await copy_albums(copy_folder_list, get_album_files(), copied_already)
     toast += copy_toast
-    if test_mode:
-        profiler.stop()
-        profiler.open_in_browser()
+    # if test_mode:
+    #     profiler.stop()
+    #     profiler.open_in_browser()
     return (toast, image_filename) if image_filename else toast
 
 
@@ -534,5 +559,10 @@ if __name__ == '__main__':
     # print(*scan_music_folder().items(), sep='\n')
     # print(datetime.now() - then)
     test_mode = True
-    from pyinstrument import Profiler
-    print(copy_60_minutes())
+    # from pyinstrument import Profiler
+    result = copy_60_minutes()
+    if isinstance(result, tuple):
+        print(*result, sep='\n')
+        os.startfile(result[1])
+    else:
+        print(result)
