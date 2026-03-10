@@ -90,4 +90,4 @@ def find_folders() -> list[str]:
 
 
 if __name__ == '__main__':
-    pick_random_cd(node() == 'DLAST0023')
+    pick_random_cd(node().startswith('DLAST'))

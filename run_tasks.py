@@ -201,10 +201,10 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
-            next_task_time = min(next_task_time, next_run_time)
             match return_value:
-                case False:  # postpone until next scheduled run
+                case False:  # try again soon (but not on this device)
                     result = 'Postponed'
+                    next_run_time = now
                 case datetime():  # postpone until specific time
                     result = 'Postponed'
                     next_run_time = return_value
@@ -243,7 +243,8 @@ def run_tasks():
                     print(result)  # the exception traceback
                     result = f'Failure {fail_count}'
 
-            next_task_time = min(next_task_time, next_run_time)
+            if return_value != False:  # False is 'not this device' result: ignore new run time (=now)
+                next_task_time = min(next_task_time, next_run_time)
             if next_run != 'on change':  # scheduled task: set next run time
                 next_run_str = next_run_time.strftime(time_format)
                 print('Next run time:', next_run_str)

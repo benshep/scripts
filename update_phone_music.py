@@ -19,18 +19,20 @@ test_mode = False  # don't change anything!
 
 def update_phone_music() -> str | tuple[str, str]:
     """Deleted listened-to radio files."""
-    scrobbles = get_scrobbled_titles(lastfm.get_user('ning'))
     start_time = datetime.now()
-    toast = asyncio.run(check_radio_files(scrobbles))
+    toast = asyncio.run(check_radio_files())
     print(datetime.now() - start_time)
     return toast
 
 
-async def check_radio_files(scrobbled_titles: list[str]) -> str | tuple[str, str]:
+async def check_radio_files() -> str | tuple[str, str]:
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
+    if not os.path.exists(folders.radio_folder):
+        return ''  # doesn't exist on every computer
     scrobbled_radio = []  # list of played radio files to delete
     first_unheard = ''  # first file in the list that hasn't been played
     extra_played_count = 0  # more files that have been played, after one that apparently hasn't
+    scrobbled_titles = get_scrobbled_titles(lastfm.get_user('ning'))
     os.chdir(folders.radio_folder)
     radio_files = os.listdir()
     print(f'{len(radio_files)} files in folder')

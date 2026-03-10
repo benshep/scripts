@@ -1,12 +1,12 @@
 import asyncio
 import json
 import urllib.parse
+from datetime import datetime, timedelta
 from enum import IntEnum
 
 import aiohttp
-import pandas
 import requests
-from pandas import DataFrame, Timestamp
+import pandas
 from progress.bar import IncrementalBar
 
 import energy_credentials
@@ -17,33 +17,34 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 carbon_int_url = 'https://api.carbonintensity.org.uk'
 octopus_url = 'https://api.octopus.energy/v1'
 home_postcode = 'WA10'
+bars = "▁▂▃▄▅▆▇█"
 
 
-def today():
+def today() -> pandas.Timestamp:
     """Return a datetime object representing the start of today."""
     return pandas.to_datetime('today').to_period('D').start_time  # - pandas.to_timedelta(3, 'd')
 
 
-def dmy(date, time=True):
+def dmy(date: datetime, time: bool = True):
     """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
     return date.strftime('%d/%m/%Y' + (' %H:%M' if time else ''))
 
 
-def ymd(date, time=False):
+def ymd(date: datetime, time: bool = False):
     """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM."""
     return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
 
-def ymdhm(date):
+def ymdhm(date: datetime):
     """Convert datetime into yyyymmddHHMM format."""
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data(remove_incomplete_rows=True):
+def get_usage_data(remove_incomplete_rows: bool = True) -> None | str | datetime:
     return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
 
 
-async def get_usage_data_async(remove_incomplete_rows=True):
+async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | str | datetime:
     """Write data into the 'hourly' sheet with a new row for each day and columns for hours."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -56,14 +57,14 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     new_data_row = fill_top_row + 2  # one-based when using update_cell function - this is the first empty row
     start_date = pandas.to_datetime(column_a[-1], dayfirst=True) + pandas.to_timedelta(1, 'day')
     if start_date >= today():  # no need to collect more data
-        return
+        return None
 
     sheet = google_api.spreadsheets.get(spreadsheetId=sheet_id).execute()
     grid_id = next(grid['properties']['sheetId']
                    for grid in sheet['sheets']
                    if grid['properties']['title'] == sheet_name)
 
-    def fill_request(start_column, column_count, row_count):
+    def fill_request(start_column: int, column_count: int, row_count: int):
         """Define a 'fill down' action starting at the given column index (zero-based)."""
         # print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
         return {'autoFill': {'useAlternateSeries': False, 'sourceAndDestination': {
@@ -75,23 +76,34 @@ async def get_usage_data_async(remove_incomplete_rows=True):
 
     fill_requests = []
     data_titles = 'gas', 'electricity', 'carbon intensity'
+    max_title_len = max(len(title) for title in data_titles)
     all_fuel_data = await asyncio.gather(*[get_fuel_data(start_date, data_title) for data_title in data_titles])
     # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    print(all_fuel_data)
+    for title, fuel_data in zip(data_titles, all_fuel_data):
+        if len(fuel_data) > 0:
+            print(title.title().ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
+            vmax = fuel_data.values.max()
+            vmin = fuel_data.values.min()
+            idx = round((len(bars) - 1) * (fuel_data - vmin) / (vmax - vmin))
+            blocks = pandas.DataFrame.map(idx, lambda x: bars[int(x)])
+            for date, block_row, data_row in zip(fuel_data.index, blocks.values, fuel_data.values):
+                day_usage = f'{sum(data_row) / len(data_row):.0f} gCO₂e' if title == 'carbon intensity' else f'{sum(data_row):.1f} kWh'
+                print(str(date), ''.join(block_row), day_usage)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    tomorrow = datetime.now() + timedelta(days=1)
     if min_size == 0:
         empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
         print(f'No new {empty_sets} data received')
-        return False
+        return tomorrow
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
     # check all dates are the same
     if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
         print('Not all dates are identical in energy datasets')
-        return False  # postpone data entry
+        return tomorrow  # postpone data entry
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
@@ -105,7 +117,7 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     new_dates = [[date] for date in dmy(pandas.to_datetime(fuel_data.index), False).tolist()]
     google_api.update_cells(sheet_id, sheet_name, update_range, new_dates)
     fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
-    fill_requests.append(fill_request(253, 4, fill_row_count))  # Octopus Tracker rates (IT:IW)
+    fill_requests.append(fill_request(254, 4, fill_row_count))  # Octopus Tracker rates (IU:IX)
     # Fill formulae from last populated row
     with IncrementalBar('Filling formulae in spreadsheet', max=len(fill_requests)) as bar:
         for request in fill_requests:
@@ -115,18 +127,18 @@ async def get_usage_data_async(remove_incomplete_rows=True):
     # Get the summary cell to go in a toast
     summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
-    if (forecast := get_regional_intensity()) is not None:  # will be None if this API call fails
-        for minmax in ('min', 'max'):
-            row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
-            gen_mix = pandas.DataFrame.from_dict(row['generationmix'])
-            highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
-            summary += f"\n{minmax.title()}: {row['intensity.forecast']} gCO₂e, " \
-                       f"{row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
-
+    if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
+        return summary
+    for minmax in ('min', 'max'):
+        block_row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
+        gen_mix = pandas.DataFrame.from_dict(block_row['generationmix'])
+        highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
+        summary += f"\n{minmax.title()}: {block_row['intensity.forecast']} gCO₂e, " \
+                   f"{block_row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
     return summary
 
 
-def fill_old_carbon_data():
+def fill_old_carbon_data() -> bool | None:
     """Fill in carbon data retrospectively."""
     sheet_id = '1f6RRSEl0mOdQ6Mj4an_bmNWkE8tKDjofjMjKeWL9pY8'  # ⚡️ Energy bills
     sheet_name = 'Hourly'
@@ -153,10 +165,10 @@ def fill_old_carbon_data():
 
         start_date += pandas.to_timedelta(14, 'd')
         new_data_row += 14
-        return
+        return None
 
 
-def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
+def get_fuel_data_n3rgy(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
@@ -175,7 +187,7 @@ def get_fuel_data_n3rgy(start_date, fuel, remove_incomplete_rows=True):
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
-async def get_fuel_data(start_date, fuel, remove_incomplete_rows=True):
+async def get_fuel_data(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
     """Use the Octopus API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
@@ -241,8 +253,8 @@ class RegionId(IntEnum):
     wales = 17
 
 
-def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postcode,
-                 remove_incomplete_rows: bool = True, do_pivot: bool = True, end: Timestamp | None = None) -> DataFrame:
+def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home_postcode,
+                 remove_incomplete_rows: bool = True, do_pivot: bool = True, end: pandas.Timestamp | None = None) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     :param start: date/time for the start of the period.
     :param end: date/time for the end of the period. A maximum of 14 days will be returned (API limit).
@@ -286,7 +298,7 @@ def get_co2_data(start: Timestamp, geography: str | int | RegionId = home_postco
         return pandas.concat([df['intensity'], gen_mix], axis=1)
 
 
-def get_json(url, retries=3):
+def get_json(url: str, retries: int = 3):
     """Attempt to fetch JSON data from a URL, retrying a number of times (default 3)."""
     attempt = 0
     while attempt < retries:
@@ -300,7 +312,7 @@ def get_json(url, retries=3):
     return json
 
 
-def get_regional_intensity(start_time='now', postcode=home_postcode):
+def get_regional_intensity(start_time: pandas.Timestamp | str = 'now', postcode: str = home_postcode) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     start_time = ymd(pandas.to_datetime(start_time), time=True)
     json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
@@ -312,7 +324,7 @@ def get_regional_intensity(start_time='now', postcode=home_postcode):
     return df
 
 
-def get_old_data_avg():
+def get_old_data_avg() -> None:
     """Get the two-week average of carbon data."""
     start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
     start_date = pandas.to_datetime('2025-01-01')
@@ -333,7 +345,7 @@ def get_old_data_avg():
         # return
 
 
-def get_regions_data_avg():
+def get_regions_data_avg() -> None:
     """Get the two-week average of carbon data for all regions."""
     start_date = pandas.to_datetime('2025-01-01')
     while start_date < today():
@@ -344,7 +356,7 @@ def get_regions_data_avg():
         start_date += pandas.to_timedelta(14, 'd')
 
 
-def get_mix(start_time='now', postcode=home_postcode):
+def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.DataFrame:
     """Return the regional energy mix for a 48h period."""
     data = get_regional_intensity(start_time, postcode)
     return pandas.DataFrame.from_dict([
@@ -362,6 +374,6 @@ if __name__ == '__main__':
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('d').start_time - pandas.to_timedelta(5, 'd')
-    # print(get_fuel_data(start, 'gas', remove_incomplete_rows=False))
+    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
+    # print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
     # print(get_temp_data())

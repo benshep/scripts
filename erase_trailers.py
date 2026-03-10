@@ -30,6 +30,8 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(
     # and use audioread to get the PCM data
 
     toast = ''
+    if not os.path.exists(radio_folder):
+        return ''  # doesn't exist on every computer
     os.chdir(radio_folder)
     repeat_file = 'repeats.txt'
     digest = {}  # store each file's digest in a dict
