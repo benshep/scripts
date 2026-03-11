@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import warnings
+from contextlib import suppress
 from threading import Thread
 from types import ModuleType
 from typing import Callable
@@ -225,7 +226,8 @@ def run_tasks():
                     with open(filename, 'rb') as file_handle:
                         response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
                     if filename.startswith(tempfile.gettempdir()):  # clean up temp files
-                        os.remove(filename)
+                        with suppress(PermissionError):
+                            os.remove(filename)
                     pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
