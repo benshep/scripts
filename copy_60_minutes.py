@@ -203,7 +203,7 @@ async def copy_albums(copy_folder_list: list[Folder],
         min_length, max_length = copy_folder.min_length, copy_folder.max_length
         maybe_list: list[dict[AlbumKey, Album]] = []
         os.chdir(copy_folder.address)
-        to_copy = 2 if test_mode else copy_folder.min_count - len(get_subfolders())
+        to_copy = 1 if test_mode else copy_folder.min_count - len(get_subfolders())
         while to_copy > 0 and len(file_list) > 0:
             start_loop = datetime.now()
 
@@ -231,6 +231,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                     album = {'length': max_length_overall, 'keys': set()}  # to track total length across get_tags calls
                     get_tags_tasks = [task_group.create_task(get_tags(chosen_folder, file, album, copied_already, bar))
                                       for file in folder_files]
+                if bar:  # erase progress bar
+                    print('\r' + ' ' * bar._max_width, end='\r')
                 folder_tags = filter(None, [task.result() for task in get_tags_tasks])
                 # add everything in folder to albums list for later reference
                 for tags in folder_tags:
@@ -289,7 +291,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                 print(f'✔️ Got enough, {to_copy=}')
 
         if to_copy:  # ran out of albums
-            return toast + f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
+            toast += f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
+            return toast, ''
 
         # copy from copy_list
         for copy_dict in maybe_list:
@@ -321,32 +324,33 @@ async def copy_albums(copy_folder_list: list[Folder],
 
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
-    scan_percentage = 100 * files_scanned / len(file_list)
+    scan_percentage = 100 * files_scanned / len(supplied_file_list)
     print(f'\nRead {files_scanned} files ({scan_percentage:.1f}% of total)'
           f' in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
 
-    if image_filenames:
-        thumbnail_size = 300
-        show_count = min(len(image_filenames), 4)
-        # gallery 1x1, 2x1, 3x1, 2x2 - don't need more than this
-        n_across = [0, 1, 2, 3, 2][show_count]
-        n_down = [0, 1, 1, 1, 2][show_count]
-        x, y = 0, 0
-        gallery = Image.new('RGB', (thumbnail_size * n_across, thumbnail_size * n_down))
-        for image_filename in image_filenames[:show_count]:
-            with suppress(OSError):  # e.g. PIL.UnidentifiedImageError
-                gallery.paste(Image.open(image_filename).resize((thumbnail_size, thumbnail_size)),
-                                (x * thumbnail_size, y * thumbnail_size))
-                if image_filename.startswith(tempfile.gettempdir()):  # clean up temp files
-                    os.remove(image_filename)
-            x += 1
-            if x == n_across:
-                x = 0
-                y += 1
-        _, image_filename = tempfile.mkstemp(suffix='.jpg')
-        gallery.save(image_filename)
+    if not image_filenames:
+        return toast, ''
 
-    return toast, image_filename
+    thumbnail_size = 300
+    show_count = min(len(image_filenames), 4)
+    # gallery 1x1, 2x1, 3x1, 2x2 - don't need more than this
+    n_across = [0, 1, 2, 3, 2][show_count]
+    n_down = [0, 1, 1, 1, 2][show_count]
+    x, y = 0, 0
+    gallery = Image.new('RGB', (thumbnail_size * n_across, thumbnail_size * n_down))
+    for image_filename in image_filenames[:show_count]:
+        with suppress(OSError):  # e.g. PIL.UnidentifiedImageError
+            gallery.paste(Image.open(image_filename).resize((thumbnail_size, thumbnail_size)),
+                            (x * thumbnail_size, y * thumbnail_size))
+            if image_filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                os.remove(image_filename)
+        x += 1
+        if x == n_across:
+            x = 0
+            y += 1
+    _, output_image = tempfile.mkstemp(suffix='.jpg')
+    gallery.save(output_image)
+    return toast, output_image
 
 
 def list_lengths(lengths: list[float]) -> str:
@@ -442,10 +446,12 @@ def find_copy_folders() -> list[Folder]:
             continue
         if not (match := re.match(r'(?P<min_length>\d+)-(?P<max_length>\d+) minutes x(?P<count>\d+)', folder)):
             continue
-        folder_list.append(Folder(os.path.join(radio_folder, folder),
-                                  int(match['min_length']) + extra_time, int(match['max_length']) + extra_time,
-                                  int(match['count'])
-                                  ))
+        min_length = int(match['min_length'])
+        max_length = int(match['max_length'])
+        count = int(match['count'])
+        time_to_add = extra_time if min_length >= 30 else 0
+        folder_name = os.path.join(radio_folder, folder)
+        folder_list.append(Folder(folder_name, min_length + time_to_add, max_length + time_to_add, count))
     return folder_list
 
 
