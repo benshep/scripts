@@ -25,6 +25,7 @@ from media import is_media_file, artist_title
 from pushbullet_api_key import api_key  # local file, keep secret!
 from tools import remove_bad_chars
 
+music_folder = os.path.realpath(music_folder)  # fix issues with symlinks
 copy_log_file = 'copied_already.txt'
 Album = dict[str, float]
 
