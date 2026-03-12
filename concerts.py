@@ -141,7 +141,7 @@ def update_gig_calendar():
     for artist_name, shows in get_upcoming_shows().items():
         for show in shows:
             show_title = show['title']
-            print('Adding', show_title)
+            print(show_title, end='')
             # https://developers.google.com/calendar/api/v3/reference/events/insert
             # characters allowed in the ID are those used in base32hex encoding, i.e. lowercase letters a-v and digits 0-9, see section 3.1.2 in RFC2938
             # the length of the ID must be between 5 and 1024 characters
@@ -160,13 +160,13 @@ def update_gig_calendar():
             for my_event in my_events:
                 # we store the id to remember it
                 if show_id in (my_event.get('id', ''), my_event.get('description', '')):
-                    print('- already found via id')
+                    print(' ✔️ in calendar (id match)')
                     break
                 # but sometimes Ticketmaster returns several identical events - try to eliminate these
                 my_event_date = datetime.fromisoformat(my_event['start']['dateTime']).date()
                 # print(my_event['summary'], my_event_date)
                 if artist_name in my_event['summary'] and my_event_date == show['date'].date():
-                    print('- already found via artist and date')
+                    print(' ✔️ in calendar (artist + date match)')
                     break
             else:  # not found
                 toast += f'New show: {show_title}, {format_time(show["date"])}\n'
@@ -179,10 +179,12 @@ def update_gig_calendar():
                     else:
                         raise error
                 my_events.append(event)
+                print(' ⭐ new show')
                 continue
             # date changed?
             start = datetime.fromisoformat(my_event['start']['dateTime'])
             if start.date() != show['date'].date():
+                print(' ➡️ new date')
                 toast += f'Updated {show_title} to {format_time(show["date"])} (was {format_time(start)})\n'
                 google_calendar.update(calendarId=calendar_id, eventId=my_event['id'], body=event).execute()
     return toast
