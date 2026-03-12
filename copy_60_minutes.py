@@ -292,7 +292,7 @@ async def copy_albums(copy_folder_list: list[Folder],
 
         if to_copy:  # ran out of albums
             toast += f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
-            return toast, ''
+            continue
 
         # copy from copy_list
         for copy_dict in maybe_list:
