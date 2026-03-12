@@ -358,7 +358,7 @@ def list_lengths(lengths: list[float]) -> str:
     return ', '.join([f'{l:.1f}' for l in filter(None, lengths)])
 
 
-def read_copy_log(rescue_count: int = 0) -> set[str]:
+def read_copy_log(max_size: int = 700) -> set[str]:
     """Read the copied_already.txt log file and output a set of lines in the file.
     Each line consists of a relative file path, album artist and title, separated by tabs.
     Path separators in the file are always stored as '/'.
@@ -372,7 +372,7 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
     # Allow some albums from the copied_already list back into the list
-    for _ in range(rescue_count):
+    while len(copied_already) > max_size:
         rescued = copied_already.pop()
         print('Rescued:', rescued)
     if not test_mode:
@@ -381,7 +381,7 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
     return copied_already
 
 
-async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder], int]:
+async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder]]:
     """Go through each copy folder in turn. Delete subfolders from it if they've been played."""
     scrobbles = get_scrobbles()
     toast = ''
@@ -391,7 +391,6 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
         # delete any that have been played
         subfolders = get_subfolders()
         to_delete = []
-        remove_count = 0
         for subfolder in subfolders:
             print(subfolder, end=' ')
             os.chdir(subfolder)
@@ -408,7 +407,6 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
                     if played_count >= file_count / 2:
                         print(f'▶️  played at least {played_count}/{file_count} tracks')
                         to_delete.append(subfolder)
-                        remove_count += subfolder.count(';') + 1
                         break
             else:
                 print('⛔  not played')
@@ -420,7 +418,7 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
             subfolders.remove(subfolder)
         if test_mode or len(subfolders) < copy_folder.min_count:  # need more albums in this folder
             folders_to_fill.append(copy_folder)
-    return toast, folders_to_fill, remove_count
+    return toast, folders_to_fill
 
 
 def get_scrobbles() -> list[str]:
@@ -470,13 +468,13 @@ async def copy_60_minutes_async() -> str | tuple[str, str] | datetime:
         print('No folders to copy into on this device')
         return tomorrow_morning
     print(*copy_folder_list, sep='\n')
-    toast, copy_folder_list, remove_count = await check_folder_list(copy_folder_list)
+    toast, copy_folder_list = await check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
         return tomorrow_morning
 
     os.chdir(music_folder)
-    copied_already = read_copy_log(remove_count)
+    copied_already = read_copy_log()
     copy_toast, image_filename = await copy_albums(copy_folder_list, get_album_files(), copied_already)
     toast += copy_toast
     # if test_mode:
