@@ -252,7 +252,7 @@ def run_tasks():
                 next_task_time = min(next_task_time, next_run_time)
             if next_run != 'on change':  # scheduled task: set next run time
                 next_run_str = next_run_time.strftime(time_format)
-                print('Next run time:', next_run_str)
+                print('Next run time for this task:', next_run_str)
                 update_cell(i + 2, get_column('Next run'), next_run_str)
             print(result)
             update_cell(i + 2, get_column('Last result'), result)
@@ -260,6 +260,8 @@ def run_tasks():
         if node() == 'eddie':
             # Schedule next run for given hour and minute in crontab
             # Ignore date portion - if schedule missed, will happen again next day
+            next_time_str = next_task_time.strftime("%H:%M")
+            print(f'Next scheduled run: {next_time_str}')
             cron = CronTab(user='ben')
             job = next(cron.find_command('run_tasks'))
             job.setall(next_task_time.time())  # just time portion
