@@ -104,7 +104,7 @@ def run_command(command: str | list[str]) -> list[str]:
     try:
         output = subprocess.check_output(command, timeout=60)
     except subprocess.TimeoutExpired as timed_out:
-        output = timed_out.output
+        output = timed_out.output or b''
     if sys.platform == 'win32':
         return output.decode('cp1252', 'ignore').split('\r\n')
     else:
