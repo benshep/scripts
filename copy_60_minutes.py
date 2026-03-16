@@ -15,6 +15,7 @@ from typing import NamedTuple
 import phrydy  # to get media data
 import pushbullet
 import requests
+from PIL import Image
 from progress.bar import Bar, IncrementalBar
 from send2trash import send2trash
 
@@ -24,6 +25,7 @@ from media import is_media_file, artist_title
 from pushbullet_api_key import api_key  # local file, keep secret!
 from tools import remove_bad_chars
 
+music_folder = os.path.realpath(music_folder)  # fix issues with symlinks
 copy_log_file = 'copied_already.txt'
 Album = dict[str, float]
 
@@ -195,7 +197,7 @@ async def copy_albums(copy_folder_list: list[Folder],
     base_folder = os.getcwd()  # in case of symlinks: base_folder != music_folder
     start_time = datetime.now()
     max_length_overall = max(copy_folder.max_length for copy_folder in copy_folder_list)
-    image_filename = ''
+    image_filenames = []
     for copy_folder in copy_folder_list:
         file_list = supplied_file_list.copy()  # reset file list since we remove from it for each copy_folder
         print('\n', copy_folder, sep='')
@@ -230,6 +232,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                     album = {'length': max_length_overall, 'keys': set()}  # to track total length across get_tags calls
                     get_tags_tasks = [task_group.create_task(get_tags(chosen_folder, file, album, copied_already, bar))
                                       for file in folder_files]
+                if bar:  # erase progress bar
+                    print('\r' + ' ' * bar._max_width, end='\r')
                 folder_tags = filter(None, [task.result() for task in get_tags_tasks])
                 # add everything in folder to albums list for later reference
                 for tags in folder_tags:
@@ -288,7 +292,8 @@ async def copy_albums(copy_folder_list: list[Folder],
                 print(f'✔️ Got enough, {to_copy=}')
 
         if to_copy:  # ran out of albums
-            return toast + f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
+            toast += f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
+            continue
 
         # copy from copy_list
         for copy_dict in maybe_list:
@@ -302,26 +307,51 @@ async def copy_albums(copy_folder_list: list[Folder],
                     with suppress(OSError):  # doesn't matter if an error occurs here
                         os.rename(folder_name, folder_name_inc_length)
                 toast += f'✔ {folder_name_inc_length[11:]}\n'
-                if not image_filename:
-                    for key, album in sorted(copy_dict.items(), reverse=True,
-                                             key=lambda item: sum(item[1].values())):
-                        # Check for embedded images in the tags of the first file
-                        media = await read_tags(list(album.keys())[0], key.folder)
-                        if media.art:
-                            _, image_filename = tempfile.mkstemp()
-                            open(image_filename, 'wb').write(media.art)
-                        else:
-                            # Otherwise, look in the folder
-                            image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
-                                                  if file.lower().endswith(('.png', '.jpg', '.jpeg'))), '')
-                        if image_filename:
-                            break
+                for key, album in sorted(copy_dict.items(), reverse=True,
+                                         key=lambda item: sum(item[1].values())):
+                    # Check for embedded images in the tags of the first file
+                    media = await read_tags(list(album.keys())[0], key.folder)
+                    if media.art:
+                        _, image_filename = tempfile.mkstemp()
+                        open(image_filename, 'wb').write(media.art)
+                    else:
+                        # Otherwise, look in the folder
+                        image_filename = next((os.path.join(key.folder, file) for file in os.listdir(key.folder)
+                                              if file.lower().endswith(('.png', '.jpg', '.jpeg'))
+                                               and not file.lower().startswith(('cd.', 'back.'))), '')
+                    if image_filename:
+                        image_filenames.append(image_filename)
+                        continue
+
     files_scanned = sum(len(album) for album in scanned_albums.values())
     elapsed_seconds = (datetime.now() - start_time).total_seconds()
-    scan_percentage = 100 * files_scanned / len(file_list)
+    scan_percentage = 100 * files_scanned / len(supplied_file_list)
     print(f'\nRead {files_scanned} files ({scan_percentage:.1f}% of total)'
           f' in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
-    return toast, image_filename
+
+    if not image_filenames:
+        return toast, ''
+
+    thumbnail_size = 300
+    show_count = min(len(image_filenames), 4)
+    # gallery 1x1, 2x1, 3x1, 2x2 - don't need more than this
+    n_across = [0, 1, 2, 3, 2][show_count]
+    n_down = [0, 1, 1, 1, 2][show_count]
+    x, y = 0, 0
+    gallery = Image.new('RGB', (thumbnail_size * n_across, thumbnail_size * n_down))
+    for image_filename in image_filenames[:show_count]:
+        with suppress(OSError):  # e.g. PIL.UnidentifiedImageError
+            gallery.paste(Image.open(image_filename).resize((thumbnail_size, thumbnail_size)),
+                            (x * thumbnail_size, y * thumbnail_size))
+            if image_filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                os.remove(image_filename)
+        x += 1
+        if x == n_across:
+            x = 0
+            y += 1
+    _, output_image = tempfile.mkstemp(suffix='.jpg')
+    gallery.save(output_image)
+    return toast, output_image
 
 
 def list_lengths(lengths: list[float]) -> str:
@@ -329,7 +359,7 @@ def list_lengths(lengths: list[float]) -> str:
     return ', '.join([f'{l:.1f}' for l in filter(None, lengths)])
 
 
-def read_copy_log(rescue_count: int = 0) -> set[str]:
+def read_copy_log(max_size: int = 700) -> set[str]:
     """Read the copied_already.txt log file and output a set of lines in the file.
     Each line consists of a relative file path, album artist and title, separated by tabs.
     Path separators in the file are always stored as '/'.
@@ -339,11 +369,11 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
     copied_already = set()
     for name in os.listdir(music_folder):
         if name.startswith(base) and name.endswith(ext):
-            copied_already |= set(open(name, encoding='utf-8').read().split('\n'))
+            copied_already |= set(open(name, encoding='utf-8').read().splitlines())
             if name != copy_log_file:  # get rid of other copies and keep the original
                 send2trash(name)
     # Allow some albums from the copied_already list back into the list
-    for _ in range(rescue_count):
+    while len(copied_already) > max_size:
         rescued = copied_already.pop()
         print('Rescued:', rescued)
     if not test_mode:
@@ -352,7 +382,7 @@ def read_copy_log(rescue_count: int = 0) -> set[str]:
     return copied_already
 
 
-async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder], int]:
+async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[Folder]]:
     """Go through each copy folder in turn. Delete subfolders from it if they've been played."""
     scrobbles = get_scrobbles()
     toast = ''
@@ -362,7 +392,6 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
         # delete any that have been played
         subfolders = get_subfolders()
         to_delete = []
-        remove_count = 0
         for subfolder in subfolders:
             print(subfolder, end=' ')
             os.chdir(subfolder)
@@ -379,7 +408,6 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
                     if played_count >= file_count / 2:
                         print(f'▶️  played at least {played_count}/{file_count} tracks')
                         to_delete.append(subfolder)
-                        remove_count += subfolder.count(';') + 1
                         break
             else:
                 print('⛔  not played')
@@ -391,7 +419,7 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
             subfolders.remove(subfolder)
         if test_mode or len(subfolders) < copy_folder.min_count:  # need more albums in this folder
             folders_to_fill.append(copy_folder)
-    return toast, folders_to_fill, remove_count
+    return toast, folders_to_fill
 
 
 def get_scrobbles() -> list[str]:
@@ -417,10 +445,12 @@ def find_copy_folders() -> list[Folder]:
             continue
         if not (match := re.match(r'(?P<min_length>\d+)-(?P<max_length>\d+) minutes x(?P<count>\d+)', folder)):
             continue
-        folder_list.append(Folder(os.path.join(radio_folder, folder),
-                                  int(match['min_length']) + extra_time, int(match['max_length']) + extra_time,
-                                  int(match['count'])
-                                  ))
+        min_length = int(match['min_length'])
+        max_length = int(match['max_length'])
+        count = int(match['count'])
+        time_to_add = extra_time if min_length >= 30 else 0
+        folder_name = os.path.join(radio_folder, folder)
+        folder_list.append(Folder(folder_name, min_length + time_to_add, max_length + time_to_add, count))
     return folder_list
 
 
@@ -428,29 +458,29 @@ def copy_60_minutes() -> str | tuple[str, str] | datetime:
     return asyncio.run(copy_60_minutes_async())
 
 
-async def copy_60_minutes_async() -> str | datetime:
+async def copy_60_minutes_async() -> str | tuple[str, str] | datetime:
     """Find albums of the specified length to copy into subfolders of the Radio folder.
     The idea is to have whole albums to listen to on my bike commute to work."""
-    if test_mode:
-        profiler = Profiler(async_mode='enabled')
-        profiler.start()
+    # if test_mode:
+    #     profiler = Profiler(async_mode='enabled')
+    #     profiler.start()
     tomorrow_morning = datetime.now().replace(hour=9, minute=0) + timedelta(days=1)
     if not (copy_folder_list := find_copy_folders()):
         print('No folders to copy into on this device')
         return tomorrow_morning
     print(*copy_folder_list, sep='\n')
-    toast, copy_folder_list, remove_count = await check_folder_list(copy_folder_list)
+    toast, copy_folder_list = await check_folder_list(copy_folder_list)
     if not copy_folder_list:
         print('Not ready to copy new album.')
         return tomorrow_morning
 
     os.chdir(music_folder)
-    copied_already = read_copy_log(remove_count)
+    copied_already = read_copy_log()
     copy_toast, image_filename = await copy_albums(copy_folder_list, get_album_files(), copied_already)
     toast += copy_toast
-    if test_mode:
-        profiler.stop()
-        profiler.open_in_browser()
+    # if test_mode:
+    #     profiler.stop()
+    #     profiler.open_in_browser()
     return (toast, image_filename) if image_filename else toast
 
 
@@ -534,5 +564,10 @@ if __name__ == '__main__':
     # print(*scan_music_folder().items(), sep='\n')
     # print(datetime.now() - then)
     test_mode = True
-    from pyinstrument import Profiler
-    print(copy_60_minutes())
+    # from pyinstrument import Profiler
+    result = copy_60_minutes()
+    if isinstance(result, tuple):
+        print(*result, sep='\n')
+        os.startfile(result[1])
+    else:
+        print(result)

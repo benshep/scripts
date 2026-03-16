@@ -1,13 +1,16 @@
 import asyncio
 import json
 import urllib.parse
+from contextlib import suppress
 from datetime import datetime, timedelta
 from enum import IntEnum
 
 import aiohttp
-import requests
 import pandas
-from progress.bar import IncrementalBar
+import requests
+from progress.bar import Bar
+with suppress(ImportError):
+    from rich import print
 
 import energy_credentials
 import google_api
@@ -17,7 +20,8 @@ base_url = 'https://consumer-api.data.n3rgy.com'
 carbon_int_url = 'https://api.carbonintensity.org.uk'
 octopus_url = 'https://api.octopus.energy/v1'
 home_postcode = 'WA10'
-bars = "▁▂▃▄▅▆▇█"
+rich_output = print.__module__ == 'rich'
+bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
 
 
 def today() -> pandas.Timestamp:
@@ -75,14 +79,14 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
                                             }, 'dimension': 'ROWS', 'fillLength': row_count}}}
 
     fill_requests = []
-    data_titles = 'gas', 'electricity', 'carbon intensity'
+    data_titles = {'gas': '#feac0a', 'electricity': '#00f0ff', 'carbon intensity': '#20AF24'}
     max_title_len = max(len(title) for title in data_titles)
     all_fuel_data = await asyncio.gather(*[get_fuel_data(start_date, data_title) for data_title in data_titles])
     # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    for title, fuel_data in zip(data_titles, all_fuel_data):
+    for (title, colour), fuel_data in zip(data_titles.items(), all_fuel_data):
         if len(fuel_data) > 0:
             print(title.title().ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
             vmax = fuel_data.values.max()
@@ -91,7 +95,10 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
             blocks = pandas.DataFrame.map(idx, lambda x: bars[int(x)])
             for date, block_row, data_row in zip(fuel_data.index, blocks.values, fuel_data.values):
                 day_usage = f'{sum(data_row) / len(data_row):.0f} gCO₂e' if title == 'carbon intensity' else f'{sum(data_row):.1f} kWh'
-                print(str(date), ''.join(block_row), day_usage)
+                sparkline = ''.join(block_row)
+                if rich_output:
+                    sparkline = f'[{colour}]{sparkline}[/{colour}]'
+                print(date.strftime('%a %d %b'), sparkline, day_usage)
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     tomorrow = datetime.now() + timedelta(days=1)
@@ -119,11 +126,9 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     fill_requests.append(fill_request(1, 1, fill_row_count))  # BST helper column
     fill_requests.append(fill_request(254, 4, fill_row_count))  # Octopus Tracker rates (IU:IX)
     # Fill formulae from last populated row
-    with IncrementalBar('Filling formulae in spreadsheet', max=len(fill_requests)) as bar:
-        for request in fill_requests:
-            bar.next()
-            request_body = {'requests': [[request]]}
-            google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
+    for request in Bar('Filling formulae in spreadsheet', max=len(fill_requests)).iter(fill_requests):
+        request_body = {'requests': [[request]]}
+        google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
     # Get the summary cell to go in a toast
     summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
