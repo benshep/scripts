@@ -3,7 +3,9 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tempfile
 import warnings
+from contextlib import suppress
 from threading import Thread
 from types import ModuleType
 from typing import Callable
@@ -223,6 +225,9 @@ def run_tasks():
                     print(filename)
                     with open(filename, 'rb') as file_handle:
                         response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
+                    if filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                        with suppress(PermissionError):
+                            os.remove(filename)
                     pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
@@ -257,7 +262,7 @@ def run_tasks():
             # Ignore date portion - if schedule missed, will happen again next day
             cron = CronTab(user='ben')
             job = next(cron.find_command('run_tasks'))
-            job.setall(next_run_time.time())  # just time portion
+            job.setall(next_task_time.time())  # just time portion
             cron.write()
             break  # just run once on cron
 
