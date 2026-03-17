@@ -252,25 +252,23 @@ def run_tasks():
                 next_task_time = min(next_task_time, next_run_time)
             if next_run != 'on change':  # scheduled task: set next run time
                 next_run_str = next_run_time.strftime(time_format)
-                print('Next run time:', next_run_str)
+                print('Next run time for this task:', next_run_str)
                 update_cell(i + 2, get_column('Next run'), next_run_str)
             print(result)
             update_cell(i + 2, get_column('Last result'), result)
 
+        next_time_str = next_task_time.strftime("%H:%M")
+        print(f'Next scheduled run: {next_time_str}')
         if node() == 'eddie':
             # Schedule next run for given hour and minute in crontab
             # Ignore date portion - if schedule missed, will happen again next day
             cron = CronTab(user='ben')
             job = next(cron.find_command('run_tasks'))
-            job.setall(next_run_time.time())  # just time portion
+            job.setall(next_task_time.time())  # just time portion
             cron.write()
             break  # just run once on cron
 
         force_run = []  # only force run for first loop
-        # Sleep up to 5 minutes more than needed to avoid race conditions (two computers trying to do task at same time)
-        next_task_time += timedelta(seconds=hash(node()) % 300)
-        next_time_str = next_task_time.strftime("%H:%M")
-        print(f'Waiting until {next_time_str}')
         set_window_title(f'{title_toast} ⌛️ {next_time_str}')
         while datetime.now() < next_task_time:
             sleep(300)
