@@ -268,7 +268,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
     :param geography: Can be a postcode or one of the region IDs. Leave geography blank to get national data.
     :param remove_incomplete_rows: Specify False to fill in -1 values where there are data gaps."""
     if end is None:
-        end = today() - pandas.to_timedelta(1, 'day')
+        end = today()  # - pandas.to_timedelta(1, 'day')
     end = min(end, start + pandas.to_timedelta(14, 'day'))  # can't get more than 14 days at a time
     if end <= start:
         return pandas.DataFrame()
@@ -373,12 +373,12 @@ def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.Da
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
-    # print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
+    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
+    print(asyncio.run(get_fuel_data(start, 'carbon intensity', remove_incomplete_rows=False)))
     # print(get_temp_data())
