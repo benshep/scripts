@@ -3,9 +3,10 @@ import json
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
 import aiohttp
+import numpy
 import pandas
 import requests
 from progress.bar import Bar
@@ -88,9 +89,25 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
+    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
+    min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    tomorrow = datetime.now() + timedelta(days=1)
+    if min_size == 0:
+        empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
+        print(f'No new {empty_sets} data received')
+        return tomorrow
+
+    all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
+
+    # check all dates are the same
+    if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
+        print('Not all dates are identical in energy datasets')
+        return tomorrow  # postpone data entry
+
+    # pretty-print nice bar graphs to the console
     for (title, colour), fuel_data in zip(data_titles.items(), all_fuel_data):
         if len(fuel_data) > 0:
-            print(title.title().ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
+            print(title.ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
             vmax = fuel_data.values.max()
             vmin = fuel_data.values.min()
             idx = round((len(bars) - 1) * (fuel_data - vmin) / (vmax - vmin))
@@ -101,18 +118,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
                 if rich_output:
                     sparkline = f'[{colour}]{sparkline}[/{colour}]'
                 print(date.strftime('%a %d %b'), sparkline, day_usage)
-    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
-    min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
-    tomorrow = datetime.now() + timedelta(days=1)
-    if min_size == 0:
-        empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
-        print(f'No new {empty_sets} data received')
-        return tomorrow
-    all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
-    # check all dates are the same
-    if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
-        print('Not all dates are identical in energy datasets')
-        return tomorrow  # postpone data entry
+
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
@@ -238,6 +244,11 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     #     data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time,
     #                               values='consumption')
     df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
+    # zero values at the end indicate no reading received yet: chop these
+    last_nonzero_idx = df['Reading'].ne(0).cumsum().idxmax()
+    mask = (df.index > last_nonzero_idx) & (df['Reading'] == 0)
+    pandas.options.mode.chained_assignment = None  # disable SettingWithCopyWarning
+    df['Reading'][mask] = numpy.nan
     df.index = pandas.to_datetime(df['Timestamp'], unit='s') + half_hour  # turn into *end* times
     pivot = pandas.pivot_table(df, index=df.index.date, columns=df.index.time, values='Reading')
     return pivot if pivot.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
@@ -418,6 +429,7 @@ async def glowmarkt_call(path: str) -> dict:
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:
             response_json = await response.json()
+    # print(response_json)
     return response_json
 
 
@@ -436,19 +448,23 @@ def dont_quote_colons(string: str, safe: str = '/', encoding=None, errors=None):
     return urllib.parse.quote(string, safe + ':', encoding, errors)
 
 
-async def get_readings(start_date: pandas.Timestamp, fuel: str) -> dict:
+class ReadingPeriod(StrEnum):
+    """The aggregation level in which the data is to be returned (ISO 8601)."""
+    minute = 'PT1M' # only electricity
+    half_hour = 'PT30M'
+    hour = 'PT1H'
+    day = 'P1D'
+    week = 'P1W'  # starting Monday
+    month = 'P1M'
+    year = 'P1Y'
+
+
+async def get_readings(start_date: pandas.Timestamp, fuel: str,
+                       period: ReadingPeriod = ReadingPeriod.half_hour) -> dict:
     """Request information about a virtual entity's resources from the Glowmarkt API."""
     params = {'from': ymd(start_date, time=True),
               'to': ymd(today(), time=True),
-              # period The aggregation level in which the data is to be returned (ISO 8601).
-              # • PT1M (minute level, only elec)
-              # • PT30M (30 minute level)
-              # • PT1H (hour level)
-              # • P1D (day level)
-              # • P1W (week level, starting Monday)
-              # • P1M (month level)
-              # • P1Y (year level)
-              'period': 'PT30M',
+              'period': period,
               'offset': 0,  # to UTC, e.g. BST = -60, EST = +300
               'function': 'sum'  # sum = total reading per period
               }
@@ -458,16 +474,16 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str) -> dict:
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=True))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
+    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
     # print(asyncio.run(get_fuel_data(start, 'electricity', remove_incomplete_rows=False)))
     # print(get_fuel_data_n3rgy(start, 'gas', remove_incomplete_rows=False))
     # print(get_temp_data())
-    # print(get_virtual_entities())
-    # print(get_resources(energy_credentials.glowmarkt["entity"]))
-    print(asyncio.run(get_readings(start, 'gas')))
+    # print(asyncio.run(get_virtual_entities()))
+    # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
+    # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
