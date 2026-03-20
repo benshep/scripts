@@ -12,9 +12,11 @@ from typing import Callable
 
 import cryptography.utils
 import filetype
+import requests.exceptions
 from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
+warnings.filterwarnings('ignore', category=requests.exceptions.RequestsDependencyWarning)
 from datetime import datetime, timedelta
 
 start_time = datetime.now()
@@ -153,6 +155,7 @@ def run_tasks():
             if properties.get(location, False) != 'TRUE':
                 continue
 
+            icon = properties.get('Icon', '')
             function_name = properties.get('Function name')
             function = getattr(task_dict[function_name], function_name)
             parameters = properties.get('Parameters', '')
@@ -194,7 +197,6 @@ def run_tasks():
             update_cell(i + 2, get_column('Machine'), node())
             update_cell(i + 2, get_column('Last result'), 'Running')
 
-            icon = properties.get('Icon', '')
             set_window_title(f'{icon} {function_name}')
             print('\n', last_triggered, function_name, parameters)
             try:
