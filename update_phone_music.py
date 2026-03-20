@@ -59,6 +59,7 @@ async def check_radio_files() -> str | tuple[str, str]:
             continue  # not a date-based filename
 
         file_count += 1
+        index_prefix = str(file_count).rjust(digits) + '. '
         # min_date = min_date or file_date  # set to first one
         # weeks = (file_date - min_date).days // 7
 
@@ -79,7 +80,7 @@ async def check_radio_files() -> str | tuple[str, str]:
             else:
                 extra_played_count += 1  # don't delete, but flag as played for later
         elif not first_unheard:
-            print(f'{file_count: {digits}d}. ❌ {track_title}')
+            print(f'{index_prefix}❌ {track_title}')
             first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
         elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
             bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
@@ -89,13 +90,13 @@ async def check_radio_files() -> str | tuple[str, str]:
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
                 or (tags.title.lower() == tags.title and '_' in tags.title and ' ' not in tags.title):
-            print(f'{file_count: {digits}d}. Set {file} title to {file[11:-4]}')
+            print(f'{index_prefix}Set {file} title to {file[11:-4]}')
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
 
         if not tags.albumartist:
             if artist := tags.artist or which_artist.get(tags.album):
-                print(f'{file_count: {digits}d}. Set {file} album artist to {artist}' +
+                print(f'{index_prefix}Set {file} album artist to {artist}' +
                       (' (guessed from album)' if tags.artist is None else ''))
                 tags.artist = artist
                 tags.albumartist = artist
@@ -105,10 +106,10 @@ async def check_radio_files() -> str | tuple[str, str]:
         if tags.album in which_artist:
             if which_artist[tags.album] is not None and which_artist[tags.album] != tags.artist:
                 which_artist[tags.album] = None  # mismatch
-                print(f'{file_count: {digits}d}. (multiple artists) - {tags.album}')
+                print(f'{index_prefix}(multiple artists) - {tags.album}')
         else:  # not seen this album before
             which_artist[tags.album] = tags.artist
-            print(f'{file_count: {digits}d}. {tags.artist} - {tags.album}')
+            print(f'{index_prefix}{tags.artist} - {tags.album}')
             # is it a new album fairly far down the list?
             if ('(bumped from ' not in file  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
