@@ -3,12 +3,14 @@ import json
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 
 import aiohttp
+import numpy
 import pandas
 import requests
 from progress.bar import Bar
+
 with suppress(ImportError):
     from rich import print
 
@@ -19,6 +21,7 @@ from openweather import api_key
 base_url = 'https://consumer-api.data.n3rgy.com'
 carbon_int_url = 'https://api.carbonintensity.org.uk'
 octopus_url = 'https://api.octopus.energy/v1'
+glowmarkt_url = 'https://api.glowmarkt.com/api/v0-1/'
 home_postcode = 'WA10'
 rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
@@ -35,8 +38,8 @@ def dmy(date: datetime, time: bool = True):
 
 
 def ymd(date: datetime, time: bool = False):
-    """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM."""
-    return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
+    """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM:SS."""
+    return date.strftime('%Y-%m-%d' + ('T%H:%M:00' if time else ''))
 
 
 def ymdhm(date: datetime):
@@ -72,11 +75,11 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
         """Define a 'fill down' action starting at the given column index (zero-based)."""
         # print(f'Fill columns {start_column=}, {fill_top_row=}, {row_count=}')
         return {'autoFill': {'useAlternateSeries': False, 'sourceAndDestination': {
-                                 'source': {'sheetId': grid_id, 'startRowIndex': fill_top_row,
-                                            'endRowIndex': fill_top_row + 1,  # half-open
-                                            'startColumnIndex': start_column,
-                                            'endColumnIndex': start_column + column_count,
-                                            }, 'dimension': 'ROWS', 'fillLength': row_count}}}
+            'source': {'sheetId': grid_id, 'startRowIndex': fill_top_row,
+                       'endRowIndex': fill_top_row + 1,  # half-open
+                       'startColumnIndex': start_column,
+                       'endColumnIndex': start_column + column_count,
+                       }, 'dimension': 'ROWS', 'fillLength': row_count}}}
 
     fill_requests = []
     data_titles = {'gas': '#feac0a', 'electricity': '#00f0ff', 'carbon intensity': '#20AF24'}
@@ -86,9 +89,25 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
+    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
+    min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
+    tomorrow = datetime.now() + timedelta(days=1)
+    if min_size == 0:
+        empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
+        print(f'No new {empty_sets} data received')
+        return tomorrow
+
+    all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
+
+    # check all dates are the same
+    if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
+        print('Not all dates are identical in energy datasets')
+        return tomorrow  # postpone data entry
+
+    # pretty-print nice bar graphs to the console
     for (title, colour), fuel_data in zip(data_titles.items(), all_fuel_data):
         if len(fuel_data) > 0:
-            print(title.title().ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
+            print(title.ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
             vmax = fuel_data.values.max()
             vmin = fuel_data.values.min()
             idx = round((len(bars) - 1) * (fuel_data - vmin) / (vmax - vmin))
@@ -99,18 +118,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
                 if rich_output:
                     sparkline = f'[{colour}]{sparkline}[/{colour}]'
                 print(date.strftime('%a %d %b'), sparkline, day_usage)
-    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
-    min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
-    tomorrow = datetime.now() + timedelta(days=1)
-    if min_size == 0:
-        empty_sets = ', '.join(title for title, data in zip(data_titles, all_fuel_data) if len(data) == 0)
-        print(f'No new {empty_sets} data received')
-        return tomorrow
-    all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
-    # check all dates are the same
-    if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:
-        print('Not all dates are identical in energy datasets')
-        return tomorrow  # postpone data entry
+
     for fuel, fuel_data in zip(data_titles, all_fuel_data):
         fuel_column = columns.index(fuel.title()) + 1
         last_row = new_data_row + len(fuel_data) - 1
@@ -173,7 +181,8 @@ def fill_old_carbon_data() -> bool | None:
         return None
 
 
-def get_fuel_data_n3rgy(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
+def get_fuel_data_n3rgy(start_date: pandas.Timestamp, fuel: str,
+                        remove_incomplete_rows: bool = True) -> pandas.DataFrame:
     """Use the n3rgy API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
@@ -192,8 +201,9 @@ def get_fuel_data_n3rgy(start_date: pandas.Timestamp, fuel: str, remove_incomple
     return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
-async def get_fuel_data(start_date: pandas.Timestamp, fuel: str, remove_incomplete_rows: bool = True) -> pandas.DataFrame:
-    """Use the Octopus API to get kWh data for gas or electricity."""
+async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
+                        remove_incomplete_rows: bool = True) -> pandas.DataFrame:
+    """Use the Glowmarkt API to get kWh data for gas or electricity."""
     print(f'Fetching {fuel} data beginning {dmy(start_date)}')
     if 'carbon intensity' in fuel:
         return get_co2_data(start_date, remove_incomplete_rows=remove_incomplete_rows)
@@ -203,21 +213,45 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str, remove_incomple
     half_hour = pandas.to_timedelta(30, 'min')
     start_date -= half_hour
     end_date = today() - half_hour
-    params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True),
-              'period_to': ymd(end_date, True), 'order_by': 'period'}
-    url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
-                    energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(params)
+    # if use_n3rgy:
+    #     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
+    #     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
+    #     auth = aiohttp.BasicAuth(energy_credentials.mac_address, '')
+    #     record_path = 'values'
+    # else:  # Octopus
+    #     params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True) + 'Z',
+    #               'period_to': ymd(end_date, True) + 'Z', 'order_by': 'period'}
+    #     url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
+    #                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(
+    #         params)
+    #     auth = aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')
+    #     record_path = 'results'
     # print(url)
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, auth=aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')) as response:
-            response_json = await response.json()
-    # print(json)
-    if response_json['count'] == 0:  # no results
-        return []
-    df = pandas.json_normalize(response_json, record_path='results')
-    df.interval_end = pandas.to_datetime(df.interval_end, utc=True)
-    data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time, values='consumption')
-    return data if data.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
+    # async with aiohttp.ClientSession() as session:
+    #     async with session.get(url, auth=auth) as response:
+    #         response_json = await response.json()
+    response_json = await get_readings(start_date, fuel)
+    # print(response_json)
+    data = response_json['data']  # array of [timestamp, reading]
+    if not data:  # response_json['count'] == 0:  # no results
+        return pandas.DataFrame()
+    # df = pandas.json_normalize(response_json, record_path=record_path)
+    # if use_n3rgy:
+    #     df.timestamp = pandas.to_datetime(df.timestamp)
+    #     data = pandas.pivot_table(df, index=df.timestamp.dt.date, columns=df.timestamp.dt.time, values='value')
+    # else:
+    #     df.interval_end = pandas.to_datetime(df.interval_end, utc=True)
+    #     data = pandas.pivot_table(df, index=df.interval_end.dt.date, columns=df.interval_end.dt.time,
+    #                               values='consumption')
+    df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
+    # zero values at the end indicate no reading received yet: chop these
+    last_nonzero_idx = df['Reading'].ne(0).cumsum().idxmax()
+    mask = (df.index > last_nonzero_idx) & (df['Reading'] == 0)
+    pandas.options.mode.chained_assignment = None  # disable SettingWithCopyWarning
+    df['Reading'][mask] = numpy.nan
+    df.index = pandas.to_datetime(df['Timestamp'], unit='s') + half_hour  # turn into *end* times
+    pivot = pandas.pivot_table(df, index=df.index.date, columns=df.index.time, values='Reading')
+    return pivot if pivot.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
 
 
 def get_temp_data() -> dict[str, str]:
@@ -259,7 +293,8 @@ class RegionId(IntEnum):
 
 
 def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home_postcode,
-                 remove_incomplete_rows: bool = True, do_pivot: bool = True, end: pandas.Timestamp | None = None) -> pandas.DataFrame:
+                 remove_incomplete_rows: bool = True, do_pivot: bool = True,
+                 end: pandas.Timestamp | None = None) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
     :param start: date/time for the start of the period.
     :param end: date/time for the end of the period. A maximum of 14 days will be returned (API limit).
@@ -268,7 +303,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
     :param geography: Can be a postcode or one of the region IDs. Leave geography blank to get national data.
     :param remove_incomplete_rows: Specify False to fill in -1 values where there are data gaps."""
     if end is None:
-        end = today() - pandas.to_timedelta(1, 'day')
+        end = today()  # - pandas.to_timedelta(1, 'day')
     end = min(end, start + pandas.to_timedelta(14, 'day'))  # can't get more than 14 days at a time
     if end <= start:
         return pandas.DataFrame()
@@ -277,7 +312,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
         suffix = f'/postcode/{geography}' if isinstance(geography, str) else f'/regionid/{geography}'
     else:
         area, suffix = '', ''
-    url = f'{carbon_int_url}/{area}intensity/{ymd(start, time=True)}/{ymd(end, time=True)}{suffix}'
+    url = f'{carbon_int_url}/{area}intensity/{ymd(start, time=True)}Z/{ymd(end, time=True)}Z{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
@@ -317,10 +352,11 @@ def get_json(url: str, retries: int = 3):
     return json
 
 
-def get_regional_intensity(start_time: pandas.Timestamp | str = 'now', postcode: str = home_postcode) -> pandas.DataFrame:
+def get_regional_intensity(start_time: pandas.Timestamp | str = 'now',
+                           postcode: str = home_postcode) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch the regional CO₂ intensity forecast."""
     start_time = ymd(pandas.to_datetime(start_time), time=True)
-    json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}/fw48h/postcode/{postcode}')
+    json = get_json(f'{carbon_int_url}/regional/intensity/{start_time}Z/fw48h/postcode/{postcode}')
     try:
         df = pandas.json_normalize(json, record_path=['data', 'data'])  # path is data.data for regional
     except KeyError:  # problem with JSON, maybe forecasts not working?
@@ -372,6 +408,71 @@ def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.Da
         zip(data['to'], data['intensity.forecast'], data['generationmix'])])
 
 
+def refresh_glowmarkt_token() -> str:
+    """Authenticate with the Glowmarkt API and return a valid token."""
+    url = glowmarkt_url + 'auth'
+    headers = {'Content-Type': 'application/json',
+               'applicationId': energy_credentials.glowmarkt['applicationId']}
+    credentials = energy_credentials.glowmarkt['auth']  # username and password
+    response = requests.post(url, json=credentials, headers=headers)
+    return response.json()['token']
+
+
+async def glowmarkt_call(path: str) -> dict:
+    """Request information from the Glowmarkt API."""
+    url = glowmarkt_url + path
+    # print(url)
+    headers = {'Content-Type': 'application/json',
+               'applicationId': energy_credentials.glowmarkt['applicationId'],
+               'token': energy_credentials.glowmarkt['token']}
+    # response = requests.get(url, headers=headers)
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            response_json = await response.json()
+    # print(response_json)
+    return response_json
+
+
+async def get_virtual_entities() -> dict:
+    """Request virtual entities from the Glowmarkt API."""
+    return await glowmarkt_call('virtualentity')
+
+
+async def get_resources(entity_id: str) -> dict:
+    """Request information about a virtual entity's resources from the Glowmarkt API."""
+    return await glowmarkt_call(f'virtualentity/{entity_id}/resources')
+
+
+def dont_quote_colons(string: str, safe: str = '/', encoding=None, errors=None):
+    """Quote a string in a URL, but the colon character is marked as 'safe' and won't be quoted."""
+    return urllib.parse.quote(string, safe + ':', encoding, errors)
+
+
+class ReadingPeriod(StrEnum):
+    """The aggregation level in which the data is to be returned (ISO 8601)."""
+    minute = 'PT1M' # only electricity
+    half_hour = 'PT30M'
+    hour = 'PT1H'
+    day = 'P1D'
+    week = 'P1W'  # starting Monday
+    month = 'P1M'
+    year = 'P1Y'
+
+
+async def get_readings(start_date: pandas.Timestamp, fuel: str,
+                       period: ReadingPeriod = ReadingPeriod.half_hour) -> dict:
+    """Request information about a virtual entity's resources from the Glowmarkt API."""
+    params = {'from': ymd(start_date, time=True),
+              'to': ymd(today(), time=True),
+              'period': period,
+              'offset': 0,  # to UTC, e.g. BST = -60, EST = +300
+              'function': 'sum'  # sum = total reading per period
+              }
+    resource_id = energy_credentials.glowmarkt[f'{fuel} consumption']
+    query = urllib.parse.urlencode(params, quote_via=dont_quote_colons)
+    return await glowmarkt_call(f'resource/{resource_id}/readings?{query}')
+
+
 if __name__ == '__main__':
     print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
@@ -379,6 +480,10 @@ if __name__ == '__main__':
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(5, 'D')
-    # print(asyncio.run(get_fuel_data(start, 'gas', remove_incomplete_rows=False)))
+    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
+    # print(asyncio.run(get_fuel_data(start, 'electricity', remove_incomplete_rows=False)))
+    # print(get_fuel_data_n3rgy(start, 'gas', remove_incomplete_rows=False))
     # print(get_temp_data())
+    # print(asyncio.run(get_virtual_entities()))
+    # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
+    # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))

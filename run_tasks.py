@@ -12,9 +12,11 @@ from typing import Callable
 
 import cryptography.utils
 import filetype
+import requests.exceptions
 from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
+warnings.filterwarnings('ignore', category=requests.exceptions.RequestsDependencyWarning)
 from datetime import datetime, timedelta
 
 start_time = datetime.now()
@@ -135,6 +137,7 @@ def run_tasks():
         assert headers == column_names
         min_period = min(float(row[period_col]) for row in data)
         next_task_time = datetime.now() + timedelta(days=7)  # set a long time off, reduce as we go through task list
+        next_task_name = 'task check'
         battery = psutil.sensors_battery()
         if battery is not None and not battery.power_plugged:
             print('No tasks will run on battery power. Closing.')
@@ -152,6 +155,7 @@ def run_tasks():
             if properties.get(location, False) != 'TRUE':
                 continue
 
+            icon = properties.get('Icon', '')
             function_name = properties.get('Function name')
             function = getattr(task_dict[function_name], function_name)
             parameters = properties.get('Parameters', '')
@@ -180,7 +184,9 @@ def run_tasks():
                 last_triggered = now.strftime(time_format)
                 next_run_time = datetime.strptime(next_run, time_format)
             if next_run_time > now and last_result in ('Success', 'Postponed') and function_name not in force_run:
-                next_task_time = min(next_task_time, next_run_time)
+                if next_run_time < next_task_time:
+                    next_task_time = next_run_time
+                    next_task_name = f'{icon} {function_name}'
                 continue
 
             if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
@@ -191,7 +197,6 @@ def run_tasks():
             update_cell(i + 2, get_column('Machine'), node())
             update_cell(i + 2, get_column('Last result'), 'Running')
 
-            icon = properties.get('Icon', '')
             set_window_title(f'{icon} {function_name}')
             print('\n', last_triggered, function_name, parameters)
             try:
@@ -248,8 +253,10 @@ def run_tasks():
                     print(result)  # the exception traceback
                     result = f'Failure {fail_count}'
 
-            if return_value != False:  # False is 'not this device' result: ignore new run time (=now)
-                next_task_time = min(next_task_time, next_run_time)
+            # False is 'not this device' result: ignore new run time (=now)
+            if return_value != False and next_run_time < next_task_time:
+                next_task_time = next_run_time
+                next_task_name = f'{icon} {function_name}'
             if next_run != 'on change':  # scheduled task: set next run time
                 next_run_str = next_run_time.strftime(time_format)
                 print('Next run time for this task:', next_run_str)
@@ -258,7 +265,7 @@ def run_tasks():
             update_cell(i + 2, get_column('Last result'), result)
 
         next_time_str = next_task_time.strftime("%H:%M")
-        print(f'Next scheduled run: {next_time_str}')
+        print(f'Next scheduled run: {next_task_name} at {next_time_str}')
         if node() == 'eddie':
             # Schedule next run for given hour and minute in crontab
             # Ignore date portion - if schedule missed, will happen again next day
