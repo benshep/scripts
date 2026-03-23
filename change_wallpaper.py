@@ -259,6 +259,8 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
 
         if target == 'lockscreen':  # save as lockscreen filename
+            # registry key to disable changing this:
+            # HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization
             os.chdir(wallpaper_dir)
             canvas.save('00.jpg')
             canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
