@@ -12,6 +12,7 @@ from typing import Callable
 
 import cryptography.utils
 import filetype
+import requests.adapters
 import requests.exceptions
 from rpyc import ThreadedServer
 
@@ -25,6 +26,8 @@ from traceback import format_exc, extract_tb
 from platform import node
 if node() == 'eddie':
     from crontab import CronTab
+if sys.platform == 'win32':
+    import win11toast
 
 import psutil
 import google_api  # pip install google-api-python-client
@@ -122,6 +125,8 @@ def run_tasks():
     time_format = "%d/%m/%Y %H:%M"
     period_col = column_names.index('Period')
     pushbullet = Pushbullet(api_key)
+    # try adding some retry logic - sometimes push_note fails
+    pushbullet._session.mount('https://', requests.adapters.HTTPAdapter(max_retries=5))
 
     title_toast = ''
     # first argument: comma-separated list of functions to run (because they were modified)
@@ -208,6 +213,7 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
+            toast_title = f'{icon} {function_name}'
             match return_value:
                 case False:  # try again soon (but not on this device)
                     result = 'Postponed'
@@ -221,19 +227,29 @@ def run_tasks():
                     result = 'Success'
                     print(return_value)
                     if len(return_value) >= 15:  # toast for long messages, otherwise title bar
-                        pushbullet.push_note(f'{icon} {function_name}', return_value)
+                        try:
+                            pushbullet.push_note(toast_title, return_value)
+                        except requests.exceptions.ReadTimeout:
+                            if sys.platform == 'win32':
+                                # try a local notification instead
+                                win11toast.notify(title=toast_title, body=return_value, duration='long')
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
                 case (str() as toast, str() as filename):  # success with toast and file (e.g. image)
                     result = 'Success'
                     print(toast)
                     print(filename)
-                    with open(filename, 'rb') as file_handle:
-                        response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
-                    if filename.startswith(tempfile.gettempdir()):  # clean up temp files
-                        with suppress(PermissionError):
-                            os.remove(filename)
-                    pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
+                    try:
+                        with open(filename, 'rb') as file_handle:
+                            response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
+                        if filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                            with suppress(PermissionError):
+                                os.remove(filename)
+                        pushbullet.push_file(title=toast_title, body=toast, **response)
+                    except requests.exceptions.ReadTimeout:
+                        if sys.platform == 'win32':
+                            # try a local notification instead
+                            win11toast.notify(title=toast_title, body=toast, image=filename, duration='long')
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
