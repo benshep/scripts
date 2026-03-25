@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -473,17 +474,41 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
     return await glowmarkt_call(f'resource/{resource_id}/readings?{query}')
 
 
-def get_live_generation(source: str = 'Wind') -> str:
+def get_live_generation(source: str | None = None) -> str:
     """Fetch the live generation data for a given fuel.
-    :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear"""
+    :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
     url = 'https://www.energydashboard.co.uk/api/latest/generation'
     response = requests.get(url)
     data = response.json()
-    total = data['fiveMinuteData']['generationValues'][source]['total']
+    generation_values = data['fiveMinuteData']['generationValues']
+    highest_gw = 0
+    biggest_source = ''
+    terminal_width, _ = os.get_terminal_size()
+    sparkline = ''
+    colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
+               'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow'}
+    output = []
+    for source_name, info in generation_values.items():
+        width = int(info['percentage'] * terminal_width / 100)
+        change_colour = rich_output and source_name in colours
+        bar = source_name.ljust(width, ' ' if rich_output else '*')[:width]
+        if change_colour:
+            colour = colours[source_name]
+            bar = f'[black on {colour}]{bar}[/black on {colour}]'
+        sparkline += bar
+        if total := info['total']:
+            output.append(f'{source_name} {total} GW')
+            if total > highest_gw:
+                highest_gw = total
+                biggest_source = source_name
+    print(*output, sep=', ')
+    print(sparkline)
+    source = source or biggest_source
+    total = generation_values[source]['total']
     records = {'wind': 23825, 'solar': 14035, 'gas': 27868, 'nuclear': 9342, 'coal': 26044}
     broken = source.lower() in records and total > records[source.lower()]
     label = '🏆 ' if broken else ''
-    return f'{label}{total} GW'
+    return f'{source} {label}{total} GW'
 
 
 def get_generation_records() -> dict[str, int]:
@@ -494,7 +519,7 @@ def get_generation_records() -> dict[str, int]:
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -507,3 +532,4 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
+    print(get_live_generation())
