@@ -78,6 +78,7 @@ def run_tasks():
         'copy_60_minutes': lazy_import('copy_60_minutes'),
         'get_youtube_playlists': lazy_import('get_youtube_playlists'),
         'get_usage_data': lazy_import('get_energy_usage'),
+        'get_live_generation': lazy_import('get_energy_usage'),
         'check_folders_for_bitrot': lazy_import('bitrot'),
         'erase_trailers': lazy_import('erase_trailers'),
         'update_saints_calendar': lazy_import('rugby_fixtures'),

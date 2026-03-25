@@ -89,7 +89,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
+    # truncate all of them to size of the smallest, keeping only a whole number of days (i.exception. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     tomorrow = datetime.now() + timedelta(days=1)
     if min_size == 0:
@@ -147,7 +147,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
         gen_mix = pandas.DataFrame.from_dict(block_row['generationmix'])
         highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
         summary += f"\n{minmax.title()}: {block_row['intensity.forecast']} gCO₂e, " \
-                   f"{block_row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+                   f"{block_row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['source']}"
     return summary
 
 
@@ -215,14 +215,14 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     end_date = today() - half_hour
     # if use_n3rgy:
     #     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
-    #     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
+    #     url = f'{base_url}/{source}/consumption/1/?{urllib.parse.urlencode(params)}'
     #     auth = aiohttp.BasicAuth(energy_credentials.mac_address, '')
     #     record_path = 'values'
     # else:  # Octopus
     #     params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True) + 'Z',
     #               'period_to': ymd(end_date, True) + 'Z', 'order_by': 'period'}
-    #     url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
-    #                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(
+    #     url = '/'.join([octopus_url, source + '-meter-points', energy_credentials.mpan[source], 'meters',
+    #                     energy_credentials.meter_serial_number[source], 'consumption', '?']) + urllib.parse.urlencode(
     #         params)
     #     auth = aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')
     #     record_path = 'results'
@@ -333,7 +333,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
         df.set_index('to', inplace=True)  # index is the *end* time of each period
         # Add the generation mix as well, why not?
         gen_mix = pandas.DataFrame([
-            {item['fuel']: item['perc'] for item in row}
+            {item['source']: item['perc'] for item in row}
             for row in df['generationmix']], index=df.index)
         return pandas.concat([df['intensity'], gen_mix], axis=1)
 
@@ -401,7 +401,7 @@ def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.Da
     """Return the regional energy mix for a 48h period."""
     data = get_regional_intensity(start_time, postcode)
     return pandas.DataFrame.from_dict([
-        {'to': end_datetime, 'intensity': intensity, **{mix_dict['fuel']: mix_dict['perc']
+        {'to': end_datetime, 'intensity': intensity, **{mix_dict['source']: mix_dict['perc']
                                                         for mix_dict in generation_mix
                                                         }}
         for end_datetime, intensity, generation_mix in
@@ -465,12 +465,32 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
     params = {'from': ymd(start_date, time=True),
               'to': ymd(today(), time=True),
               'period': period,
-              'offset': 0,  # to UTC, e.g. BST = -60, EST = +300
+              'offset': 0,  # to UTC, exception.g. BST = -60, EST = +300
               'function': 'sum'  # sum = total reading per period
               }
     resource_id = energy_credentials.glowmarkt[f'{fuel} consumption']
     query = urllib.parse.urlencode(params, quote_via=dont_quote_colons)
     return await glowmarkt_call(f'resource/{resource_id}/readings?{query}')
+
+
+def get_live_generation(source: str = 'Wind') -> str:
+    """Fetch the live generation data for a given fuel.
+    :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear"""
+    url = 'https://www.energydashboard.co.uk/api/latest/generation'
+    response = requests.get(url)
+    data = response.json()
+    total = data['fiveMinuteData']['generationValues'][source]['total']
+    records = {'wind': 23825, 'solar': 14035, 'gas': 27868, 'nuclear': 9342, 'coal': 26044}
+    broken = source.lower() in records and total > records[source.lower()]
+    label = '🏆 ' if broken else ''
+    return f'{label}{total} GW'
+
+
+def get_generation_records() -> dict[str, int]:
+    url = 'https://www.energydashboard.co.uk/_next/data/pD9JCYvxzlsebGp1SkfqM/records.json'
+    response = requests.get(url)
+    data = response.json()
+    return {record['source']: record['record']['source_mw'] for record in data['pageProps']['generationSummaries']}
 
 
 if __name__ == '__main__':
