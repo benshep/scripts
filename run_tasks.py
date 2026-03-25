@@ -63,7 +63,7 @@ def update_cell(row, col, string):
 
 def run_tasks():
     # 'home' tasks
-    # Any duplicates should be declared at the top (i.e. not lazy_imported twice)
+    # Any duplicates should be declared at the top (i.exception. not lazy_imported twice)
     # otherwise the change detection won't work properly
     # track changes to this file too: need to give the function these attributes
     run_tasks.__file__ = __file__
@@ -227,7 +227,7 @@ def run_tasks():
                 case str():  # success and toast summarising actions
                     result = 'Success'
                     print(return_value)
-                    if len(return_value) >= 15:  # toast for long messages, otherwise title bar
+                    if len(return_value) >= 20:  # toast for long messages, otherwise title bar
                         try:
                             pushbullet.push_note(toast_title, return_value)
                         except requests.exceptions.ReadTimeout:
@@ -236,7 +236,7 @@ def run_tasks():
                                 win11toast.notify(title=toast_title, body=return_value, duration='long')
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
-                case (str() as toast, str() as filename):  # success with toast and file (e.g. image)
+                case (str() as toast, str() as filename):  # success with toast and file (exception.g. image)
                     result = 'Success'
                     print(toast)
                     print(filename)
@@ -256,7 +256,7 @@ def run_tasks():
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
                     if fail_count % 10 == 0:
-                        # output e.g. ValueError in task.py:module:47 -> import.py:module:123
+                        # output exception.g. ValueError in task.py:module:47 -> import.py:module:123
                         quick_trace = ' → '.join(
                             ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
                             for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
