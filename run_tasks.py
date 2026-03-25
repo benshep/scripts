@@ -83,6 +83,7 @@ def run_tasks():
         'find_new_releases': concerts_module,
         'log_crossings': lazy_import('mersey_gateway'),
         'find_new_python_packages': lazy_import('package_updates'),
+        'get_directions': lazy_import('directions'),
     }
 
     at_home = docs_folder is None  # no work documents
@@ -293,7 +294,7 @@ def run_tasks():
 
         force_run = []  # only force run for first loop
         set_window_title(f'{title_toast} ⌛️ {next_time_str}')
-        while datetime.now() < next_task_time:
+        while datetime.now() < next_task_time + timedelta(minutes=5):  # give some extra time for eddie
             sleep(300)
 
             # restart code
