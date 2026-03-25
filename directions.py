@@ -12,8 +12,8 @@ def get_directions() -> str | datetime:
     """Get expected time and best route for driving home."""
     # wait until late afternoon
     now = datetime.now()
-    # if now.hour < 16:
-    #     return now.replace(hour=16, minute=0)
+    if now.hour < 16:
+        return now.replace(hour=16, minute=0)
     sheet_id = '1GzhMCHv6vgi9R2LNhmdKg7Rjy967tC6XrqFBJGxcGXM'  # Exercise spreadsheet
     last_ride_date, last_ride_route = google_api.get_data(sheet_id, 'Cycling', 'lastRide')[0]
     last_ride_date = datetime.strptime(last_ride_date, "%d/%m/%Y %H:%M:%S")
