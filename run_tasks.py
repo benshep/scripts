@@ -28,6 +28,8 @@ if node() == 'eddie':
     from crontab import CronTab
 if sys.platform == 'win32':
     import win11toast
+    import windows_tools
+    hwnd = windows_tools.get_my_hwnd()
 
 import psutil
 import google_api  # pip install google-api-python-client
@@ -129,10 +131,10 @@ def run_tasks():
     # try adding some retry logic - sometimes push_note fails
     pushbullet._session.mount('https://', requests.adapters.HTTPAdapter(max_retries=5))
 
-    title_toast = ''
     # first argument: comma-separated list of functions to run (because they were modified)
     force_run = [] if len(sys.argv) < 2 else sys.argv[1].split(',')
     while True:
+        title_toast = ''
         print('Fetching data from spreadsheet', datetime.now() - start_time)
         try:
             headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
@@ -294,6 +296,8 @@ def run_tasks():
 
         force_run = []  # only force run for first loop
         set_window_title(f'{title_toast} ⌛️ {next_time_str}')
+        if title_toast:
+            windows_tools.flash_window(hwnd)
         while datetime.now() < next_task_time + timedelta(minutes=5):  # give some extra time for eddie
             sleep(300)
 
