@@ -487,28 +487,31 @@ def get_live_generation(source: str | None = None) -> str:
     sparkline = ''
     colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
                'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow'}
-    output = []
+    icons = {'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
+               'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️'}
+    records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044}
     for source_name, info in generation_values.items():
         width = int(info['percentage'] * terminal_width / 100)
         change_colour = rich_output and source_name in colours
-        bar = source_name.ljust(width, ' ' if rich_output else '*')[:width]
+        bar = icons.get(source_name, source_name)
+        if total := info['total']:
+            bar += f' {total} GW'
+            if total > highest_gw:
+                highest_gw = total
+                biggest_source = source_name
+            if source_name in records:
+                bar += f' 🏆 {records[source_name]} GW'
+        bar = bar.ljust(width, ' ' if rich_output else '*')[:width]
         if change_colour:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
         sparkline += bar
-        if total := info['total']:
-            output.append(f'{source_name} {total} GW')
-            if total > highest_gw:
-                highest_gw = total
-                biggest_source = source_name
-    print(*output, sep=', ')
     print(sparkline)
     source = source or biggest_source
     total = generation_values[source]['total']
-    records = {'wind': 23825, 'solar': 14035, 'gas': 27868, 'nuclear': 9342, 'coal': 26044}
-    broken = source.lower() in records and total > records[source.lower()]
+    broken = source in records and total > records[source]
     label = '🏆 ' if broken else ''
-    return f'{source} {label}{total} GW'
+    return f'{icons.get(source, source)} {label}{total} GW'
 
 
 def get_generation_records() -> dict[str, int]:
