@@ -207,7 +207,7 @@ def run_tasks():
             update_cell(i + 2, get_column('Last result'), 'Running')
 
             set_window_title(f'{icon} {function_name}')
-            print('\n', last_triggered, function_name, parameters)
+            print('\n', last_triggered, icon, function_name, parameters)
             try:
                 return_value = function() if parameters == '' else function(parameters)
             except Exception as exception:  # something went wrong with the task!
