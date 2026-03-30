@@ -10,6 +10,7 @@ import aiohttp
 import numpy
 import pandas
 import requests
+import wcwidth
 from progress.bar import Bar
 
 with suppress(ImportError):
@@ -471,8 +472,9 @@ class ReadingPeriod(StrEnum):
 async def get_readings(start_date: pandas.Timestamp, fuel: str,
                        period: ReadingPeriod = ReadingPeriod.half_hour) -> dict:
     """Request information about a virtual entity's resources from the Glowmarkt API."""
+    end_date = min(today(), start_date + timedelta(days=7))
     params = {'from': ymd(start_date, time=True),
-              'to': ymd(today(), time=True),
+              'to': ymd(end_date, time=True),
               'period': period,
               'offset': 0,  # to UTC, exception.g. BST = -60, EST = +300
               'function': 'sum'  # sum = total reading per period
@@ -504,7 +506,7 @@ def get_live_generation(source: str | None = None) -> str:
                 biggest_source = source_name
             if source_name in records:
                 bar += f' 🏆 {records[source_name]} GW'
-        bar = bar.ljust(width, ' ' if rich_output else '*')[:width]
+        bar = wcwidth.clip(wcwidth.ljust(bar, width, ' ' if rich_output else '*'), 0, width)
         if change_colour:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
@@ -538,3 +540,4 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
+    # print(get_live_generation())
