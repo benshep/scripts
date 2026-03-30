@@ -3,8 +3,8 @@ import ctypes.wintypes
 
 import win32gui
 
-FLASHW_ALL = 3
-FLASHW_STOP = 0
+FLASHW_ALL      = 3
+FLASHW_STOP     = 0
 FLASHW_TIMERNOFG = 12
 
 
