@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -25,6 +26,11 @@ glowmarkt_url = 'https://api.glowmarkt.com/api/v0-1/'
 home_postcode = 'WA10'
 rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
+colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
+           'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow'}
+icons = {'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
+         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️'}
+records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044}
 
 
 def today() -> pandas.Timestamp:
@@ -89,7 +95,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
 
-    # truncate all of them to size of the smallest, keeping only a whole number of days (i.e. 48 half-hourly periods)
+    # truncate all of them to size of the smallest, keeping only a whole number of days (i.exception. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
     tomorrow = datetime.now() + timedelta(days=1)
     if min_size == 0:
@@ -142,12 +148,13 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     # Add the minimum and maximum forecasted intensity for the next 2 days
     if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
         return summary
-    for minmax in ('min', 'max'):
+    for minmax, icon in zip(('min', 'max'), ('🟢', '🔴')):
         block_row = forecast.iloc[getattr(forecast['intensity.forecast'], f'idx{minmax}')()]
         gen_mix = pandas.DataFrame.from_dict(block_row['generationmix'])
         highest = gen_mix.iloc[gen_mix['perc'].idxmax()]
-        summary += f"\n{minmax.title()}: {block_row['intensity.forecast']} gCO₂e, " \
-                   f"{block_row['to'].strftime('%a %H:%M')}, {highest['perc']:.0f}% {highest['fuel']}"
+        fuel = highest['fuel']
+        summary += f"\n{icon} {block_row['intensity.forecast']} gCO₂e, " \
+                   f"{block_row['to'].strftime('%a %H:%M')}, {icons.get(fuel, fuel)} {highest['perc']:.0f}%"
     return summary
 
 
@@ -215,14 +222,14 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     end_date = today() - half_hour
     # if use_n3rgy:
     #     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
-    #     url = f'{base_url}/{fuel}/consumption/1/?{urllib.parse.urlencode(params)}'
+    #     url = f'{base_url}/{source}/consumption/1/?{urllib.parse.urlencode(params)}'
     #     auth = aiohttp.BasicAuth(energy_credentials.mac_address, '')
     #     record_path = 'values'
     # else:  # Octopus
     #     params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True) + 'Z',
     #               'period_to': ymd(end_date, True) + 'Z', 'order_by': 'period'}
-    #     url = '/'.join([octopus_url, fuel + '-meter-points', energy_credentials.mpan[fuel], 'meters',
-    #                     energy_credentials.meter_serial_number[fuel], 'consumption', '?']) + urllib.parse.urlencode(
+    #     url = '/'.join([octopus_url, source + '-meter-points', energy_credentials.mpan[source], 'meters',
+    #                     energy_credentials.meter_serial_number[source], 'consumption', '?']) + urllib.parse.urlencode(
     #         params)
     #     auth = aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')
     #     record_path = 'results'
@@ -247,8 +254,10 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     # zero values at the end indicate no reading received yet: chop these
     last_nonzero_idx = df['Reading'].ne(0).cumsum().idxmax()
     mask = (df.index > last_nonzero_idx) & (df['Reading'] == 0)
-    pandas.options.mode.chained_assignment = None  # disable SettingWithCopyWarning
-    df['Reading'][mask] = numpy.nan
+    reading = df['Reading']
+    reading[mask] = numpy.nan
+    # df.loc[mask, 'Reading'] = numpy.nan
+    df['Reading'] = reading
     df.index = pandas.to_datetime(df['Timestamp'], unit='s') + half_hour  # turn into *end* times
     pivot = pandas.pivot_table(df, index=df.index.date, columns=df.index.time, values='Reading')
     return pivot if pivot.shape[1] == 48 else pandas.DataFrame()  # must be n x 48 DataFrame
@@ -333,7 +342,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
         df.set_index('to', inplace=True)  # index is the *end* time of each period
         # Add the generation mix as well, why not?
         gen_mix = pandas.DataFrame([
-            {item['fuel']: item['perc'] for item in row}
+            {item['source']: item['perc'] for item in row}
             for row in df['generationmix']], index=df.index)
         return pandas.concat([df['intensity'], gen_mix], axis=1)
 
@@ -401,7 +410,7 @@ def get_mix(start_time: str = 'now', postcode: str = home_postcode) -> pandas.Da
     """Return the regional energy mix for a 48h period."""
     data = get_regional_intensity(start_time, postcode)
     return pandas.DataFrame.from_dict([
-        {'to': end_datetime, 'intensity': intensity, **{mix_dict['fuel']: mix_dict['perc']
+        {'to': end_datetime, 'intensity': intensity, **{mix_dict['source']: mix_dict['perc']
                                                         for mix_dict in generation_mix
                                                         }}
         for end_datetime, intensity, generation_mix in
@@ -465,12 +474,54 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
     params = {'from': ymd(start_date, time=True),
               'to': ymd(today(), time=True),
               'period': period,
-              'offset': 0,  # to UTC, e.g. BST = -60, EST = +300
+              'offset': 0,  # to UTC, exception.g. BST = -60, EST = +300
               'function': 'sum'  # sum = total reading per period
               }
     resource_id = energy_credentials.glowmarkt[f'{fuel} consumption']
     query = urllib.parse.urlencode(params, quote_via=dont_quote_colons)
     return await glowmarkt_call(f'resource/{resource_id}/readings?{query}')
+
+
+def get_live_generation(source: str | None = None) -> str:
+    """Fetch the live generation data for a given fuel.
+    :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
+    url = 'https://www.energydashboard.co.uk/api/latest/generation'
+    response = requests.get(url)
+    data = response.json()
+    generation_values = data['fiveMinuteData']['generationValues']
+    highest_gw = 0
+    biggest_source = ''
+    terminal_width, _ = os.get_terminal_size()
+    sparkline = ''
+    for source_name, info in generation_values.items():
+        width = int(info['percentage'] * terminal_width / 100)
+        change_colour = rich_output and source_name in colours
+        bar = icons.get(source_name, source_name)
+        if total := info['total']:
+            bar += f' {total} GW'
+            if total > highest_gw:
+                highest_gw = total
+                biggest_source = source_name
+            if source_name in records:
+                bar += f' 🏆 {records[source_name]} GW'
+        bar = bar.ljust(width, ' ' if rich_output else '*')[:width]
+        if change_colour:
+            colour = colours[source_name]
+            bar = f'[black on {colour}]{bar}[/black on {colour}]'
+        sparkline += bar
+    print(sparkline)
+    source = source or biggest_source
+    total = generation_values[source]['total']
+    broken = source in records and total > records[source]
+    label = '🏆 ' if broken else ''
+    return f'{icons.get(source, source)} {label}{total} GW'
+
+
+def get_generation_records() -> dict[str, int]:
+    url = 'https://www.energydashboard.co.uk/_next/data/pD9JCYvxzlsebGp1SkfqM/records.json'
+    response = requests.get(url)
+    data = response.json()
+    return {record['source']: record['record']['source_mw'] for record in data['pageProps']['generationSummaries']}
 
 
 if __name__ == '__main__':
@@ -487,3 +538,4 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
+    # print(get_live_generation())
