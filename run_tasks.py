@@ -12,6 +12,7 @@ from typing import Callable
 
 import cryptography.utils
 import filetype
+import requests.adapters
 import requests.exceptions
 from rpyc import ThreadedServer
 
@@ -25,6 +26,10 @@ from traceback import format_exc, extract_tb
 from platform import node
 if node() == 'eddie':
     from crontab import CronTab
+on_windows = sys.platform == 'win32'
+if on_windows:
+    import win11toast
+    import windows_tools
 
 import psutil
 import google_api  # pip install google-api-python-client
@@ -60,7 +65,7 @@ def update_cell(row, col, string):
 
 def run_tasks():
     # 'home' tasks
-    # Any duplicates should be declared at the top (i.e. not lazy_imported twice)
+    # Any duplicates should be declared at the top (i.exception. not lazy_imported twice)
     # otherwise the change detection won't work properly
     # track changes to this file too: need to give the function these attributes
     run_tasks.__file__ = __file__
@@ -73,6 +78,7 @@ def run_tasks():
         'copy_60_minutes': lazy_import('copy_60_minutes'),
         'get_youtube_playlists': lazy_import('get_youtube_playlists'),
         'get_usage_data': lazy_import('get_energy_usage'),
+        'get_live_generation': lazy_import('get_energy_usage'),
         'check_folders_for_bitrot': lazy_import('bitrot'),
         'erase_trailers': lazy_import('erase_trailers'),
         'update_saints_calendar': lazy_import('rugby_fixtures'),
@@ -80,6 +86,7 @@ def run_tasks():
         'find_new_releases': concerts_module,
         'log_crossings': lazy_import('mersey_gateway'),
         'find_new_python_packages': lazy_import('package_updates'),
+        'get_directions': lazy_import('directions'),
     }
 
     at_home = docs_folder is None  # no work documents
@@ -122,11 +129,13 @@ def run_tasks():
     time_format = "%d/%m/%Y %H:%M"
     period_col = column_names.index('Period')
     pushbullet = Pushbullet(api_key)
+    # try adding some retry logic - sometimes push_note fails
+    pushbullet._session.mount('https://', requests.adapters.HTTPAdapter(max_retries=5))
 
-    title_toast = ''
     # first argument: comma-separated list of functions to run (because they were modified)
     force_run = [] if len(sys.argv) < 2 else sys.argv[1].split(',')
     while True:
+        title_toast = ''
         print('Fetching data from spreadsheet', datetime.now() - start_time)
         try:
             headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
@@ -208,6 +217,7 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
+            toast_title = f'{icon} {function_name}'
             match return_value:
                 case False:  # try again soon (but not on this device)
                     result = 'Postponed'
@@ -220,26 +230,36 @@ def run_tasks():
                 case str():  # success and toast summarising actions
                     result = 'Success'
                     print(return_value)
-                    if len(return_value) >= 15:  # toast for long messages, otherwise title bar
-                        pushbullet.push_note(f'{icon} {function_name}', return_value)
+                    if len(return_value) >= 20:  # toast for long messages, otherwise title bar
+                        try:
+                            pushbullet.push_note(toast_title, return_value)
+                        except requests.exceptions.ReadTimeout:
+                            if on_windows:
+                                # try a local notification instead
+                                win11toast.notify(title=toast_title, body=return_value, duration='long')
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
-                case (str() as toast, str() as filename):  # success with toast and file (e.g. image)
+                case (str() as toast, str() as filename):  # success with toast and file (exception.g. image)
                     result = 'Success'
                     print(toast)
                     print(filename)
-                    with open(filename, 'rb') as file_handle:
-                        response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
-                    if filename.startswith(tempfile.gettempdir()):  # clean up temp files
-                        with suppress(PermissionError):
-                            os.remove(filename)
-                    pushbullet.push_file(title=f'{icon} {function_name}', body=toast, **response)
+                    try:
+                        with open(filename, 'rb') as file_handle:
+                            response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
+                        if filename.startswith(tempfile.gettempdir()):  # clean up temp files
+                            with suppress(PermissionError):
+                                os.remove(filename)
+                        pushbullet.push_file(title=toast_title, body=toast, **response)
+                    except requests.exceptions.ReadTimeout:
+                        if on_windows:
+                            # try a local notification instead
+                            win11toast.notify(title=toast_title, body=toast, image=filename, duration='long')
                 case Exception():  # something went wrong with the task
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
                     if fail_count % 10 == 0:
-                        # output e.g. ValueError in task.py:module:47 -> import.py:module:123
+                        # output exception.g. ValueError in task.py:module:47 -> import.py:module:123
                         quick_trace = ' → '.join(
                             ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
                             for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
@@ -276,8 +296,11 @@ def run_tasks():
             break  # just run once on cron
 
         force_run = []  # only force run for first loop
-        set_window_title(f'{title_toast} ⌛️ {next_time_str}')
-        while datetime.now() < next_task_time:
+        window_title = f'{title_toast} ⌛️ {next_time_str}'
+        set_window_title(window_title)
+        if title_toast and on_windows:
+            windows_tools.flash_window(window_title)
+        while datetime.now() < next_task_time + timedelta(minutes=4):  # give some extra time for eddie
             sleep(300)
 
             # restart code
@@ -318,7 +341,7 @@ def run_tasks():
 
 def set_window_title(text: str) -> None:
     """Set the title of the Python command window (Windows only)."""
-    if sys.platform == 'win32':
+    if on_windows:
         os.system(f'title {text}')
 
 

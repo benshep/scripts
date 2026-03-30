@@ -3,16 +3,17 @@ import ctypes.wintypes
 
 import win32gui
 
-FLASHW_ALL      = 3
-FLASHW_STOP     = 0
+FLASHW_ALL = 3
+FLASHW_STOP = 0
 FLASHW_TIMERNOFG = 12
+
 
 class FLASHWINFO(ctypes.Structure):
     _fields_ = [
-        ("cbSize",    ctypes.wintypes.UINT),
-        ("hwnd",      ctypes.wintypes.HWND),
-        ("dwFlags",   ctypes.wintypes.DWORD),
-        ("uCount",    ctypes.wintypes.UINT),
+        ("cbSize", ctypes.wintypes.UINT),
+        ("hwnd", ctypes.wintypes.HWND),
+        ("dwFlags", ctypes.wintypes.DWORD),
+        ("uCount", ctypes.wintypes.UINT),
         ("dwTimeout", ctypes.wintypes.DWORD),
     ]
 
@@ -31,15 +32,16 @@ def get_hwnd_from_title(title: str) -> int:
     return win32gui.FindWindowEx(0, 0, None, title)
 
 
-def flash_window(hwnd: int, count: int = 8, timeout_ms: int = 400):
-    """Flash the title of the given window."""
+def flash_window(hwnd_or_title: int | str, count: int = 8, timeout_ms: int = 400):
+    """Flash the title of the given window. Looks up the HWND from the title if provided."""
     # print(f"hwnd: {hwnd}")
 
+    hwnd = hwnd_or_title if isinstance(hwnd_or_title, int) else get_hwnd_from_title(hwnd_or_title)
     fwi = FLASHWINFO(
-        cbSize    = ctypes.sizeof(FLASHWINFO),
-        hwnd      = hwnd,
-        dwFlags   = FLASHW_ALL | FLASHW_TIMERNOFG,
-        uCount    = count,
-        dwTimeout = timeout_ms,
+        cbSize=ctypes.sizeof(FLASHWINFO),
+        hwnd=hwnd,
+        dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
+        uCount=count,
+        dwTimeout=timeout_ms,
     )
     ctypes.windll.user32.FlashWindowEx(ctypes.byref(fwi))
