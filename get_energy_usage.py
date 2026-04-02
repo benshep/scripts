@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 import urllib.parse
 from contextlib import suppress
@@ -502,8 +503,13 @@ def get_live_generation(source: str | None = None) -> str:
             records = get_generation_records()
         except Exception as exception:
             print('Failed to update records', exception)
+    total_raw = 0
+    total_clipped = 0
     for source_name, info in generation_values.items():
-        width = int(info['percentage'] * terminal_width / 100)
+        raw_width = info['percentage'] * terminal_width / 100
+        # add or take away a bit (cascade rounding, ish) to make overall width add up to exactly terminal_width
+        width = int(raw_width + total_raw - total_clipped)
+        total_raw += raw_width
         change_colour = rich_output and source_name in colours
         bar = icons.get(source_name, source_name)
         if total := info['total']:
@@ -514,10 +520,13 @@ def get_live_generation(source: str | None = None) -> str:
             if source_name in records:
                 bar += f' 🏆 {records[source_name]} GW'
         bar = wcwidth.clip(wcwidth.ljust(bar, width, ' ' if rich_output else '*'), 0, width)
+        clipped_width = wcwidth.width(bar)
+        total_clipped += clipped_width
         if change_colour:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
         sparkline += bar
+    print(total_raw, total_clipped)
     print(sparkline)
     source = source or biggest_source
     total = generation_values[source]['total']
