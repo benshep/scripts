@@ -526,7 +526,7 @@ def get_live_generation(source: str | None = None) -> str:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
         sparkline += bar
-    print(total_raw, total_clipped)
+    # print(total_raw, total_clipped)
     print(sparkline)
     source = source or biggest_source
     total = generation_values[source]['total']
