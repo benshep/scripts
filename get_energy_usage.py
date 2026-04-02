@@ -20,6 +20,11 @@ import energy_credentials
 import google_api
 from openweather import api_key
 
+def today() -> pandas.Timestamp:
+    """Return a datetime object representing the start of today."""
+    return pandas.to_datetime('today').to_period('D').start_time  # - pandas.to_timedelta(3, 'd')
+
+
 base_url = 'https://consumer-api.data.n3rgy.com'
 carbon_int_url = 'https://api.carbonintensity.org.uk'
 octopus_url = 'https://api.octopus.energy/v1'
@@ -28,15 +33,11 @@ home_postcode = 'WA10'
 rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
 colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
-           'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow'}
+           'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"}
 icons = {'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
-         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️'}
-records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044}
-
-
-def today() -> pandas.Timestamp:
-    """Return a datetime object representing the start of today."""
-    return pandas.to_datetime('today').to_period('D').start_time  # - pandas.to_timedelta(3, 'd')
+         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'}
+records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
+           'lastUpdated': today() - timedelta(days=1)}
 
 
 def dmy(date: datetime, time: bool = True):
@@ -487,6 +488,7 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
 def get_live_generation(source: str | None = None) -> str:
     """Fetch the live generation data for a given fuel.
     :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
+    global records
     url = 'https://www.energydashboard.co.uk/api/latest/generation'
     response = requests.get(url)
     data = response.json()
@@ -495,6 +497,11 @@ def get_live_generation(source: str | None = None) -> str:
     biggest_source = ''
     terminal_width, _ = os.get_terminal_size()
     sparkline = ''
+    if records['lastUpdated'] < today():
+        try:
+            records = get_generation_records()
+        except Exception as exception:
+            print('Failed to update records', exception)
     for source_name, info in generation_values.items():
         width = int(info['percentage'] * terminal_width / 100)
         change_colour = rich_output and source_name in colours
@@ -520,14 +527,19 @@ def get_live_generation(source: str | None = None) -> str:
 
 
 def get_generation_records() -> dict[str, int]:
+    """Fetch the energy generation records from energydashboard.co.uk."""
     url = 'https://www.energydashboard.co.uk/_next/data/pD9JCYvxzlsebGp1SkfqM/records.json'
     response = requests.get(url)
     data = response.json()
-    return {record['source']: record['record']['source_mw'] for record in data['pageProps']['generationSummaries']}
+    page_props = data['pageProps']
+    new_records = {record['source'].title(): record['record']['source_mw'] / 1000
+               for record in page_props['generationSummaries']}
+    new_records['lastUpdated'] = today()
+    return new_records
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -540,4 +552,5 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    # print(get_live_generation())
+    print(get_live_generation())
+    # print(get_generation_records())
