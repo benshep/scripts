@@ -537,10 +537,16 @@ def get_live_generation(source: str | None = None) -> str:
 
 def get_generation_records() -> dict[str, int]:
     """Fetch the energy generation records from energydashboard.co.uk."""
-    url = 'https://www.energydashboard.co.uk/_next/data/pD9JCYvxzlsebGp1SkfqM/records.json'
+    url = 'https://www.energydashboard.co.uk/records'
     response = requests.get(url)
-    data = response.json()
-    page_props = data['pageProps']
+    text = response.text
+    script_node = '<script id="__NEXT_DATA__" type="application/json">'
+    script_index = text.find(script_node)
+    script_json = text[script_index + len(script_node):]
+    end_index = script_json.find('</script>')
+    script_json = script_json[:end_index]
+    data = json.loads(script_json)
+    page_props = data['props']['pageProps']
     new_records = {record['source'].title(): record['record']['source_mw'] / 1000
                for record in page_props['generationSummaries']}
     new_records['lastUpdated'] = today()
@@ -561,5 +567,5 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    print(get_live_generation())
-    # print(get_generation_records())
+    # print(get_live_generation())
+    print(get_generation_records())
