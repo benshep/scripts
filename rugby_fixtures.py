@@ -21,11 +21,11 @@ class Fixture:
         self.tournament = tournament
         self.time_fixed = time_fixed
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'Fixture(time={self.time}, {self.home} vs {self.away}, {self.tournament})'
 
 
-def ymd(date, time=False):
+def ymd(date: datetime, time: bool = False) -> str:
     """Convert datetime into yyyy-mm-dd format (ISO 8601), and optionally THH:MM."""
     return date.strftime('%Y-%m-%d' + ('T%H:%MZ' if time else ''))
 
@@ -105,18 +105,18 @@ def get_local_fixtures() -> dict[str, Fixture]:
     return fixtures
 
 
-def get_calendar_events():
+def get_calendar_events() -> list[dict]:
     now = datetime.now().isoformat() + 'Z'
     events = google_calendar.list(calendarId=calendar_id, timeMin=now, maxResults=50,
                                   singleEvents=True, orderBy='startTime').execute()
     return events['items']
 
 
-def format_time(time: datetime):
+def format_time(time: datetime) -> str:
     return time.strftime('%d %b %H:%M')  # e.g. 15 Mar 14:00
 
 
-def update_saints_calendar():
+def update_saints_calendar() -> str:
     toast = ''
     my_events = get_calendar_events()
     fixture_list = get_local_fixtures() \
@@ -151,4 +151,5 @@ def update_saints_calendar():
 if __name__ == '__main__':
     # print(*get_home_fixtures('rugby-league', 'st-helens', 'St Helens'), sep='\n')
     # print(*get_home_fixtures('football', 'liverpool-ladies', 'Liverpool'), sep='\n')
-    print(update_saints_calendar())
+    print(get_calendar_events())
+    # print(update_saints_calendar())
