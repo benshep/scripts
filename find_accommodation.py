@@ -1,10 +1,41 @@
 import os
+import re
 from time import sleep
 
+import requests
 from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 
 from sheffield_credentials import username, password
+
+prices = {  # https://sheffield.ac.uk/accommodation/rents
+    'Birchen Apartments': ('En-suite', '£195.72'),
+    'Burbage Apartments': ('En-suite', '£195.72'),
+    'Cratcliffe Apartments': ('En-suite', '£195.72'),
+    'Curbar Apartments': ('En-suite', '£195.72'),
+    'Derwent Apartments': ('En-suite', '£195.72'),
+    'Froggatt Apartments': ('En-suite', '£195.72'),
+    'Howden Apartments': ('En-suite', '£195.72'),
+    'Kinder Apartments': ('En-suite', '£195.72'),
+    'Lawrencefield Apartments': ('En-suite', '£195.72'),
+    'Millstone Apartments': ('En-suite', '£195.72'),
+    'Ramshaw Apartments': ('En-suite', '£195.72'),
+    'Ravenstone Apartments': ('En-suite', '£195.72'),
+    'Rivelin Apartments': ('En-suite', '£195.72'),
+    'Stanage Apartments': ('En-suite', '£195.72'),
+    'Wimberry Apartments': ('En-suite', '£195.72'),
+    'Windgather Apartments': ('En-suite', '£195.72'),
+    'Yarncliffe Apartments': ('En-suite', '£195.72'),
+    'Kinder Studios': ('Studios', '£227.68'),
+    'Windgather Studios': ('Studios', '£227.68'),
+    'Wimberry Studios': ('Studios', '£227.68'),
+    'Laddow Studios': ('Studio', '£240.38'),
+    'Crescent Flats': ('Shared Bathroom', '£151.41'),
+    'Endcliffe Vale Flats': ('Shared Bathroom', '£151.41'),
+    'Crewe Flats': ('Shared Bathroom', '£151.90 - £162.33'),
+    'Endcliffe Crescent Houses': ('Shared Bathroom', '£157.10 - £174.89'),
+    'Stephenson': ('Shared bathroom, catered', '£194.46'),
+}
 
 def flat_search(show_window: bool = False):
     """Open the University of Sheffield accommodation booking page, and check which rooms are available."""
@@ -32,7 +63,15 @@ def flat_search(show_window: bool = False):
     web.find_element(By.XPATH, '//button[@aria-label="Select Ranmoor/Endcliffe"]').click()
     sleep(60)
     location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
-    print(location_selector.text)
+    availability = get_availability()
+    max_length = max(len(name) for name in prices)
+    for line in location_selector.text.splitlines():
+        name = line[:-11] if line.endswith(' Apartments') else line
+        print('\t'.join([
+            line,
+            *prices.get(line, ('', '')),
+            availability.get(name, '')
+        ]).expandtabs(max_length + 2))
     report = ''
     for label in location_selector.find_elements(By.XPATH, '//label'):
         if target in label.text:
@@ -43,6 +82,19 @@ def flat_search(show_window: bool = False):
     web.quit()
     return report
 
+
+def get_availability() -> dict[str, str]:
+    """Fetch the accommodation availability page, and return a dict with percentage availability for each flat type."""
+    url = 'https://sheffield.ac.uk/accommodation/availability'
+    response = requests.get(url)
+    table_matches = re.findall(r'<td>([^<]*?)</td><td>[^&]*?</td><td>(\d\d?%)</td>', response.text)
+    return {name: availability for name, availability in table_matches}
+
+
 if __name__ == '__main__':
-    report = flat_search(show_window=True)
+    # print(*get_availability().items(), sep='\n')
+    # max_length = max(len(name) for name in prices)
+    # for name, info in prices.items():
+    #     print('\t'.join([name, *info]).expandtabs(max_length + 2))
+    report = flat_search(show_window=False)
     print(report)
