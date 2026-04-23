@@ -210,7 +210,7 @@ def run_tasks():
             update_cell(i + 2, get_column('Last result'), 'Running')
 
             set_window_title(icon_and_name)
-            print('\n', last_triggered, icon, function_name, parameters)
+            print('\n', last_triggered, icon_and_name, parameters)
             try:
                 return_value = function() if parameters == '' else function(parameters)
             except Exception as exception:  # something went wrong with the task!
@@ -307,21 +307,20 @@ def run_tasks():
             sleep(300)
 
             # restart code
-            force_run = []  # only force run for one loop
             now = datetime.now()
-            for function, module in task_dict.items():
+            for module in set(task_dict.values()):
                 new_mod_timestamp = os.path.getmtime(module.__file__)
                 new_mod_datetime = datetime.fromtimestamp(new_mod_timestamp)
                 time_since_modified = now - new_mod_datetime
                 if new_mod_timestamp != module.mod_time:
-                    print('Updated:', function, module)
+                    print('Updated:', module)
                     # Might be in the middle of changing it - wait a bit
                     grace_period = timedelta(minutes=15)
                     restart_time_str = (new_mod_datetime + grace_period).strftime('%H:%M')
                     print('Will run after', restart_time_str)
                     set_window_title(f'{title_toast} ⌛️ {restart_time_str}')
                     if time_since_modified > grace_period:
-                        if function == 'run_tasks':
+                        if module == run_tasks:
                             set_window_title('🔁 Restarting')
                             os.chdir(start_dir)
                             # force rerunning those functions
@@ -331,9 +330,11 @@ def run_tasks():
                             # one of the modules we imported
                             # print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
                             try:
-                                importlib.reload(module)
-                                force_run += [func for func, mod in task_dict.items() if mod == module]
-                                task_dict[function].mod_time = new_mod_timestamp
+                                importlib.reload(sys.modules[module.__name__])
+                                for func, mod in task_dict.items():
+                                    if mod == module:
+                                        force_run.append(func)
+                                        task_dict[func].mod_time = new_mod_timestamp
                             except Exception as exception:
                                 # failed to import: maybe still working on it?
                                 print(exception)
