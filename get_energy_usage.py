@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import os
+import time
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -146,8 +147,9 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     for request in Bar('Filling formulae in spreadsheet', max=len(fill_requests)).iter(fill_requests):
         request_body = {'requests': [[request]]}
         google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
-    # Get the summary cell to go in a toast
-    summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
+    # Get the summary cell to go in a toast (but sometimes it's blank if nothing interesting to report!)
+    summary_range = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()
+    summary = summary_range.get('values', [['']])[0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
     if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
         return summary
@@ -221,7 +223,27 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     # spreadsheet expects *end* times going from 00:00 to 23:30 - shift requested time back by half an hour
     half_hour = pandas.to_timedelta(30, 'min')
     start_date -= half_hour
-    data = await get_readings(start_date, fuel)
+    end_date = today() - half_hour
+    # if use_n3rgy:
+    #     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
+    #     url = f'{base_url}/{source}/consumption/1/?{urllib.parse.urlencode(params)}'
+    #     auth = aiohttp.BasicAuth(energy_credentials.mac_address, '')
+    #     record_path = 'values'
+    # else:  # Octopus
+    #     params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True) + 'Z',
+    #               'period_to': ymd(end_date, True) + 'Z', 'order_by': 'period'}
+    #     url = '/'.join([octopus_url, source + '-meter-points', energy_credentials.mpan[source], 'meters',
+    #                     energy_credentials.meter_serial_number[source], 'consumption', '?']) + urllib.parse.urlencode(
+    #         params)
+    #     auth = aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')
+    #     record_path = 'results'
+    # print(url)
+    # async with aiohttp.ClientSession() as session:
+    #     async with session.get(url, auth=auth) as response:
+    #         response_json = await response.json()
+    response_json = await get_readings(start_date, fuel)
+    # print(response_json)
+    data = response_json['data']  # array of [timestamp, reading]
     if not data:  # response_json['count'] == 0:  # no results
         return pandas.DataFrame()
     df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
@@ -461,6 +483,20 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
     return [[timestamp, kwh] for timestamp, kwh in data if timestamp <= last_timestamp]
 
 
+async def loop_refresh_readings():
+    """Refresh readings every minute to check when they get updated."""
+    # 23/4: got readings after 13:37, last-time changed ~2h before that
+    while True:
+        readings = await get_readings(today() - pandas.Timedelta(days=1), 'electricity')
+        print(datetime.now(),
+              'from', datetime.fromtimestamp(readings[0][0]),
+              'to', datetime.fromtimestamp(readings[-1][0]),
+              'total', sum([kwh for _, kwh in readings]))
+        # j = await glowmarkt_call(f'resource/{resource_id}/catchup')
+        # assert j['status'] == 'OK'
+        time.sleep(60)
+
+
 def get_live_generation(source: str | None = None) -> str:
     """Fetch the live generation data for a given fuel.
     :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
@@ -529,7 +565,7 @@ def get_generation_records() -> dict[str, int]:
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -544,3 +580,4 @@ if __name__ == '__main__':
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
     # print(get_live_generation())
     # print(get_generation_records())
+    asyncio.run(loop_refresh_readings())
