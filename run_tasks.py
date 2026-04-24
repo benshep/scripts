@@ -14,6 +14,7 @@ import cryptography.utils
 import filetype
 import requests.adapters
 import requests.exceptions
+import wcwidth
 from rpyc import ThreadedServer
 
 warnings.filterwarnings('ignore', category=cryptography.utils.CryptographyDeprecationWarning)
@@ -32,7 +33,7 @@ if on_windows:
     import windows_tools
 
 import psutil
-import google_api  # pip install google-api-python-client
+import google_api  # pip install google-api_key-python-client
 from rich import print  # rich-text printing
 from rich.traceback import install  # rich tracebacks
 from pushbullet import Pushbullet  # to show notifications
@@ -87,6 +88,7 @@ def run_tasks():
         'log_crossings': lazy_import('mersey_gateway'),
         'find_new_python_packages': lazy_import('package_updates'),
         'get_directions': lazy_import('directions'),
+        'flat_search': lazy_import('find_accommodation'),
     }
 
     at_home = docs_folder is None  # no work documents
@@ -166,6 +168,7 @@ def run_tasks():
 
             icon = properties.get('Icon', '')
             function_name = properties.get('Function name')
+            icon_and_name = (wcwidth.ljust(icon, 3) if icon else '') + function_name
             function = getattr(task_dict[function_name], function_name)
             parameters = properties.get('Parameters', '')
             if parameters.startswith('@'):  # run on a particular computer
@@ -195,7 +198,7 @@ def run_tasks():
             if next_run_time > now and last_result in ('Success', 'Postponed') and function_name not in force_run:
                 if next_run_time < next_task_time:
                     next_task_time = next_run_time
-                    next_task_name = f'{icon} {function_name}'
+                    next_task_name = icon_and_name
                 continue
 
             if last_result == 'Running' and now - last_run_time < timedelta(hours=2):
@@ -206,8 +209,8 @@ def run_tasks():
             update_cell(i + 2, get_column('Machine'), node())
             update_cell(i + 2, get_column('Last result'), 'Running')
 
-            set_window_title(f'{icon} {function_name}')
-            print('\n', last_triggered, icon, function_name, parameters)
+            set_window_title(icon_and_name)
+            print('\n', last_triggered, icon_and_name, parameters)
             try:
                 return_value = function() if parameters == '' else function(parameters)
             except Exception as exception:  # something went wrong with the task!
@@ -217,7 +220,7 @@ def run_tasks():
 
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
-            toast_title = f'{icon} {function_name}'
+            toast_title = icon_and_name
             match return_value:
                 case False:  # try again soon (but not on this device)
                     result = 'Postponed'
@@ -276,7 +279,7 @@ def run_tasks():
             # False is 'not this device' result: ignore new run time (=now)
             if return_value != False and next_run_time < next_task_time:
                 next_task_time = next_run_time
-                next_task_name = f'{icon} {function_name}'
+                next_task_name = icon_and_name
             if next_run != 'on change':  # scheduled task: set next run time
                 next_run_str = next_run_time.strftime(time_format)
                 print('Next run time for this task:', next_run_str)
@@ -304,21 +307,20 @@ def run_tasks():
             sleep(300)
 
             # restart code
-            force_run = []  # only force run for one loop
             now = datetime.now()
-            for function, module in task_dict.items():
+            for module in set(task_dict.values()):
                 new_mod_timestamp = os.path.getmtime(module.__file__)
                 new_mod_datetime = datetime.fromtimestamp(new_mod_timestamp)
                 time_since_modified = now - new_mod_datetime
                 if new_mod_timestamp != module.mod_time:
-                    print('Updated:', function, module)
+                    print('Updated:', module)
                     # Might be in the middle of changing it - wait a bit
                     grace_period = timedelta(minutes=15)
                     restart_time_str = (new_mod_datetime + grace_period).strftime('%H:%M')
                     print('Will run after', restart_time_str)
                     set_window_title(f'{title_toast} ⌛️ {restart_time_str}')
                     if time_since_modified > grace_period:
-                        if function == 'run_tasks':
+                        if module == run_tasks:
                             set_window_title('🔁 Restarting')
                             os.chdir(start_dir)
                             # force rerunning those functions
@@ -328,9 +330,11 @@ def run_tasks():
                             # one of the modules we imported
                             # print(module.__name__, module.__spec__.name, sys.modules.get(module.__spec__.name), module, sys.modules.get(module.__spec__.name) is module)
                             try:
-                                importlib.reload(module)
-                                force_run += [func for func, mod in task_dict.items() if mod == module]
-                                task_dict[function].mod_time = new_mod_timestamp
+                                importlib.reload(sys.modules[module.__name__])
+                                for func, mod in task_dict.items():
+                                    if mod == module:
+                                        force_run.append(func)
+                                        task_dict[func].mod_time = new_mod_timestamp
                             except Exception as exception:
                                 # failed to import: maybe still working on it?
                                 print(exception)
