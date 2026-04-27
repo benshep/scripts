@@ -12,6 +12,7 @@ import aiohttp
 import numpy
 import pandas
 import requests
+from requests.structures import CaseInsensitiveDict
 import wcwidth
 from progress.bar import Bar
 
@@ -36,11 +37,10 @@ rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
 colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
            'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"}
-icons = {'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
-         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'}
-records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
-           'lastUpdated': today() - timedelta(days=1)}
-
+icons = CaseInsensitiveDict({'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
+         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'})
+records = CaseInsensitiveDict({'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
+           'lastUpdated': today() - timedelta(days=1)})
 
 def dmy(date: datetime, time: bool = True):
     """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
@@ -243,7 +243,7 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     #         response_json = await response.json()
     response_json = await get_readings(start_date, fuel)
     # print(response_json)
-    data = response_json['data']  # array of [timestamp, reading]
+    data = response_json  # array of [timestamp, reading]
     if not data:  # response_json['count'] == 0:  # no results
         return pandas.DataFrame()
     df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
@@ -366,23 +366,14 @@ def get_regional_intensity(start_time: pandas.Timestamp | str = 'now',
 
 def get_old_data_avg() -> None:
     """Get the two-week average of carbon data."""
-    start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
-    start_date = pandas.to_datetime('2025-01-01')
+    start_date = today() - pandas.to_timedelta(7, 'D')  # to align to previous dataset
+    start_date = pandas.to_datetime('2024-09-20')
+    geographies = ['OX11', 'EH9', 'IV1', '']  # blank = national
     while start_date < today():
-        # start_date -= pandas.to_timedelta(14, 'd')
-        # data = get_co2_data(start_date, postcode='OX11')
-        # south = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, geography=RegionId.south_scotland)
-        scotland = data.mean().mean()  # average of whole DataFrame
-        # data = get_co2_data(start_date, postcode='')  # national
-        # national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, '', '',
-              # south,
-              scotland,
-              # national,
-              sep='\t')
-        start_date += pandas.to_timedelta(14, 'd')
-        # return
+        avg = [get_co2_data(start_date, geography=geography).mean().mean()  # average of whole DataFrame
+               for geography in geographies]
+        print(start_date, '', '', *avg, sep='\t')
+        start_date += pandas.to_timedelta(14, 'D')
 
 
 def get_regions_data_avg() -> None:
@@ -546,7 +537,7 @@ def get_live_generation(source: str | None = None) -> str:
     return f'{icons.get(source, source)} {label}{total} GW'
 
 
-def get_generation_records() -> dict[str, int]:
+def get_generation_records() -> CaseInsensitiveDict:
     """Fetch the energy generation records from energydashboard.co.uk."""
     url = 'https://www.energydashboard.co.uk/records'
     response = requests.get(url)
@@ -558,8 +549,8 @@ def get_generation_records() -> dict[str, int]:
     script_json = script_json[:end_index]
     data = json.loads(script_json)
     page_props = data['props']['pageProps']
-    new_records = {record['source'].title(): record['record']['source_mw'] / 1000
-               for record in page_props['generationSummaries']}
+    new_records = CaseInsensitiveDict({record['source']: record['record']['source_mw'] / 1000
+               for record in page_props['generationSummaries']})
     new_records['lastUpdated'] = today()
     return new_records
 
@@ -578,6 +569,6 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    # print(get_live_generation())
+    print(get_live_generation())
     # print(get_generation_records())
-    asyncio.run(loop_refresh_readings())
+    # asyncio.run(loop_refresh_readings())
