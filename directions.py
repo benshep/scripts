@@ -50,6 +50,7 @@ def get_directions() -> str | datetime:
         route['weighted_cost'] = route['cost'] + route['duration'].total_seconds() * hourly_rate / 3600
     response['routes'] = sorted(response['routes'], key=lambda route: route['weighted_cost'])
     for route in response['routes']:
+        route['warnings'] = [concise_warning(warning) for warning in route['warnings']]
         print(now.strftime('%H:%M'),
               str(route['duration'])[:-3],  # don't need seconds
               f"ETA {route['eta'].strftime('%H:%M')}",
@@ -61,6 +62,15 @@ def get_directions() -> str | datetime:
               sep='\t')
     route = response['routes'][0]
     return f"ETA {route['eta'].strftime('%H:%M')} via {route['description']}"
+
+
+def concise_warning(warning: str) -> str:
+    """Return a shorter version of a warning."""
+    if warning.startswith('This route has '):
+        warning = warning[15:]
+    if warning.startswith('This route includes '):
+        warning = warning[20:]
+    return warning.rstrip('.')
 
 if __name__ == '__main__':
     while True:
