@@ -2,6 +2,7 @@ import os
 import re
 from time import sleep
 
+import urllib.parse
 import requests
 from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.common.by import By
@@ -37,31 +38,31 @@ prices = {  # https://sheffield.ac.uk/accommodation/rents
     'Stephenson': ('Shared bathroom, catered', '£194.46'),
 }
 
+
 def flat_search(show_window: bool = False):
     """Open the University of Sheffield accommodation booking page, and check which rooms are available."""
-    target = 'Endcliffe Vale'
+    target = 'Endcliffe Vale Flats'
 
     if not show_window:  # try to open an invisible browser window
         os.environ['MOZ_HEADLESS'] = '1'
+    print('Logging in to accommodation website')
     web = WebDriver()
-    web.implicitly_wait(10)  # add an automatic wait to the browser handling
-    web.get('https://sheffield.starrezhousing.com/StarRezPortalX/Login?returnUrl=%2FStarRezPortalX%2F53ED1745%2F10%2F462%2FAccommodation_Applic-Room_List%3FUrlToken%3D63296FB3%26LowerRoomRateValue%3D0%26UpperRoomRateValue%3D0%26TermID%3D244%26ClassificationID%3D11%26RoomLocationAreaID%3D7%26CurrentPageNumber%3D1%26DateStart%3D20%2520September%25202026%26DateEnd%3D11%2520July%25202027&isContact=False')
+    web.implicitly_wait(60)  # add an automatic wait to the browser handling
+    params = {'UrlToken': '63296FB3', 'LowerRoomRateValue': 0, 'UpperRoomRateValue': 0, 'TermID': 244,
+              'ClassificationID': 11, 'RoomLocationAreaID': 7, 'CurrentPageNumber': 1,
+              'DateStart': '20 September 2026', 'DateEnd': '11 July 2027'}
+    path = '/StarRezPortalX/53ED1745/10/462/Accommodation_Applic-Room_List?'
+    quoted_address = urllib.parse.quote_plus(path + urllib.parse.urlencode(params))
+    url = 'https://sheffield.starrezhousing.com/StarRezPortalX/Login?returnUrl=' + quoted_address
+
+    web.get(url)
     web.find_element(By.CLASS_NAME, 'ui-btn-external-provider').click()
     web.find_element(By.CLASS_NAME, 'ui-btn-external-provider').click()
     web.find_element(By.ID, 'username').send_keys(username)
     web.find_element(By.ID, 'password').send_keys(password)
     web.find_element(By.ID, 'submitBtn').click()
-    for element in web.find_elements(By.CLASS_NAME, 'ui-nav-process'):
-        if element.text == 'Accommodation Application':
-            element.click()
-            break
-    for element in web.find_elements(By.CLASS_NAME, 'sr_button_primary'):
-        if element.text == 'CONTINUE':
-            element.click()
-            break
-    sleep(60)
-    web.find_element(By.XPATH, '//button[@aria-label="Select Ranmoor/Endcliffe"]').click()
-    sleep(60)
+    sleep(2)
+    web.get(url)
     location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
     availability = get_availability()
     max_length = max(len(name) for name in prices)
@@ -96,5 +97,5 @@ if __name__ == '__main__':
     # max_length = max(len(name) for name in prices)
     # for name, info in prices.items():
     #     print('\t'.join([name, *info]).expandtabs(max_length + 2))
-    report = flat_search(show_window=False)
+    report = flat_search(show_window=True)
     print(report)

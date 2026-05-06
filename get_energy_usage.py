@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import os
+import time
 import urllib.parse
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -11,6 +12,7 @@ import aiohttp
 import numpy
 import pandas
 import requests
+from requests.structures import CaseInsensitiveDict
 import wcwidth
 from progress.bar import Bar
 
@@ -35,11 +37,10 @@ rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
 colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
            'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"}
-icons = {'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
-         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'}
-records = {'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
-           'lastUpdated': today() - timedelta(days=1)}
-
+icons = CaseInsensitiveDict({'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
+         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'})
+records = CaseInsensitiveDict({'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
+           'lastUpdated': today() - timedelta(days=1)})
 
 def dmy(date: datetime, time: bool = True):
     """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
@@ -146,8 +147,9 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     for request in Bar('Filling formulae in spreadsheet', max=len(fill_requests)).iter(fill_requests):
         request_body = {'requests': [[request]]}
         google_api.spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
-    # Get the summary cell to go in a toast
-    summary = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()['values'][0][0]
+    # Get the summary cell to go in a toast (but sometimes it's blank if nothing interesting to report!)
+    summary_range = google_api.sheets.get(spreadsheetId=sheet_id, range='usageSummary').execute()
+    summary = summary_range.get('values', [['']])[0][0]
     # Add the minimum and maximum forecasted intensity for the next 2 days
     if not summary or (forecast := get_regional_intensity()) is None:  # will be None if this API call fails
         return summary
@@ -221,7 +223,27 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     # spreadsheet expects *end* times going from 00:00 to 23:30 - shift requested time back by half an hour
     half_hour = pandas.to_timedelta(30, 'min')
     start_date -= half_hour
-    data = await get_readings(start_date, fuel)
+    end_date = today() - half_hour
+    # if use_n3rgy:
+    #     params = {'start': ymdhm(start_date), 'end': ymdhm(today())}
+    #     url = f'{base_url}/{source}/consumption/1/?{urllib.parse.urlencode(params)}'
+    #     auth = aiohttp.BasicAuth(energy_credentials.mac_address, '')
+    #     record_path = 'values'
+    # else:  # Octopus
+    #     params = {'page_size': (end_date - start_date).days * 48, 'period_from': ymd(start_date, True) + 'Z',
+    #               'period_to': ymd(end_date, True) + 'Z', 'order_by': 'period'}
+    #     url = '/'.join([octopus_url, source + '-meter-points', energy_credentials.mpan[source], 'meters',
+    #                     energy_credentials.meter_serial_number[source], 'consumption', '?']) + urllib.parse.urlencode(
+    #         params)
+    #     auth = aiohttp.BasicAuth(energy_credentials.octopus_api_key, '')
+    #     record_path = 'results'
+    # print(url)
+    # async with aiohttp.ClientSession() as session:
+    #     async with session.get(url, auth=auth) as response:
+    #         response_json = await response.json()
+    response_json = await get_readings(start_date, fuel)
+    # print(response_json)
+    data = response_json  # array of [timestamp, reading]
     if not data:  # response_json['count'] == 0:  # no results
         return pandas.DataFrame()
     df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
@@ -344,23 +366,14 @@ def get_regional_intensity(start_time: pandas.Timestamp | str = 'now',
 
 def get_old_data_avg() -> None:
     """Get the two-week average of carbon data."""
-    start_date = today() - pandas.to_timedelta(7, 'd')  # to align to previous dataset
-    start_date = pandas.to_datetime('2025-01-01')
+    start_date = today() - pandas.to_timedelta(7, 'D')  # to align to previous dataset
+    start_date = pandas.to_datetime('2024-09-20')
+    geographies = ['OX11', 'EH9', 'IV1', '']  # blank = national
     while start_date < today():
-        # start_date -= pandas.to_timedelta(14, 'd')
-        # data = get_co2_data(start_date, postcode='OX11')
-        # south = data.mean().mean()  # average of whole DataFrame
-        data = get_co2_data(start_date, geography=RegionId.south_scotland)
-        scotland = data.mean().mean()  # average of whole DataFrame
-        # data = get_co2_data(start_date, postcode='')  # national
-        # national = data.mean().mean()  # average of whole DataFrame
-        print(start_date, '', '',
-              # south,
-              scotland,
-              # national,
-              sep='\t')
-        start_date += pandas.to_timedelta(14, 'd')
-        # return
+        avg = [get_co2_data(start_date, geography=geography).mean().mean()  # average of whole DataFrame
+               for geography in geographies]
+        print(start_date, '', '', *avg, sep='\t')
+        start_date += pandas.to_timedelta(14, 'D')
 
 
 def get_regions_data_avg() -> None:
@@ -461,6 +474,20 @@ async def get_readings(start_date: pandas.Timestamp, fuel: str,
     return [[timestamp, kwh] for timestamp, kwh in data if timestamp <= last_timestamp]
 
 
+async def loop_refresh_readings():
+    """Refresh readings every minute to check when they get updated."""
+    # 23/4: got readings after 13:37, last-time changed ~2h before that
+    while True:
+        readings = await get_readings(today() - pandas.Timedelta(days=1), 'electricity')
+        print(datetime.now(),
+              'from', datetime.fromtimestamp(readings[0][0]),
+              'to', datetime.fromtimestamp(readings[-1][0]),
+              'total', sum([kwh for _, kwh in readings]))
+        # j = await glowmarkt_call(f'resource/{resource_id}/catchup')
+        # assert j['status'] == 'OK'
+        time.sleep(60)
+
+
 def get_live_generation(source: str | None = None) -> str:
     """Fetch the live generation data for a given fuel.
     :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
@@ -510,7 +537,7 @@ def get_live_generation(source: str | None = None) -> str:
     return f'{icons.get(source, source)} {label}{total} GW'
 
 
-def get_generation_records() -> dict[str, int]:
+def get_generation_records() -> CaseInsensitiveDict:
     """Fetch the energy generation records from energydashboard.co.uk."""
     url = 'https://www.energydashboard.co.uk/records'
     response = requests.get(url)
@@ -522,14 +549,14 @@ def get_generation_records() -> dict[str, int]:
     script_json = script_json[:end_index]
     data = json.loads(script_json)
     page_props = data['props']['pageProps']
-    new_records = {record['source'].title(): record['record']['source_mw'] / 1000
-               for record in page_props['generationSummaries']}
+    new_records = CaseInsensitiveDict({record['source']: record['record']['source_mw'] / 1000
+               for record in page_props['generationSummaries']})
     new_records['lastUpdated'] = today()
     return new_records
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -542,5 +569,6 @@ if __name__ == '__main__':
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    # print(get_live_generation())
+    print(get_live_generation())
     # print(get_generation_records())
+    # asyncio.run(loop_refresh_readings())
