@@ -23,6 +23,7 @@ import energy_credentials
 import google_api
 from openweather import api_key
 
+
 def today() -> pandas.Timestamp:
     """Return a datetime object representing the start of today."""
     return pandas.to_datetime('today').to_period('D').start_time  # - pandas.to_timedelta(3, 'd')
@@ -38,9 +39,10 @@ bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes 
 colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
            'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"}
 icons = CaseInsensitiveDict({'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
-         'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'})
+                             'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'})
 records = CaseInsensitiveDict({'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
-           'lastUpdated': today() - timedelta(days=1)})
+                               'lastUpdated': today() - timedelta(days=1)})
+
 
 def dmy(date: datetime, time: bool = True):
     """Convert datetime into dd/mm/yyyy format, and optionally HH:MM."""
@@ -331,9 +333,11 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
     else:
         df.set_index('to', inplace=True)  # index is the *end* time of each period
         # Add the generation mix as well, why not?
+        # print(df['generationmix'])
         gen_mix = pandas.DataFrame([
-            {item['source']: item['perc'] for item in row}
+            {item['fuel']: item['perc'] for item in row}
             for row in df['generationmix']], index=df.index)
+        # print(gen_mix)
         return pandas.concat([df['intensity'], gen_mix], axis=1)
 
 
@@ -440,7 +444,7 @@ def dont_quote_colons(string: str, safe: str = '/', encoding=None, errors=None):
 
 class ReadingPeriod(StrEnum):
     """The aggregation level in which the data is to be returned (ISO 8601)."""
-    minute = 'PT1M' # only electricity
+    minute = 'PT1M'  # only electricity
     half_hour = 'PT30M'
     hour = 'PT1H'
     day = 'P1D'
@@ -550,7 +554,7 @@ def get_generation_records() -> CaseInsensitiveDict:
     data = json.loads(script_json)
     page_props = data['props']['pageProps']
     new_records = CaseInsensitiveDict({record['source']: record['record']['source_mw'] / 1000
-               for record in page_props['generationSummaries']})
+                                       for record in page_props['generationSummaries']})
     new_records['lastUpdated'] = today()
     return new_records
 
@@ -562,13 +566,14 @@ if __name__ == '__main__':
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
+    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
     # print(asyncio.run(get_fuel_data(start, 'electricity', remove_incomplete_rows=False)))
     # print(get_fuel_data_n3rgy(start, 'gas', remove_incomplete_rows=False))
     # print(get_temp_data())
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    print(get_live_generation())
+    # print(get_live_generation())
     # print(get_generation_records())
     # asyncio.run(loop_refresh_readings())
+    print(get_co2_data(start, 'WA4', do_pivot=False))
