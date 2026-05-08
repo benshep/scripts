@@ -79,7 +79,7 @@ async def check_radio_files() -> str | tuple[str, str]:
             else:
                 extra_played_count += 1  # don't delete, but flag as played for later
         else:
-            total_play_time += timedelta(tags.length)
+            total_play_time += timedelta(seconds=tags.length)
             if not first_unheard:
                 print(f'{index_prefix}❌ {track_title}')
                 first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
@@ -129,6 +129,7 @@ async def check_radio_files() -> str | tuple[str, str]:
         toast += delete_file(file)
     if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
         toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
+    print(total_play_time)
     if toast:  # only report total time if we're reporting something else too
         toast += f'📻 {total_play_time}\n'
     return (toast, image_filename) if image_filename else toast
@@ -207,5 +208,5 @@ def bump_down():
 if __name__ == '__main__':
     # get_artists(os.path.join(user_profile, 'Music'))
     # bump_down()
-    test_mode = True
+    # test_mode = True
     print(update_phone_music())
