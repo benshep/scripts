@@ -45,7 +45,7 @@ async def check_radio_files() -> str | tuple[str, str]:
     bump_dates = []
     toast = ''
     image_filename = ''
-    # total_hours = 0
+    total_play_time = timedelta(seconds=0)
     which_artist = {}
 
     files = [file for file in sorted(radio_files) if media.is_media_file(file)]
@@ -70,7 +70,6 @@ async def check_radio_files() -> str | tuple[str, str]:
 
         # tags = phrydy.MediaFile(file)
         tags_changed = False
-        # total_hours += tags.length / 3600
 
         track_title = media.artist_title(tags)
         if track_title in scrobbled_titles:
@@ -79,13 +78,15 @@ async def check_radio_files() -> str | tuple[str, str]:
                 scrobbled_radio.append(file)  # possibly delete this one
             else:
                 extra_played_count += 1  # don't delete, but flag as played for later
-        elif not first_unheard:
-            print(f'{index_prefix}❌ {track_title}')
-            first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
-        elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
-            bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
-            if bump_date not in bump_dates:
-                bump_dates.append(bump_date)  # but maintain a list, don't bump everything here
+        else:
+            total_play_time += timedelta(tags.length)
+            if not first_unheard:
+                print(f'{index_prefix}❌ {track_title}')
+                first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
+            elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
+                bump_date = file_date.replace(day=1) + relativedelta(months=1)  # first day of next month - for consistency
+                if bump_date not in bump_dates:
+                    bump_dates.append(bump_date)  # but maintain a list, don't bump everything here
 
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
@@ -128,7 +129,8 @@ async def check_radio_files() -> str | tuple[str, str]:
         toast += delete_file(file)
     if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
         toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
-    # toast += f'📻 {file_count} files; {weeks} weeks; {total_hours:.0f} hours\n'
+    if toast:  # only report total time if we're reporting something else too
+        toast += f'📻 {total_play_time}\n'
     return (toast, image_filename) if image_filename else toast
 
 
