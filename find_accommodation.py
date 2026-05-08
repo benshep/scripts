@@ -76,9 +76,13 @@ def flat_search(show_window: bool = False):
     report = ''
     for label in location_selector.find_elements(By.XPATH, '//label'):
         if target in label.text:
-            label.click()
-            results = web.find_elements(By.CLASS_NAME, 'ui-card-result')
-            report = f'{len(results)} rooms available in {target}'
+            report = f'Rooms available in {target}'
+            try:
+                label.click()
+                results = web.find_elements(By.CLASS_NAME, 'ui-card-result')
+                report = f'{len(results)} rooms available in {target}'
+            except Exception as e:
+                print(e)
             break
     web.quit()
     return report
