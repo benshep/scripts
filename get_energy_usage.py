@@ -538,7 +538,7 @@ def get_live_generation(source: str | None = None) -> str:
     total = generation_values[source]['total']
     broken = source in records and total > records[source]
     label = '🏆 ' if broken else ''
-    return f'{icons.get(source, source)} {label}{total} GW'
+    return f'{icons.get(source, source)} {label}{total:.2f} GW'
 
 
 def get_generation_records() -> CaseInsensitiveDict:
