@@ -67,7 +67,7 @@ def flat_search(show_window: bool = False, loop: bool = False):
     sleep(2)
     report = ''
     web.get(url)
-    while loop:
+    while True:
         location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
         availability = get_availability()
         max_length = max(len(name) for name in prices)
@@ -95,6 +95,8 @@ def flat_search(show_window: bool = False, loop: bool = False):
             sleep(60)
             print('Reloading at', datetime.now())
             web.refresh()
+        else:
+            break
     web.quit()
     return report
 
