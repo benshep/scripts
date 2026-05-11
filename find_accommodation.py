@@ -6,6 +6,8 @@ import urllib.parse
 import requests
 from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.common.by import By
+from pushbullet import Pushbullet  # to show notifications
+from pushbullet_api_key import api_key  # local file, keep secret!
 
 from sheffield_credentials import username, password
 
@@ -39,7 +41,7 @@ prices = {  # https://sheffield.ac.uk/accommodation/rents
 }
 
 
-def flat_search(show_window: bool = False):
+def flat_search(show_window: bool = False, loop: bool = False):
     """Open the University of Sheffield accommodation booking page, and check which rooms are available."""
     target = 'Endcliffe Vale Flats'
 
@@ -62,28 +64,35 @@ def flat_search(show_window: bool = False):
     web.find_element(By.ID, 'password').send_keys(password)
     web.find_element(By.ID, 'submitBtn').click()
     sleep(2)
-    web.get(url)
-    location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
-    availability = get_availability()
-    max_length = max(len(name) for name in prices)
-    for line in location_selector.text.splitlines():
-        name = line[:-11] if line.endswith(' Apartments') else line
-        print('\t'.join([
-            line,
-            *prices.get(line, ('', '')),
-            availability.get(name, '')
-        ]).expandtabs(max_length + 2))
     report = ''
-    for label in location_selector.find_elements(By.XPATH, '//label'):
-        if target in label.text:
-            report = f'Rooms available in {target}'
-            try:
-                label.click()
-                results = web.find_elements(By.CLASS_NAME, 'ui-card-result')
-                report = f'{len(results)} rooms available in {target}'
-            except Exception as e:
-                print(e)
+    while loop:
+        web.get(url)
+        location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
+        availability = get_availability()
+        max_length = max(len(name) for name in prices)
+        for line in location_selector.text.splitlines():
+            name = line[:-11] if line.endswith(' Apartments') else line
+            print('\t'.join([
+                line,
+                *prices.get(line, ('', '')),
+                availability.get(name, '')
+            ]).expandtabs(max_length + 2))
+        for label in location_selector.find_elements(By.XPATH, '//label'):
+            if target in label.text:
+                report = f'Rooms available in {target}'
+                try:
+                    label.click()
+                    results = web.find_elements(By.CLASS_NAME, 'ui-card-result')
+                    report = f'{len(results)} rooms available in {target}'
+                except Exception as e:
+                    print(e)
+                break
+        if report and loop:
+            Pushbullet(api_key).push_note(body=report, title='🏢 flat_search')
             break
+        if loop:
+            sleep(60)
+            print('Reloading')
     web.quit()
     return report
 
@@ -101,5 +110,5 @@ if __name__ == '__main__':
     # max_length = max(len(name) for name in prices)
     # for name, info in prices.items():
     #     print('\t'.join([name, *info]).expandtabs(max_length + 2))
-    report = flat_search(show_window=True)
+    report = flat_search(show_window=False, loop=True)
     print(report)
