@@ -1,6 +1,7 @@
 import os
 import re
 from time import sleep
+from datetime import datetime
 
 import urllib.parse
 import requests
@@ -92,7 +93,7 @@ def flat_search(show_window: bool = False, loop: bool = False):
             break
         if loop:
             sleep(60)
-            print('Reloading')
+            print('Reloading at', datetime.now())
             web.refresh()
     web.quit()
     return report
