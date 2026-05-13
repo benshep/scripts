@@ -50,6 +50,7 @@ def flat_search(show_window: bool = False, loop: bool = False):
         os.environ['MOZ_HEADLESS'] = '1'
     print('Logging in to accommodation website')
     web = WebDriver()
+    web.minimize_window()
     web.implicitly_wait(60)  # add an automatic wait to the browser handling
     params = {'UrlToken': '63296FB3', 'LowerRoomRateValue': 0, 'UpperRoomRateValue': 0, 'TermID': 244,
               'ClassificationID': 11, 'RoomLocationAreaID': 7, 'CurrentPageNumber': 1,
@@ -71,10 +72,12 @@ def flat_search(show_window: bool = False, loop: bool = False):
         location_selector = web.find_element(By.CLASS_NAME, 'ui-room-selection-location-filter')
         availability = get_availability()
         max_length = max(len(name) for name in prices)
+        print('')
         for line in location_selector.text.splitlines():
             name = line[:-11] if line.endswith(' Apartments') else line
+            display = f'🚨 {line} 🚨' if target in line else line
             print('\t'.join([
-                line,
+                display,
                 *prices.get(line, ('', '')),
                 availability.get(name, '')
             ]).expandtabs(max_length + 2))
@@ -97,6 +100,8 @@ def flat_search(show_window: bool = False, loop: bool = False):
             web.refresh()
         else:
             break
+    if report and show_window:
+        input(f'{report}. \nPress ENTER to close browser:')
     web.quit()
     return report
 
@@ -114,5 +119,5 @@ if __name__ == '__main__':
     # max_length = max(len(name) for name in prices)
     # for name, info in prices.items():
     #     print('\t'.join([name, *info]).expandtabs(max_length + 2))
-    report = flat_search(show_window=False, loop=True)
+    report = flat_search(show_window=True, loop=True)
     print(report)
