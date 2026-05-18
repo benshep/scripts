@@ -13,7 +13,7 @@ from typing import Generator
 from pushbullet import Pushbullet  # to show notifications
 from send2trash import send2trash
 
-from copy_60_minutes import get_pushes  # TODO: put in its own file
+from tools import get_pushes
 from folders import user_profile
 from pushbullet_api_key import api_key  # local file, keep secret!
 

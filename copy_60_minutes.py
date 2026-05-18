@@ -22,7 +22,6 @@ from send2trash import send2trash
 from folders import music_folder, radio_folder
 from lastfm import lastfm
 from media import is_media_file, artist_title
-from pushbullet_api_key import api_key  # local file, keep secret!
 from tools import remove_bad_chars
 
 music_folder = os.path.realpath(music_folder)  # fix issues with symlinks
@@ -495,68 +494,6 @@ def list_by_length(albums: dict[AlbumKey, Album], max_length: int = 0) -> None:
         if max_length and length > max_length:
             break
         print(length, length_counter[length], "*" * int(60 * length_counter[length] / max_count), sep='\t')
-
-
-def get_pushes(pb: pushbullet.Pushbullet, modified_after: float | None = None, limit: int | None = None,
-               filter_inactive: bool = True,
-               wait_for_reset: bool = False,
-               verbose: bool = False) -> list[dict]:
-    """Version of get_pushes from pushbullet.py that allows for rate limiting.
-    See https://docs.pushbullet.com/#ratelimiting
-    If wait_for_reset is True, it will wait until the rate limit gets reset,
-    otherwise it just returns what it has so far."""
-    data = {"modified_after": modified_after, "limit": limit}
-    if filter_inactive:
-        data['active'] = "true"
-
-    pushes_list = []
-    previous_remaining = 0
-    used = 0
-    while True:
-        r = pb._session.get(pb.PUSH_URL, params=data)
-        if r.status_code != requests.codes.ok:
-            raise pushbullet.PushbulletError(r.text)
-
-        js = r.json()
-        # The units are a sort of generic 'cost' number. A request costs 1 and a database operation costs 4.
-        # So reading 500 pushes costs about 500 database operations + 1 request = 500*4 + 1 = 2001
-        reset = int(r.headers.get('X-Ratelimit-Reset'))  # when it resets (integer seconds in Unix Time)
-        rate_limit = int(r.headers.get('X-Ratelimit-Limit'))  # what the ratelimit is
-        remaining = int(r.headers.get('X-Ratelimit-Remaining'))  # how much you have remaining
-        if previous_remaining > 0:
-            used = previous_remaining - remaining
-        previous_remaining = remaining
-        reset_time = datetime.fromtimestamp(reset)
-        if verbose:
-            print(f'{reset_time=} {rate_limit=} {remaining=} {used=}')
-        pushes_list += js.get("pushes")
-        if remaining < 2 * used:  # we could use up to 2x more next time (seems to be mostly 85 but sometimes lower)
-            if wait_for_reset:
-                print('Waiting for rate limit reset at', reset_time)
-                time.sleep(reset - datetime.now().timestamp() + 5)
-            else:
-                break
-        if 'cursor' in js and (not limit or len(pushes_list) < limit):
-            if verbose:
-                print(f'Got {len(pushes_list)} pushes')
-            data['cursor'] = js['cursor']
-        else:
-            break
-
-    return pushes_list
-
-
-def check_previous() -> None:
-    """Fetch previous toasts, and determine how many hours were added to the radio files on average."""
-    pb = pushbullet.Pushbullet(api_key)
-    start = datetime.now() - timedelta(days=1000)
-    pushes = get_pushes(pb, modified_after=start.timestamp(), wait_for_reset=True, verbose=True)
-    music_updates = [push for push in pushes if push.get('title') == '🎵 Commute Music']
-
-    for update in music_updates:
-        for line in update['body'].splitlines():
-            if line.startswith('✔'):
-                print(line)
 
 
 if __name__ == '__main__':
