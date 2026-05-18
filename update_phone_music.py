@@ -47,6 +47,7 @@ async def check_radio_files() -> str | tuple[str, str]:
     image_filename = ''
     total_play_time = timedelta(seconds=0)
     which_artist = {}
+    cover_art = {}
 
     files = [file for file in sorted(radio_files) if media.is_media_file(file)]
     async with asyncio.TaskGroup() as task_group:
@@ -95,6 +96,19 @@ async def check_radio_files() -> str | tuple[str, str]:
             tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
 
+        # some files don't have cover art: use art from an existing file with the same album title
+        if not tags.art and (art := cover_art.get(tags.album)):
+            print(f'{index_prefix}Set {file} cover art from others in {tags.album}')
+            tags.art = art
+            tags_changed = True
+        elif tags.album in cover_art:
+            if cover_art[tags.album] is not None and cover_art[tags.album] != tags.art:
+                cover_art[tags.album] = None  # mismatch
+                print(f'{index_prefix}(multiple images) - {tags.album}')
+        else:  # not seen this album before
+            cover_art[tags.album] = tags.art
+
+        # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
         if not tags.albumartist:
             if artist := tags.artist or which_artist.get(tags.album):
                 print(f'{index_prefix}Set {file} album artist to {artist}' +
@@ -102,8 +116,6 @@ async def check_radio_files() -> str | tuple[str, str]:
                 tags.artist = artist
                 tags.albumartist = artist
                 tags_changed = True
-
-        # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
         if tags.album in which_artist:
             if which_artist[tags.album] is not None and which_artist[tags.album] != tags.artist:
                 which_artist[tags.album] = None  # mismatch
