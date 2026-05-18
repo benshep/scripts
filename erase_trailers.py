@@ -18,11 +18,12 @@ max_cut = int(0.9 * compare_length)  # anything more than this is probably an er
 hash_size = 1  # just use the first N characters of a hash
 
 
-def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(seconds=60)) -> str:
+def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] = timedelta(seconds=60)) -> str:
     """Search for repeated segments in MP3 files in the radio folder, and erase those segments from the files.
     Set only_known=True to only search for known repeats (stored in repeats.txt) , otherwise it will compare every file
     to all the previous ones.
-    Uses a time limit of 60 seconds by default; set the limit to -1 to search all files, or set a number of files."""
+    Uses a time limit of 60 seconds by default; set the limit to -1 to search all files, set a number of files,
+    or pass a list of files to examine."""
     # Limitation: it doesn't tend to find repeats from the end of the file. Probably because those bits don't sync
     # neatly to frame boundaries. Potentially could use acoustID to compare the raw audio - but then we have to either
     # figure out how many frames to chop, or re-encode to MP3.
@@ -38,9 +39,12 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta = timedelta(
     repeats = open(repeat_file, 'r').read().splitlines()
     print(f'{len(repeats)} known repeats')
     start_time = datetime.now()
-    file_list = os.listdir()
-    last_index = limit if isinstance(limit, int) else len(file_list)
-    file_list = sample(file_list, last_index)
+    if isinstance(limit, list):
+        file_list = limit
+    else:
+        file_list = os.listdir()
+        last_index = limit if isinstance(limit, int) else len(file_list)
+        file_list = sample(file_list, last_index)
     for file in file_list:
         if isinstance(limit, timedelta) and datetime.now() - start_time >= limit:
             print('Time limit reached')
@@ -121,4 +125,4 @@ def write_mp3_file(file: str, frames: list[bytes]) -> float:
 
 if __name__ == '__main__':
     # test_mode = True
-    print(erase_trailers())
+    print(erase_trailers(limit=['RareEarth-20260313-LakesLochsAndLoughs.mp3']))
