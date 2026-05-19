@@ -1,6 +1,6 @@
 from pathlib import Path
 
-user_profile = Path('~').expanduser()
+user_profile = Path.home()
 downloads_folder = user_profile.joinpath('Downloads')
 
 music_folder = user_profile.joinpath('Music')
