@@ -1,5 +1,5 @@
 import os
-
+from time import sleep
 from phrydy import MediaFile
 
 
@@ -15,8 +15,9 @@ def artist_title(file: str | MediaFile, separator: str = ' - ') -> str:
     """Return {artist} - {title} string for a given file, converted to lowercase for easy comparison.
     Pass file as a filename or a MediaFile object from phrydy."""
     media_info = MediaFile(file) if isinstance(file, str) else file
+    artist_title.counter += 1
     return f'{media_info.artist}{separator}{media_info.title}'.lower()
-
+artist_title.counter = 0
 
 def is_album_folder(name: str):
     """Returns True if the given name looks like an album folder."""

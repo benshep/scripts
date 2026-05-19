@@ -15,6 +15,7 @@ from typing import NamedTuple
 import phrydy  # to get media data
 import pushbullet
 import requests
+import wcwidth
 from PIL import Image
 from progress.bar import Bar, IncrementalBar
 from send2trash import send2trash
@@ -29,6 +30,10 @@ copy_log_file = 'copied_already.txt'
 Album = dict[str, float]
 
 test_mode = False
+
+class TerminateTaskGroup(Exception):
+    """Exception raised to terminate a task group."""
+
 
 class Folder(NamedTuple):
     """A folder to copy albums into."""
@@ -386,6 +391,8 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
     scrobbles = get_scrobbles()
     toast = ''
     folders_to_fill = []
+    start_time = datetime.now()
+    artist_title.counter = 0
     for copy_folder in copy_folder_list:
         os.chdir(copy_folder.address)
         # delete any that have been played
@@ -396,20 +403,28 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
             os.chdir(subfolder)
             files = [file for file in os.listdir() if is_media_file(file)]
             file_count = len(files)
-            async with asyncio.TaskGroup() as task_group:
-                tasks = [task_group.create_task(asyncio.to_thread(artist_title, file)) for file in files]
-            artist_titles = [t.result() for t in tasks]
-            played_count = 0
-            for tags in artist_titles:
-                # sometimes Last.fm artists/titles aren't quite the same as mine - look for close matches
-                if get_close_matches(tags, scrobbles, n=1, cutoff=0.9):
-                    played_count += 1
-                    if played_count >= file_count / 2:
-                        print(f'▶️  played at least {played_count}/{file_count} tracks')
-                        to_delete.append(subfolder)
-                        break
-            else:
-                print('⛔  not played')
+            try:
+                async with asyncio.TaskGroup() as task_group:
+                    artist_titles = [task_group.create_task(asyncio.to_thread(artist_title, file)) for file in files]
+                    # artist_titles = [t.result() for t in tasks]
+                    played_count = 0
+                    not_played_count = 0
+                    for tags in artist_titles:
+                        # sometimes Last.fm artists/titles aren't quite the same as mine - look for close matches
+                        if get_close_matches(await tags, scrobbles, n=1, cutoff=0.9):
+                            played_count += 1
+                            if played_count >= file_count / 2:
+                                print(wcwidth.ljust("▶️", 3), f'played at least {played_count}/{file_count} tracks')
+                                to_delete.append(subfolder)
+                                break
+                        else:
+                            not_played_count += 1
+                            if not_played_count >= file_count / 2:
+                                print(wcwidth.ljust("⛔", 3), 'not played')
+                                break
+                    raise TerminateTaskGroup()
+            except* TerminateTaskGroup:
+                pass
             os.chdir('..')
 
         for subfolder in to_delete:
@@ -418,6 +433,7 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
             subfolders.remove(subfolder)
         if test_mode or len(subfolders) < copy_folder.min_count:  # need more albums in this folder
             folders_to_fill.append(copy_folder)
+    print('Checked folders in', datetime.now() - start_time, 'with', artist_title.counter, 'calls to artist_title')
     return toast, folders_to_fill
 
 
@@ -500,7 +516,7 @@ if __name__ == '__main__':
     # then = datetime.now()
     # print(*scan_music_folder().items(), sep='\n')
     # print(datetime.now() - then)
-    test_mode = True
+    # test_mode = True
     # from pyinstrument import Profiler
     result = copy_60_minutes()
     if isinstance(result, tuple):
