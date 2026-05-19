@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from time import sleep
 from phrydy import MediaFile
 
@@ -7,15 +8,15 @@ from phrydy import MediaFile
 media_exts = ('.mp3', '.m4a', '.ogg', '.flac', '.opus', '.wma')
 
 
-def is_media_file(filename: str) -> bool:
+def is_media_file(filename: str | Path) -> bool:
     """Return True if the filename ends with a known media file extension."""
-    return filename.lower().endswith(media_exts)
+    return filename.lower().endswith(media_exts) if isinstance(filename, str) else filename.suffix.lower() in media_exts
 
 
-def artist_title(file: str | MediaFile, separator: str = ' - ') -> str:
+def artist_title(file: str | MediaFile | Path, separator: str = ' - ') -> str:
     """Return {artist} - {title} string for a given file, converted to lowercase for easy comparison.
     Pass file as a filename or a MediaFile object from phrydy."""
-    media_info = MediaFile(file) if isinstance(file, str) else file
+    media_info = file if isinstance(file, MediaFile) else MediaFile(file)
     artist_title.counter += 1
     return f'{media_info.artist}{separator}{media_info.title}'.lower()
 artist_title.counter = 0
