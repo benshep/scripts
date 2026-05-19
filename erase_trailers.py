@@ -1,7 +1,7 @@
-import os
 from datetime import timedelta, datetime
 from difflib import SequenceMatcher
 from hashlib import sha1
+from pathlib import Path
 from random import sample
 from shutil import copy2
 
@@ -31,18 +31,18 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
     # and use audioread to get the PCM data
 
     toast = ''
-    if not os.path.exists(radio_folder):
+    if not radio_folder.exists():
         return ''  # doesn't exist on every computer
-    os.chdir(radio_folder)
-    repeat_file = 'repeats.txt'
+    # os.chdir(radio_folder)
+    repeat_file = radio_folder.joinpath('repeats.txt')
     digest = {}  # store each file's digest in a dict
-    repeats = open(repeat_file, 'r').read().splitlines()
+    repeats = repeat_file.read_text().splitlines()
     print(f'{len(repeats)} known repeats')
     start_time = datetime.now()
     if isinstance(limit, list):
-        file_list = limit
+        file_list = [radio_folder.joinpath(file) for file in limit]
     else:
-        file_list = os.listdir()
+        file_list = list(radio_folder.glob('*.mp3', case_sensitive=False))
         last_index = limit if isinstance(limit, int) else len(file_list)
         file_list = sample(file_list, last_index)
     for file in file_list:
@@ -50,15 +50,13 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
             print('Time limit reached')
             break
         cut_length = 0
-        if not file.lower().endswith('.mp3'):
-            continue
-        frames = open(file, 'rb').read().split(frame_start)
+        frames = file.read_bytes().split(frame_start)
         this_digest = ''.join(sha1(frame).hexdigest()[:hash_size] for frame in frames[:compare_length])
         try:
             other_file = next(f for f, d in digest.items() if d == this_digest)
-            if os.path.getsize(other_file) == os.path.getsize(file):
+            if other_file.stat().st_size == file.stat().st_size:
                 # digest and file length are identical to a previous file, almost certainly a duplicate
-                print(f'{file} is duplicate of {other_file} - deleting')
+                print(f'{file.name} is duplicate of {other_file.name} - deleting')
                 send2trash(file)
                 continue
         except StopIteration:
@@ -69,7 +67,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
             if repeat in this_digest:
                 index = this_digest.index(repeat)
                 length = len(repeat)
-                print(f'{file}: found {repeat[:10]} at {index}, {length=}')
+                print(f'{file.name}: found {repeat[:10]} at {index}, {length=}')
                 if length > max_cut:
                     print('= too long, ignoring')
                     continue
@@ -80,7 +78,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
             # compare with previous files
             matcher = SequenceMatcher(autojunk=False)
             matcher.set_seq2(this_digest)  # SequenceMatcher computes and caches detailed info about the second sequence
-            bar = IncrementalBar(file, max=len(digest))
+            bar = IncrementalBar(file.name, max=len(digest))
             all_matches = [get_matches(prev_digest, matcher, bar) for prev_digest in digest.values()]
             for prev_file, matches in zip(digest.keys(), all_matches):
                 if matches:
@@ -99,7 +97,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
             print('')  # new line after progress bar
         digest[file] = this_digest
         if cut_length:
-            toast += f'{file[:-4]}, {cut_length:.0f}s\n'
+            toast += f'{file.stem}, {cut_length:.0f}s\n'
     return toast
 
 
@@ -111,13 +109,13 @@ def get_matches(prev_digest, matcher, bar):
             if max_cut > match.size > 38 * hash_size and match.size % hash_size == 0]
 
 
-def write_mp3_file(file: str, frames: list[bytes]) -> float:
+def write_mp3_file(file: Path, frames: list[bytes]) -> float:
     """Rewrite an MP3 file."""
     if not test_mode:
         original_length = MediaFile(file).length
         send2trash(file)  # don't just overwrite it in case something goes wrong!
         # copy2(file, file + '.orig.mp3')
-        open(file, 'wb').write(frame_start.join(frames))
+        file.write_bytes(frame_start.join(frames))
         return original_length - MediaFile(file).length
     else:
         return 0  # don't guess length in test mode
@@ -125,4 +123,4 @@ def write_mp3_file(file: str, frames: list[bytes]) -> float:
 
 if __name__ == '__main__':
     # test_mode = True
-    print(erase_trailers(limit=['RareEarth-20260313-LakesLochsAndLoughs.mp3']))
+    print(erase_trailers(limit=5))

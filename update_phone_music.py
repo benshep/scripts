@@ -36,7 +36,7 @@ async def check_radio_files() -> str | tuple[str, str]:
     first_unheard = None  # first file in the list that hasn't been played
     extra_played_count = 0  # more files that have been played, after one that apparently hasn't
     scrobbled_titles = get_scrobbled_titles(lastfm.get_user('ning'))
-    os.chdir(folders.radio_folder)
+    # os.chdir(folders.radio_folder)
     radio_files = [file for file in sorted(radio_folder.iterdir()) if file.suffix.lower() in media.media_exts]
     total_file_count = len(radio_files)
     digits = math.floor(math.log10(total_file_count)) + 1
@@ -132,7 +132,8 @@ async def check_radio_files() -> str | tuple[str, str]:
                     and bump_dates and bump_dates[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file.stem}\n'
-                file.rename(f'{new_date} (bumped from {file_date_text}) {file_title}')
+                new_name = f'{new_date} (bumped from {file_date_text}) {file_title}{file.suffix}'
+                file.rename(radio_folder.joinpath(new_name))
                 if not image_filename and tags.art:
                     _, image_filename = tempfile.mkstemp()
                     open(image_filename, 'wb').write(tags.art)
@@ -198,14 +199,14 @@ def check_radio_hours_added():
 
 def bump_down():
     """Bump an album down the list by increasing the date in the filename."""
-    os.chdir(folders.radio_folder)
-    radio_files = os.listdir()
+    # os.chdir(folders.radio_folder)
+    radio_files = radio_folder.iterdir()
     next_date = None
     for file in sorted(radio_files, reverse=True):  # get most recent first
         if not media.is_media_file(file):
             continue
         try:
-            file_date = datetime.strptime(file[:10], '%Y-%m-%d')
+            file_date = datetime.strptime(file.stem[:10], '%Y-%m-%d')
         except ValueError:
             continue  # not a date-based filename
 
@@ -218,7 +219,7 @@ def bump_down():
             print('Last file', file, next_date)
         else:
             next_date -= timedelta(days=6)
-            os.rename(file, next_date.strftime('%Y-%m-%d') + file[10:])
+            file.rename(radio_folder.joinpath(next_date.strftime('%Y-%m-%d') + file.name[10:]))
 
 
 if __name__ == '__main__':

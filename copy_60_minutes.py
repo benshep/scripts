@@ -3,7 +3,6 @@ import os
 import random
 import re
 import tempfile
-import time
 from collections import Counter
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -14,8 +13,6 @@ from shutil import copy2  # to copy files
 from typing import NamedTuple
 
 import phrydy  # to get media data
-import pushbullet
-import requests
 import wcwidth
 from PIL import Image
 from progress.bar import Bar, IncrementalBar
@@ -31,6 +28,8 @@ copy_log_file = music_folder.joinpath('copied_already.txt')
 Album = dict[str, float]
 
 test_mode = False
+cross = wcwidth.ljust('❌', 3)
+tick = wcwidth.ljust('✔️', 3)
 
 
 class TerminateTaskGroup(Exception):
@@ -155,7 +154,7 @@ async def get_tags(folder: Path, file: Path, album: dict, copied_already: set[st
     return Tags(folder, file, album_artist, album_title, length)
 
 
-async def read_tags(file: Path, folder: Path) -> phrydy.MediaFile | None:
+async def read_tags(file: Path | str, folder: Path) -> phrydy.MediaFile | None:
     """Read tags from a media file."""
     filename = folder / file
     try:
@@ -255,17 +254,17 @@ async def copy_albums(copy_folder_list: list[Folder],
             elapsed = (datetime.now() - start_loop).total_seconds() * 1000
 
             if chosen_key.tab_join() in copied_already:
-                print(f'❌  copied already {elapsed:.0f}ms')
+                print(f'{cross} copied already {elapsed:.0f}ms')
                 continue
 
             if len(scanned_albums[chosen_key]) < 2:
-                print(f'❌  not enough tracks {elapsed:.0f}ms')
+                print(f'{cross} not enough tracks {elapsed:.0f}ms')
                 continue
 
             length = sum(scanned_albums[chosen_key].values())
             print(f'({round(length)} min)', end=' ')
             if length > max_length:
-                print(f'❌  too long {elapsed:.0f}ms')
+                print(f'{cross} too long {elapsed:.0f}ms')
                 continue
 
             # could we add this to any existing lists?
@@ -284,15 +283,15 @@ async def copy_albums(copy_folder_list: list[Folder],
             if index is not None:
                 copy_dict = maybe_list[index]
                 new_length = new_lengths[index]
-                print('✔️ appended to', *copy_dict.keys())
+                print(tick, 'appended to', *copy_dict.keys())
                 copy_dict[chosen_key] = scanned_albums[chosen_key]
             else:  # new list
                 maybe_list.append({chosen_key: scanned_albums[chosen_key]})
                 new_length = length
-                print('✔️')
+                print(tick)
             if new_length >= min_length:
                 to_copy -= 1
-                print(f'✔️ Got enough, {to_copy=}')
+                print(f'{tick} Got enough, {to_copy=}')
 
         if to_copy:  # ran out of albums
             toast += f'⏹ Not enough found with length {copy_folder.min_length}-{copy_folder.max_length} minutes\n'
@@ -309,7 +308,7 @@ async def copy_albums(copy_folder_list: list[Folder],
                 if not test_mode:
                     with suppress(OSError):  # doesn't matter if an error occurs here
                         folder_name.rename(copy_folder.address.joinpath(folder_name_inc_length))
-                toast += f'✔ {folder_name_inc_length[11:]}\n'
+                toast += f'{tick} {folder_name_inc_length[11:]}\n'
                 for key, album in sorted(copy_dict.items(), reverse=True,
                                          key=lambda item: sum(item[1].values())):
                     # Check for embedded images in the tags of the first file
@@ -430,7 +429,7 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
 
         for subfolder in to_delete:
             send2trash(subfolder)
-            toast += f'❌ {subfolder[11:]}\n'
+            toast += f'{cross} {subfolder[11:]}\n'
             subfolders.remove(subfolder)
         if test_mode or len(subfolders) < copy_folder.min_count:  # need more albums in this folder
             folders_to_fill.append(copy_folder)
