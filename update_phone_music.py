@@ -142,8 +142,9 @@ async def check_radio_files() -> str | tuple[str, str]:
     if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
         toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
     print(total_play_time)
+    total_seconds = total_play_time.total_seconds()
     if toast:  # only report total time if we're reporting something else too
-        toast += f'📻 {total_play_time}\n'
+        toast += f'📻 {total_seconds // 3600:.0f}h {(total_seconds // 60) % 60:.0f}m\n'
     return (toast, image_filename) if image_filename else toast
 
 
