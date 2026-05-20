@@ -1,4 +1,3 @@
-import os
 import urllib.parse
 from base64 import b32hexencode
 from datetime import datetime, timedelta
@@ -237,8 +236,8 @@ def get_new_releases(artist) -> list[Release]:
 
 def find_new_releases():
     """Find new releases for the user's top artists."""
-    release_list_filename = os.path.join(music_folder, 'New releases.md')
-    release_list = open(release_list_filename, encoding='utf-8').read() if os.path.exists(release_list_filename) else ''
+    release_list_filename = music_folder.joinpath(music_folder, 'New releases.md')
+    release_list = release_list_filename.read_text(encoding='utf-8') if release_list_filename.exists() else ''
     artists = get_top_artists()
     all_releases = []
     toast = ''
