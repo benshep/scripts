@@ -21,9 +21,9 @@ def artist_title(file: str | MediaFile | Path, separator: str = ' - ') -> str:
     return f'{media_info.artist}{separator}{media_info.title}'.lower()
 artist_title.counter = 0
 
-def is_album_folder(name: str):
+def is_album_folder(name: Path):
     """Returns True if the given name looks like an album folder."""
-    return ' - ' in name or os.path.sep in name or 'best of' in name.lower()
+    return ' - ' in name.name or len(name.parts) > 1 or 'best of' in name.name.lower()
 
 
 def disc_track(media: MediaFile, include_disc: bool = False) -> int:
