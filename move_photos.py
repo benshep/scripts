@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections import Counter
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from shutil import move  # safer than os.rename across different filesystems
 from time import sleep
 from typing import Generator
@@ -31,8 +32,8 @@ class InvalidResponse(Exception):
 
 
 name = sys.argv[1] if len(sys.argv) > 1 else 'me'
-pics_folder = os.path.join(user_profile, 'Pictures' if name == 'me' else f'Pictures-{name}')
-temp_folder = os.path.join(pics_folder, str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
+pics_folder = user_profile.joinpath('Pictures' if name == 'me' else f'Pictures-{name}')
+temp_folder = pics_folder.joinpath(str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
 
 
 def organise_photos():
@@ -48,25 +49,26 @@ def organise_photos():
         else:
             break
     else:
-        pushbullet.push_note(app_title, f'No response received: photos left in {os.path.split(temp_folder)[-1]}')
+        pushbullet.push_note(app_title, f'No response received: photos left in {temp_folder.name}')
         return
 
     moved_list = move_photos_to_organised_folders(responses)
     convert_mov_videos(moved_list)
 
 
-def convert_mov_videos(moved_list: list[str]):
+def convert_mov_videos(moved_list: list[Path]):
     """Run process to convert .mov videos to smaller .mkv format."""
     converted_count = 0
     space_reduction = 0
     for filename in moved_list:
-        if filename.lower().endswith('.mov'):
-            original_size = os.path.getsize(filename)
-            new_filename = filename[:-3] + 'mkv'
-            if subprocess.call(['ffmpeg', '-n', '-i', filename] + \
+        if filename.match('*.mov', case_sensitive=False):
+            original_size = filename.stat().st_size
+            new_filename = filename.stem + '.mkv'
+            if subprocess.call(['ffmpeg', '-n', '-i', filename.name] + \
                                '-vcodec libx264 -acodec aac -preset medium -crf 22 -ab 96k'.split(' ') +
-                               [new_filename]) == 0:
-                space_reduction += (original_size - os.path.getsize(new_filename)) / 1024 ** 2
+                               [new_filename],
+                               cwd=filename.parent) == 0:
+                space_reduction += (original_size - filename.parent.joinpath(new_filename).stat().st_size) / 1024 ** 2
                 send2trash(filename)  # remove original if conversion successful
                 converted_count += 1
     if converted_count:
@@ -74,21 +76,21 @@ def convert_mov_videos(moved_list: list[str]):
                              f'Converted {converted_count} .mov videos to .mkv\n{space_reduction:.0f} MB saved')
 
 
-def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[str]:
-    os.chdir(temp_folder)
+def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[Path]:
     file_counter = Counter()
     moved_list = []
-    for filename in os.listdir():
-        taken_date = datetime.fromtimestamp(os.path.getmtime(filename)).date()
+    for filename in temp_folder.glob('*.jpg', case_sensitive=False):
+        taken_date = datetime.fromtimestamp(filename.stat().st_mtime).date()
         for date_value, description in responses:
             if taken_date >= date_value:
-                folder_name = os.path.join(str(date_value.year), f"{date_value.strftime('%m-%d')} {description}")
+                destination_folder = pics_folder.joinpath(
+                    str(date_value.year),
+                    f"{date_value.strftime('%m-%d')} {description}"
+                )
 
-        destination_folder = os.path.join(pics_folder, folder_name)
-        os.makedirs(destination_folder, exist_ok=True)
+        destination_folder.mkdir(exist_ok=True)
         moved_list.append(move(filename, destination_folder))
-        file_counter[folder_name] += 1
-    os.chdir('..')
+        file_counter[destination_folder] += 1
     os.rmdir(temp_folder)
     pushbullet.push_note(app_title, '\n'.join(f'{folder}: {count} files' for folder, count in file_counter.items()))
     return moved_list
@@ -98,23 +100,20 @@ def move_photos_to_temp_folder() -> list[date]:
     """Move pictures off memory card onto local storage."""
     #  move all pics from folders under DCIM to single folder under Pictures
     if on_windows:
-        folder = r'D:/DCIM'
+        folder = Path(r'D:/DCIM')
     else:
         card_name = {'me': 'SD-4GB', 'Katie': '9488-CBB1'}
-        folder = f'/media/ben/{card_name[name]}/DCIM'
-    os.chdir(folder)
-    os.makedirs(temp_folder)
+        folder = Path(f'/media/ben/{card_name[name]}/DCIM')
+    temp_folder.mkdir()
 
     taken_dates = set()
     # loop through folders under DCIM
-    for dirpath, _, filenames in os.walk(folder):
-        for file in filenames:
-            full_filename = os.path.join(dirpath, file)
-            taken_date = datetime.fromtimestamp(os.path.getmtime(full_filename)).date()
-            if taken_date.year == 2014:  # likely the 'if found' image
-                continue
-            taken_dates.add(taken_date)
-            move(full_filename, temp_folder)
+    for file in folder.glob('*.jpg', case_sensitive=False):
+        taken_date = datetime.fromtimestamp(file.stat().st_mtime).date()
+        if taken_date.year == 2014:  # likely the 'if found' image
+            continue
+        taken_dates.add(taken_date)
+        move(file, temp_folder)
 
     # send message via Pushbullet to say "move complete" and lists contiguous date ranges (e.g. 30-31 July, 9-12 August)
     taken_dates = sorted(list(taken_dates))
