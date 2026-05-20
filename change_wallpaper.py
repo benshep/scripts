@@ -102,7 +102,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
         draw.text((x + 1, y + 1), text, 'black', font=font, anchor=anchor)
         draw.text((x, y), text, 'white', font=font, anchor=anchor)
 
-    exclude_list = pics_folder.joinpath('exclude.txt').read_text().splitlines()
+    exclude_list = (pics_folder / 'exclude.txt').read_text().splitlines()
 
     today = datetime.date.today()
 
@@ -216,7 +216,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 write_caption(canvas, caption, caption_x, mon.height - 50)
                 # Save into a numbered filename every run (max 200), in the appropriate folder (Landscape or Portrait)
                 # Find the most recent
-                wallpaper_subfolder = wallpaper_dir.joinpath('Landscape' if mon_landscape else 'Portrait')
+                wallpaper_subfolder = wallpaper_dir / ('Landscape' if mon_landscape else 'Portrait')
                 wallpaper_subfolder.mkdir(exist_ok=True)
                 image_files = []
                 for filename in wallpaper_subfolder.glob('*.jpg'):
@@ -232,7 +232,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                     file_num = (int(newest[:-4]) + 1) % 200
                 else:
                     file_num = 0
-                wallpaper_filename = wallpaper_subfolder.joinpath(f'{file_num:03d}.jpg')
+                wallpaper_filename = wallpaper_subfolder / f'{file_num:03d}.jpg'
                 # How long between the oldest and the newest?
                 if wallpaper_filename.exists():
                     dt = now - datetime.datetime.fromtimestamp(wallpaper_filename.stat().st_mtime)
@@ -245,7 +245,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
             break
 
     if target != 'phone':
-        wallpaper_filename = wallpaper_dir.joinpath('wallpaper.jpg')
+        wallpaper_filename = wallpaper_dir / 'wallpaper.jpg'
         if target == 'desktop':
             for _ in range(5):
                 try:
@@ -262,9 +262,9 @@ def change_wallpaper(target: str = 'desktop') -> None:
         if target == 'lockscreen':  # save as lockscreen filename
             # registry key to disable changing this:
             # HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization
-            canvas.save(wallpaper_dir.joinpath('00.jpg'))
+            canvas.save(wallpaper_dir / '00.jpg')
             # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
-            canvas.save(wallpaper_dir.joinpath('01.jpg'))
+            canvas.save(wallpaper_dir / '01.jpg')
 
         elif on_windows:  # use USER32 call to set a desktop background
             ctypes.windll.user32.SystemParametersInfoW(20, 0, str(wallpaper_filename), 3)
@@ -375,7 +375,7 @@ def on_remote_desktop():
 
 def get_wallpaper_dir(target) -> Path:
     subfolder = {'desktop': 'wallpaper', 'lockscreen': 'lockscreen', 'phone': 'phone-pics'}[target]
-    wallpaper_dir = user_profile.joinpath(subfolder)
+    wallpaper_dir = user_profile / subfolder
     wallpaper_dir.mkdir(exist_ok=True)
     return wallpaper_dir
 

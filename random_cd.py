@@ -74,7 +74,7 @@ def scrobble_cd(track_list: list[MediaFile]) -> bool:
 
 def find_folders() -> list[Path]:
     """Walk through music folders on the local drive and return a list."""
-    not_cd_folders_file = music_folder.joinpath('not_cd_folders.txt')
+    not_cd_folders_file = music_folder / 'not_cd_folders.txt'
     exclude_prefixes = tuple(not_cd_folders_file.read_text().split('\n')) \
         if not_cd_folders_file.exists() else ()
     # if not cd_mode:

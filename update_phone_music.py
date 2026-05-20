@@ -133,7 +133,7 @@ async def check_radio_files() -> str | tuple[str, str]:
                 new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
                 toast += f'🔼 {file.stem}\n'
                 new_name = f'{new_date} (bumped from {file_date_text}) {file_title}{file.suffix}'
-                file.rename(radio_folder.joinpath(new_name))
+                file.rename(radio_folder / new_name)
                 if not image_filename and tags.art:
                     _, image_filename = tempfile.mkstemp()
                     open(image_filename, 'wb').write(tags.art)
@@ -219,7 +219,7 @@ def bump_down():
             print('Last file', file, next_date)
         else:
             next_date -= timedelta(days=6)
-            file.rename(radio_folder.joinpath(next_date.strftime('%Y-%m-%d') + file.name[10:]))
+            file.rename(radio_folder / (next_date.strftime('%Y-%m-%d') + file.name[10:]))
 
 
 if __name__ == '__main__':

@@ -18,9 +18,9 @@ def new_version():
     # folders
     app_name = 'get_iplayer'
     choco_name = 'getiplayer'
-    app_folder = user_profile.joinpath('GitHub', app_name)
-    wiki_folder = user_profile.joinpath('GitHub', f'{app_name}.wiki')
-    choco_folder = misc_folder.joinpath(choco_name)
+    app_folder = user_profile / 'GitHub' / app_name
+    wiki_folder = user_profile / 'GitHub' / f'{app_name}.wiki'
+    choco_folder = misc_folder / choco_name
     [send2trash(filename) for filename in choco_folder.glob('*.nupkg')]
     releases_latest = "https://api.github.com/repos/get-iplayer/get_iplayer_win32/releases/latest"
 
@@ -28,14 +28,14 @@ def new_version():
     assert subprocess.call('git pull', cwd=app_folder) == 0
     assert subprocess.call('git pull', cwd=wiki_folder) == 0
 
-    nuspec_filename = choco_folder.joinpath(f'{choco_name}.nuspec')
+    nuspec_filename = choco_folder / f'{choco_name}.nuspec'
     encoding = 'utf-8'
     nuspec = nuspec_filename.read_text(encoding=encoding)
 
-    authors = app_folder.joinpath('CONTRIBUTORS').read_text().replace('\n', ', ')[:-2]
+    authors = (app_folder / 'CONTRIBUTORS').read_text().replace('\n', ', ')[:-2]
     nuspec = replace_in_tag(nuspec, 'authors', authors)
 
-    release_notes = wiki_folder.joinpath('releasenotes.md').read_text()
+    release_notes = (wiki_folder / 'releasenotes.md').read_text()
     # find first link - should point to the newest version
     for link_name, release_detail_file, anchor in re.findall(
             r'\[(.*)]\((.*)#(.*)\)', release_notes):  # e.g. [get_iplayer 3.36](release330to339#release336)
@@ -50,7 +50,7 @@ def new_version():
     nuspec = replace_in_tag(nuspec, 'version', version)
 
     # get info from readme
-    readme = app_folder.joinpath('README.md').read_text().splitlines()
+    readme = (app_folder / 'README.md').read_text().splitlines()
 
     # get first two sections (title and 'Features')
     description = ''
@@ -64,7 +64,7 @@ def new_version():
 
     nuspec = replace_in_tag(nuspec, 'description', description)
 
-    release_notes = wiki_folder.joinpath(f'{release_detail_file}.md').read_text(encoding=encoding).splitlines()
+    release_notes = (wiki_folder / f'{release_detail_file}.md').read_text(encoding=encoding).splitlines()
     new_release_notes = ''
     in_section = False
     for line in release_notes:
@@ -124,7 +124,7 @@ $packageArgs = @{{
 Install-ChocolateyPackage @packageArgs
 '''
     print('Updating the exe URL and checksums in the install file')
-    install_file = choco_folder.joinpath('tools', 'chocolateyinstall.ps1')
+    install_file = choco_folder / 'tools' / 'chocolateyinstall.ps1'
     install_file.write_text(ps1_text, encoding=encoding)
 
     # package and push to server

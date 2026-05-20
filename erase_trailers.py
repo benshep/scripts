@@ -34,13 +34,13 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
     if not radio_folder.exists():
         return ''  # doesn't exist on every computer
     # os.chdir(radio_folder)
-    repeat_file = radio_folder.joinpath('repeats.txt')
+    repeat_file = radio_folder / 'repeats.txt'
     digest = {}  # store each file's digest in a dict
     repeats = repeat_file.read_text().splitlines()
     print(f'{len(repeats)} known repeats')
     start_time = datetime.now()
     if isinstance(limit, list):
-        file_list = [radio_folder.joinpath(file) for file in limit]
+        file_list = [radio_folder / file for file in limit]
     else:
         file_list = list(radio_folder.glob('*.mp3', case_sensitive=False))
         last_index = limit if isinstance(limit, int) else len(file_list)

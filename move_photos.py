@@ -32,8 +32,8 @@ class InvalidResponse(Exception):
 
 
 name = sys.argv[1] if len(sys.argv) > 1 else 'me'
-pics_folder = user_profile.joinpath('Pictures' if name == 'me' else f'Pictures-{name}')
-temp_folder = pics_folder.joinpath(str(script_start.year), script_start.strftime('%m-%d %H%M moved by Eddie'))
+pics_folder = user_profile / ('Pictures' if name == 'me' else f'Pictures-{name}')
+temp_folder = pics_folder / str(script_start.year) / script_start.strftime('%m-%d %H%M moved by Eddie')
 
 
 def organise_photos():
@@ -68,7 +68,7 @@ def convert_mov_videos(moved_list: list[Path]):
                                '-vcodec libx264 -acodec aac -preset medium -crf 22 -ab 96k'.split(' ') +
                                [new_filename],
                                cwd=filename.parent) == 0:
-                space_reduction += (original_size - filename.parent.joinpath(new_filename).stat().st_size) / 1024 ** 2
+                space_reduction += (original_size - (filename.parent / new_filename).stat().st_size) / 1024 ** 2
                 send2trash(filename)  # remove original if conversion successful
                 converted_count += 1
     if converted_count:

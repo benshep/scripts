@@ -236,7 +236,7 @@ def get_new_releases(artist) -> list[Release]:
 
 def find_new_releases():
     """Find new releases for the user's top artists."""
-    release_list_filename = music_folder.joinpath(music_folder, 'New releases.md')
+    release_list_filename = music_folder / 'New releases.md'
     release_list = release_list_filename.read_text(encoding='utf-8') if release_list_filename.exists() else ''
     artists = get_top_artists()
     all_releases = []

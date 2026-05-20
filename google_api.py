@@ -12,8 +12,8 @@ creds = None
 # The file token.json stores the user's access and refresh tokens, and is
 # created automatically when the authorization flow completes for the first time.
 script_dir = Path(__file__).resolve().parent
-token_file = script_dir.joinpath('google-api-token.json')
-creds_file = script_dir.joinpath('google-api-credentials.json')
+token_file = script_dir / 'google-api-token.json'
+creds_file = script_dir / 'google-api-credentials.json'
 if token_file.exists():
     creds = Credentials.from_authorized_user_file(str(token_file), scopes)
 # If there are no (valid) credentials available, let the user log in.
