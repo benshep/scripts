@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -11,20 +11,19 @@ scopes = [f'{apis_url}/spreadsheets', f"{apis_url}/calendar", f"{apis_url}/gmail
 creds = None
 # The file token.json stores the user's access and refresh tokens, and is
 # created automatically when the authorization flow completes for the first time.
-script_dir = os.path.dirname(os.path.abspath(__file__))
-token_file = os.path.join(script_dir, 'google-api-token.json')
-creds_file = os.path.join(script_dir, 'google-api-credentials.json')
-if os.path.exists(token_file):
-    creds = Credentials.from_authorized_user_file(token_file, scopes)
+script_dir = Path(__file__).resolve().parent
+token_file = script_dir.joinpath('google-api-token.json')
+creds_file = script_dir.joinpath('google-api-credentials.json')
+if token_file.exists():
+    creds = Credentials.from_authorized_user_file(str(token_file), scopes)
 # If there are no (valid) credentials available, let the user log in.
 if not creds or not creds.valid:
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
     else:
-        print(os.getcwd())
-        creds = InstalledAppFlow.from_client_secrets_file(creds_file, scopes).run_local_server(port=0)
+        creds = InstalledAppFlow.from_client_secrets_file(str(creds_file), scopes).run_local_server(port=0)
     # Save the credentials for the next run
-    open(token_file, 'w').write(creds.to_json())
+    token_file.write_text(creds.to_json())
 
 
 # Call the Sheets API
