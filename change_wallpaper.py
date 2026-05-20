@@ -262,9 +262,9 @@ def change_wallpaper(target: str = 'desktop') -> None:
         if target == 'lockscreen':  # save as lockscreen filename
             # registry key to disable changing this:
             # HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization
-            os.chdir(wallpaper_dir)
-            canvas.save('00.jpg')
-            canvas.save('01.jpg')  # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
+            canvas.save(wallpaper_dir.joinpath('00.jpg'))
+            # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
+            canvas.save(wallpaper_dir.joinpath('01.jpg'))
 
         elif on_windows:  # use USER32 call to set a desktop background
             ctypes.windll.user32.SystemParametersInfoW(20, 0, str(wallpaper_filename), 3)
