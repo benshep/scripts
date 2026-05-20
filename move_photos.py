@@ -63,11 +63,10 @@ def convert_mov_videos(moved_list: list[Path]):
     for filename in moved_list:
         if filename.match('*.mov', case_sensitive=False):
             original_size = filename.stat().st_size
-            new_filename = filename.stem + '.mkv'
-            if subprocess.call(['ffmpeg', '-n', '-i', filename.name] + \
+            new_filename = filename.with_suffix('.mkv')
+            if subprocess.call(['ffmpeg', '-n', '-i', filename] + \
                                '-vcodec libx264 -acodec aac -preset medium -crf 22 -ab 96k'.split(' ') +
-                               [new_filename],
-                               cwd=filename.parent) == 0:
+                               [new_filename]) == 0:
                 space_reduction += (original_size - (filename.parent / new_filename).stat().st_size) / 1024 ** 2
                 send2trash(filename)  # remove original if conversion successful
                 converted_count += 1
