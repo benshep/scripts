@@ -6,6 +6,7 @@ import sys
 import tempfile
 import warnings
 from contextlib import suppress
+from pathlib import Path
 from threading import Thread
 from types import ModuleType
 from typing import Callable
@@ -66,7 +67,7 @@ def update_cell(row, col, string):
 
 def run_tasks():
     # 'home' tasks
-    # Any duplicates should be declared at the top (i.exception. not lazy_imported twice)
+    # Any duplicates should be declared at the top (i.e. not lazy_imported twice)
     # otherwise the change detection won't work properly
     # track changes to this file too: need to give the function these attributes
     run_tasks.__file__ = __file__
@@ -221,6 +222,7 @@ def run_tasks():
             period = float(properties.get('Period', 1))  # default: once per day
             next_run_time = now + timedelta(days=period)
             toast_title = icon_and_name
+            cell_note = ''
             match return_value:
                 case False:  # try again soon (but not on this device)
                     result = 'Postponed'
@@ -231,6 +233,7 @@ def run_tasks():
                 case '' | None | True:  # success but no toast
                     result = 'Success'
                 case str():  # success and toast summarising actions
+                    cell_note = return_value
                     result = 'Success'
                     print(return_value)
                     if len(return_value) >= 20:  # toast for long messages, otherwise title bar
@@ -242,17 +245,22 @@ def run_tasks():
                                 win11toast.notify(title=toast_title, body=return_value, duration='long')
                     else:
                         title_toast = return_value  # note: only works for one per loop, use sparingly!
-                case (str() as toast, str() as filename):  # success with toast and file (exception.g. image)
+                case (str() as toast, str() | Path() as filename):  # success with toast and file (e.g. image)
+                    cell_note = toast
                     result = 'Success'
                     print(toast)
                     print(filename)
                     try:
-                        with open(filename, 'rb') as file_handle:
-                            response = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
+                        if isinstance(filename, Path):
+                            filename = str(filename)  # upload_file needs a str object
+                            with open(filename, 'rb') as file_handle:
+                                file_details = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
+                        else:  # URL
+                            file_details = dict(file_name='cover.jpg', file_url=filename, file_type='image/jpg')
                         if filename.startswith(tempfile.gettempdir()):  # clean up temp files
                             with suppress(PermissionError):
                                 os.remove(filename)
-                        pushbullet.push_file(title=toast_title, body=toast, **response)
+                        pushbullet.push_file(title=toast_title, body=toast, **file_details)
                     except requests.exceptions.ReadTimeout:
                         if on_windows:
                             # try a local notification instead
@@ -261,19 +269,18 @@ def run_tasks():
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
-                    if fail_count % 10 == 0:
-                        # output exception.g. ValueError in task.py:module:47 -> import.py:module:123
-                        quick_trace = ' → '.join(
-                            ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
-                            for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
-                        note_text = f'{function_name} failed {fail_count} times on {node()}\n' + \
-                                    f'{exception_type.__name__} in {quick_trace}\n' + \
-                                    str(exception_value)
-                        if fail_count == 20:
-                            update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
-                            note_text += f'\nDisabled at {location.lower()}'
-                        pushbullet.push_note('👁️ run_tasks', note_text)
-                    print(result)  # the exception traceback
+                    # output e.g. ValueError in task.py:module:47 -> import.py:module:123
+                    quick_trace = ' → '.join(
+                        ':'.join([os.path.split(frame.filename)[-1], frame.name, str(frame.lineno)])
+                        for frame in extract_tb(exception_traceback)[2:4])  # the first two will be inside run_tasks
+                    cell_note = f'{function_name} failed {fail_count} times on {node()}\n' + \
+                                f'{exception_type.__name__} in {quick_trace}\n' + \
+                                str(exception_value)
+                    if fail_count == 30:
+                        update_cell(i + 2, get_column(location), 'FALSE')  # disable it here
+                        cell_note += f'\nDisabled at {location.lower()}'
+                    elif fail_count % 10 == 0:
+                        pushbullet.push_note('👁️ run_tasks', cell_note)
                     result = f'Failure {fail_count}'
 
             # False is 'not this device' result: ignore new run time (=now)
