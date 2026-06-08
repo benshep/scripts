@@ -1,4 +1,3 @@
-import os
 import urllib.parse
 from base64 import b32hexencode
 from datetime import datetime, timedelta
@@ -10,6 +9,7 @@ from zoneinfo import ZoneInfo
 import googleapiclient.errors
 import requests
 from progress.bar import IncrementalBar
+from selenium.webdriver.common.devtools.v147.runtime import release_object_group
 
 import google_api
 from folders import music_folder
@@ -193,7 +193,8 @@ def update_gig_calendar():
 Release = TypedDict('Release', {
     'title': str,
     'date': str | datetime,
-    'artist': str
+    'artist': str,
+    'id': str,
 })
 
 
@@ -218,37 +219,43 @@ def get_new_releases(artist) -> list[Release]:
 
     headers = {'User-Agent': f'get_new_releases/{now.strftime("%Y%m%d")} ( bjashepherd@gmail.com )'}
     sleep(1.5)  # MusicBrainz rate limit: 1 request per second  https://wiki.musicbrainz.org/MusicBrainz_API/Rate_Limiting
-    response = requests.get(url, params=params, headers=headers)
+    try:
+        response = requests.get(url, params=params, headers=headers)
+    except requests.exceptions.ConnectionError:
+        return []
     # print(response.url)
     json = response.json()
     # print(json)
-    releases = json.get('release-groups', [])
-    # if len(releases):
+    release_groups = json.get('release-groups', [])
+    # if len(release_groups):
     #     print(json)
     return [
         {
-            'title': release['title'],
-            'date': release.get('first-release-date', 'Unknown'),
-            'artist': artist_name
-        } for release in releases
-        if artist_name in [artist['name'] for artist in release['artist-credit']]
+            'title': release_group['title'],
+            'date': release_group.get('first-release-date', 'Unknown'),
+            'artist': artist_name,
+            'id': release_group.get('releases', [{'id': ''}])[0].get('id', '')
+        } for release_group in release_groups
+        if artist_name in [artist['name'] for artist in release_group['artist-credit']]
     ]
 
 
-def find_new_releases():
+def find_new_releases() -> None | str | tuple[str, str]:
     """Find new releases for the user's top artists."""
-    release_list_filename = os.path.join(music_folder, 'New releases.md')
-    release_list = open(release_list_filename, encoding='utf-8').read() if os.path.exists(release_list_filename) else ''
+    release_list_filename = music_folder / 'New releases.md'
+    release_list = release_list_filename.read_text(encoding='utf-8') if release_list_filename.exists() else ''
     artists = get_top_artists()
     all_releases = []
     toast = ''
 
     if not artists:
         print("No top artists found.")
-        return
+        return None
 
-    with IncrementalBar('Looking for new releases', max=len(artists)) as bar:
+    image_url = ''
+    with (IncrementalBar('Looking for new releases', max=len(artists)) as bar):
         for artist in artists:
+            bar.message
             bar.next()
             releases = get_new_releases(artist)
             if releases:
@@ -257,12 +264,19 @@ def find_new_releases():
                     release_title = f"{release['artist']} - {release['title']}"
                     if release_title not in release_list:
                         toast += release_title + '\n'
+                        image_search = requests.get(f'https://coverartarchive.org/release/{release["id"]}')
+                        try:
+                            image_url = image_search.json()['images'][0]['thumbnails']['250']
+                        except requests.exceptions.JSONDecodeError:
+                            image_url = ''
+                        # TODO: more than one?
                         youtube_url = 'https://music.youtube.com/search?q=' + urllib.parse.quote_plus(release_title)
-                        release_text = f"[{release_title}]({youtube_url}), out {release['date']}\n"
+                        release_text = f"![]({image_url})" if image_url else ''
+                        release_text += f"[{release_title}]({youtube_url}), out {release['date']}\n"
                         open(release_list_filename, 'a', encoding='utf-8').write('- [ ] ' + release_text)  # add checkbox
             # else:
                 # print(f"No new releases found for {artist.item.name}.")
-    return toast
+    return (toast, image_url) if image_url else toast
 
 if __name__ == '__main__':
     # concerts = get_upcoming_shows()
@@ -270,5 +284,5 @@ if __name__ == '__main__':
     # for artist, events in concerts.items():
     #     for event in events:
     #         print(f"{artist.item.name} - {event['date']} at {event['venue']}, {event['city']}")
-    # print(find_new_releases())
-    print(update_gig_calendar())
+    print(find_new_releases())
+    # print(update_gig_calendar())

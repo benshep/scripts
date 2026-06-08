@@ -3,6 +3,7 @@ import subprocess
 from platform import node
 from random import randrange
 from time import time, sleep
+from pathlib import Path
 
 from phrydy import MediaFile  # to get media data
 
@@ -18,18 +19,16 @@ def pick_random_cd(got_cds: bool = True):
 
     while True:
         folder = cd_folders.pop(randrange(len(cd_folders)))  # remove from list
-        path = os.path.join(music_folder, folder)
-        if not os.path.exists(path):
+        if not folder.exists():
             continue
-        os.chdir(path)
-        files = os.listdir()
+        files = folder.iterdir()
         # if got_cds and 'nocd' in files:
         #     continue  # don't have the CD
         track_list = sorted([MediaFile(f) for f in files if media.is_media_file(f)],
                             key=lambda track: media.disc_track(track, include_disc=True))
         if not track_list:
             continue
-        os.system(f'title {folder.replace("&", "^&")}')  # set title of window
+        os.system(f'title {folder.stem.replace("&", "^&")}')  # set title of window
         print(folder)
         for track in track_list:
             print(number_title(track))
@@ -40,7 +39,7 @@ def pick_random_cd(got_cds: bool = True):
             # open first, then queue the rest - otherwise order will be wrong
             verb = '/Play'
             for track in track_list:
-                subprocess.Popen([music_bee_exe, verb, os.path.join(path, track.path)])
+                subprocess.Popen([music_bee_exe, verb, track.path])
                 verb = '/QueueNext'
                 sleep(2)
             break  # don't want another one straight away!
@@ -73,19 +72,18 @@ def scrobble_cd(track_list: list[MediaFile]) -> bool:
     return True
 
 
-def find_folders() -> list[str]:
+def find_folders() -> list[Path]:
     """Walk through music folders on the local drive and return a list."""
-    not_cd_folders_file = os.path.join(music_folder, 'not_cd_folders.txt')
-    exclude_prefixes = tuple(open(not_cd_folders_file).read().split('\n')) \
-        if os.path.exists(not_cd_folders_file) else ()
+    not_cd_folders_file = music_folder / 'not_cd_folders.txt'
+    exclude_prefixes = tuple(not_cd_folders_file.read_text().split('\n')) \
+        if not_cd_folders_file.exists() else ()
     # if not cd_mode:
     #     exclude_prefixes = exclude_prefixes[1:]  # first is _Copied
-    root_len = len(music_folder) + 1
     cd_folders = []
-    for folder, folder_list, file_list in os.walk(music_folder):
-        name = folder[root_len:]
-        if not name.startswith(exclude_prefixes) and media.is_album_folder(name):
-            cd_folders.append(name)
+    for folder in music_folder.rglob('*/'):
+        relative = folder.relative_to(music_folder)
+        if not relative.name.startswith(exclude_prefixes) and media.is_album_folder(relative):
+            cd_folders.append(folder)
     return cd_folders
 
 

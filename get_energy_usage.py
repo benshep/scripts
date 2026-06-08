@@ -249,6 +249,15 @@ async def get_fuel_data(start_date: pandas.Timestamp, fuel: str,
     if not data:  # response_json['count'] == 0:  # no results
         return pandas.DataFrame()
     df = pandas.DataFrame(data, columns=['Timestamp', 'Reading'])
+    if fuel == 'electricity':
+        # zero values at the end indicate no reading received yet: chop these (only relevant for elec: gas can be zero)
+        last_nonzero_idx = df['Reading'].ne(0).cumsum().idxmax()
+        mask = (df.index > last_nonzero_idx) & (df['Reading'] == 0)
+        print(sum(mask), 'zero readings at end chopped')
+        reading = df['Reading']
+        reading[mask] = numpy.nan
+        # df.loc[mask, 'Reading'] = numpy.nan
+        df['Reading'] = reading
     df.index = pandas.to_datetime(df['Timestamp'], unit='s') + half_hour  # turn into *end* times
     pivot = pandas.pivot_table(df, index=df.index.date, columns=df.index.time, values='Reading')
     pivot = pivot.dropna() if remove_incomplete_rows else pivot.fillna(-1)
@@ -333,7 +342,7 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
     else:
         df.set_index('to', inplace=True)  # index is the *end* time of each period
         # Add the generation mix as well, why not?
-        # print(df['generationmix'])
+        print(df['generationmix'])
         gen_mix = pandas.DataFrame([
             {item['fuel']: item['perc'] for item in row}
             for row in df['generationmix']], index=df.index)
@@ -560,7 +569,7 @@ def get_generation_records() -> CaseInsensitiveDict:
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=True))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
@@ -576,4 +585,5 @@ if __name__ == '__main__':
     # print(get_live_generation())
     # print(get_generation_records())
     # asyncio.run(loop_refresh_readings())
+
     print(get_co2_data(start, 'WA4', do_pivot=False))

@@ -4,6 +4,7 @@ import os
 import re
 import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import phrydy  # for media file tagging
 from dateutil.relativedelta import relativedelta  # for adding months to dates
@@ -12,6 +13,7 @@ from send2trash import send2trash
 
 import folders
 import media
+from folders import radio_folder
 from lastfm import lastfm  # contains secrets, so don't show them here
 from pushbullet_api_key import api_key  # local file, keep secret!
 
@@ -22,20 +24,20 @@ def update_phone_music() -> str | tuple[str, str]:
     """Deleted listened-to radio files."""
     start_time = datetime.now()
     toast = asyncio.run(check_radio_files())
-    print(datetime.now() - start_time)
+    print('Elapsed time:', datetime.now() - start_time)
     return toast
 
 
 async def check_radio_files() -> str | tuple[str, str]:
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
-    if not os.path.exists(folders.radio_folder):
+    if not folders.radio_folder.exists():
         return ''  # doesn't exist on every computer
     scrobbled_radio = []  # list of played radio files to delete
-    first_unheard = ''  # first file in the list that hasn't been played
+    first_unheard = None  # first file in the list that hasn't been played
     extra_played_count = 0  # more files that have been played, after one that apparently hasn't
     scrobbled_titles = get_scrobbled_titles(lastfm.get_user('ning'))
-    os.chdir(folders.radio_folder)
-    radio_files = os.listdir()
+    # os.chdir(folders.radio_folder)
+    radio_files = [file for file in sorted(radio_folder.iterdir()) if file.suffix.lower() in media.media_exts]
     total_file_count = len(radio_files)
     digits = math.floor(math.log10(total_file_count)) + 1
     print(f'{total_file_count} files in folder')
@@ -49,13 +51,14 @@ async def check_radio_files() -> str | tuple[str, str]:
     which_artist = {}
     cover_art = {}
 
-    files = [file for file in sorted(radio_files) if media.is_media_file(file)]
     async with asyncio.TaskGroup() as task_group:
-        tasks = [task_group.create_task(asyncio.to_thread(phrydy.MediaFile, file)) for file in files]
+        tasks = [task_group.create_task(asyncio.to_thread(phrydy.MediaFile, file)) for file in radio_files]
     all_tags = [t.result() for t in tasks]
-    for file, tags in zip(files, all_tags):
+    for file, tags in zip(radio_files, all_tags):
         try:
-            file_date = datetime.strptime(file[:10], '%Y-%m-%d')
+            file_date_text = file.stem[:10]
+            file_title = file.stem[11:]
+            file_date = datetime.strptime(file_date_text, '%Y-%m-%d')
         except ValueError:
             continue  # not a date-based filename
 
@@ -65,7 +68,7 @@ async def check_radio_files() -> str | tuple[str, str]:
         # weeks = (file_date - min_date).days // 7
 
         # remove archive In Our Time episodes
-        if '(Archive Episode)' in file:
+        if '(Archive Episode)' in file.stem:
             toast += delete_file(file)
             continue
 
@@ -75,13 +78,13 @@ async def check_radio_files() -> str | tuple[str, str]:
         track_title = media.artist_title(tags)
         if track_title in scrobbled_titles:
             print(f'{file_count: {digits}d}. ✔ {track_title}')
-            if not first_unheard:  # only found played files so far
+            if first_unheard is None:  # only found played files so far
                 scrobbled_radio.append(file)  # possibly delete this one
             else:
                 extra_played_count += 1  # don't delete, but flag as played for later
         else:
             total_play_time += timedelta(seconds=tags.length)
-            if not first_unheard:
+            if first_unheard is None:
                 print(f'{index_prefix}❌ {track_title}')
                 first_unheard = file  # not played this one - flag it if it's the first in the list that's not been played
             elif file_count % 10 == 0:  # bump up first tracks of later-inserted albums to this point
@@ -92,13 +95,13 @@ async def check_radio_files() -> str | tuple[str, str]:
         # unhelpful titles - set it from the filename instead
         if tags.title in ('', 'Untitled Episode', None) \
                 or (tags.title.lower() == tags.title and '_' in tags.title and ' ' not in tags.title):
-            print(f'{index_prefix}Set {file} title to {file[11:-4]}')
-            tags.title = file[11:-4]  # the bit between the date and the extension (assumes 3-char ext)
+            print(f'{index_prefix}Set {file.stem} title to {file_title}')
+            tags.title = file_title  # the bit between the date and the extension (assumes 3-char ext)
             tags_changed = True
 
         # some files don't have cover art: use art from an existing file with the same album title
         if not tags.art and (art := cover_art.get(tags.album)):
-            print(f'{index_prefix}Set {file} cover art from others in {tags.album}')
+            print(f'{index_prefix}Set {file.stem} cover art from others in {tags.album}')
             tags.art = art
             tags_changed = True
         elif tags.album in cover_art:
@@ -111,7 +114,7 @@ async def check_radio_files() -> str | tuple[str, str]:
         # sometimes tracks get an album name but not an artist - try to determine what it would be from existing files
         if not tags.albumartist:
             if artist := tags.artist or which_artist.get(tags.album):
-                print(f'{index_prefix}Set {file} album artist to {artist}' +
+                print(f'{index_prefix}Set {file.stem} album artist to {artist}' +
                       (' (guessed from album)' if tags.artist is None else ''))
                 tags.artist = artist
                 tags.albumartist = artist
@@ -124,12 +127,13 @@ async def check_radio_files() -> str | tuple[str, str]:
             which_artist[tags.album] = tags.artist
             print(f'{index_prefix}{tags.artist} - {tags.album}')
             # is it a new album fairly far down the list?
-            if ('(bumped from ' not in file  # don't bump anything more than once
+            if ('(bumped from ' not in file.stem  # don't bump anything more than once
                     and not tags_changed  # don't rename if we want to save tags - might have weird results
                     and bump_dates and bump_dates[0] + timedelta(weeks=4) < file_date):  # not worth bumping <4 weeks
                 new_date = bump_dates.pop(0).strftime("%Y-%m-%d")  # i.e. the next bump date from the list
-                toast += f'🔼 {file}\n'
-                os.rename(file, f'{new_date} (bumped from {file[:10]}) {file[11:]}')
+                toast += f'🔼 {file.stem}\n'
+                new_name = f'{new_date} (bumped from {file_date_text}) {file_title}{file.suffix}'
+                file.rename(radio_folder / new_name)
                 if not image_filename and tags.art:
                     _, image_filename = tempfile.mkstemp()
                     open(image_filename, 'wb').write(tags.art)
@@ -139,19 +143,20 @@ async def check_radio_files() -> str | tuple[str, str]:
 
     for file in scrobbled_radio[:-1]:  # don't delete the last one - we might not have finished it
         toast += delete_file(file)
-    if extra_played_count > 2 and first_unheard:  # flag if something is getting 'stuck' at the top of the list
-        toast += f'🚩 {first_unheard}: not played but {extra_played_count} after\n'
+    if extra_played_count > 2 and first_unheard is not None:  # flag if something is getting 'stuck' at the top of the list
+        toast += f'🚩 {first_unheard.stem}: not played but {extra_played_count} after\n'
     print(total_play_time)
+    total_seconds = total_play_time.total_seconds()
     if toast:  # only report total time if we're reporting something else too
-        toast += f'📻 {total_play_time}\n'
+        toast += f'📻 {total_seconds // 3600:.0f}h {(total_seconds // 60) % 60:.0f}m\n'
     return (toast, image_filename) if image_filename else toast
 
 
-def delete_file(file: str) -> str:
+def delete_file(file: Path) -> str:
     """Delete a file, and return a toast line about it."""
-    if not test_mode and os.path.exists(file):
+    if not test_mode and file.exists():
         send2trash(file)
-    return f'🗑️ {os.path.splitext(file)[0]}\n'
+    return f'🗑️ {file.stem}\n'
 
 
 def get_scrobbled_titles(lastfm_user, limit=999) -> list[str]:
@@ -194,14 +199,14 @@ def check_radio_hours_added():
 
 def bump_down():
     """Bump an album down the list by increasing the date in the filename."""
-    os.chdir(folders.radio_folder)
-    radio_files = os.listdir()
+    # os.chdir(folders.radio_folder)
+    radio_files = radio_folder.iterdir()
     next_date = None
     for file in sorted(radio_files, reverse=True):  # get most recent first
         if not media.is_media_file(file):
             continue
         try:
-            file_date = datetime.strptime(file[:10], '%Y-%m-%d')
+            file_date = datetime.strptime(file.stem[:10], '%Y-%m-%d')
         except ValueError:
             continue  # not a date-based filename
 
@@ -214,7 +219,7 @@ def bump_down():
             print('Last file', file, next_date)
         else:
             next_date -= timedelta(days=6)
-            os.rename(file, next_date.strftime('%Y-%m-%d') + file[10:])
+            file.rename(radio_folder / (next_date.strftime('%Y-%m-%d') + file.name[10:]))
 
 
 if __name__ == '__main__':

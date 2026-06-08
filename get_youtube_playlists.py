@@ -2,8 +2,8 @@ import os
 import json
 import subprocess
 import contextlib
-import sys
 import tempfile
+from pathlib import Path
 
 import phrydy.mediafile
 import yt_dlp.utils
@@ -49,14 +49,13 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
         super().__init__()
         self.album = album
         self.artist = artist
-        self.files = []
+        self.files: list[Path] = []
 
     def run(self, info):
         """After a file has finished downloading, tag it with album artist and album."""
-        filename = info['filepath']
-        _, name = os.path.split(filename)
-        self.files.append(name)
-        track = int(name.split(' ')[0])  # 01 Title.ext
+        filename = Path(info['filepath'])
+        self.files.append(filename)
+        track = int(filename.stem.split(' ')[0])  # 01 Title.ext
         media = MediaFile(filename)
         media.albumartist = self.artist
         if media.album is not None:
@@ -82,7 +81,7 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
                 title = title[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
             title = title.strip('"')  # "Song Name" -> Song Name
             media.title = title
-        self.to_screen(f'Tagged {name} with {self.artist = }, {media.album = }, {track=}, {title=}')
+        self.to_screen(f'Tagged {filename.name} with {self.artist = }, {media.album = }, {track=}, {title=}')
         crop_cover(media)
         media.save()
         return [], info
@@ -104,10 +103,6 @@ def show_status(progress: dict[str, str]):
 
 
 def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
-    deno_folder = r'C:\ProgramData\chocolatey\lib\deno'
-    if os.path.exists(deno_folder):
-        os.environ['path'] += ';' + deno_folder  # so that yt_dlp finds the JS runtime
-
     info_file = 'download.txt'  # info file contained in each folder
     archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
@@ -115,98 +110,102 @@ def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
     # for i in range(1):
     toast = ''
     image_filename = ''
-    for folder, _, files in os.walk(music_folder):
-        # if just_crop_art is selected, look for archive files too
-        if info_file not in files and (not just_crop_art or archive_file not in files):
-            continue
-        print(folder)
-        os.chdir(folder)
-        artist_titles = []
-        for file in files:
-            if is_media_file(file):
-                try:
-                    tags = MediaFile(file)
-                except phrydy.mediafile.UnreadableFileError as exception:
-                    print(f"Couldn't read {file}", exception)
-                    continue
-                if just_crop_art:
-                    crop_cover(tags)
-                    continue
-                artist_titles.append((tags.artist, tags.title))
+    with tempfile.TemporaryDirectory(prefix='ytdl_') as temp_folder:
+        for folder, _, files in music_folder.walk():
+            # if just_crop_art is selected, look for archive files too
+            if info_file not in files and (not just_crop_art or archive_file not in files):
+                continue
+            print(folder)
+            artist_titles = []
+            for file in files:
+                if is_media_file(folder / file):
+                    try:
+                        tags = MediaFile(folder / file)
+                    except phrydy.mediafile.UnreadableFileError as exception:
+                        print(f"Couldn't read {file}", exception)
+                        continue
+                    if just_crop_art:
+                        crop_cover(tags)
+                        continue
+                    artist_titles.append((tags.artist, tags.title))
 
-        if just_crop_art:
-            continue
+            if just_crop_art:
+                continue
 
-        def reject_existing(info_dict, *args, incomplete=False):
-            """Reject any videos matching existing files in the folder."""
-            if video_title := info_dict.get('title', ''):
-                for artist, title in artist_titles:
-                    if artist and title and artist in video_title and title in video_title:
-                        message = f"Already got {artist} - {title} - skipping {video_title}"
-                        # print(message)
-                        return message
-            return reject_large(info_dict)  # also reject anything that's too long
+            def reject_existing(info_dict, *args, incomplete=False):
+                """Reject any videos matching existing files in the folder."""
+                if video_title := info_dict.get('title', ''):
+                    for artist, title in artist_titles:
+                        if artist and title and artist in video_title and title in video_title:
+                            message = f"Already got {artist} - {title} - skipping {video_title}"
+                            # print(message)
+                            return message
+                return reject_large(info_dict)  # also reject anything that's too long
 
-        subfolders = folder.split(os.path.sep)
-        album_name = subfolders[-1]  # folder name
-        artist = subfolders[-2]  # parent folder name
-        if artist in ('Emma', 'Jess', 'YouTube'):  # compilation
-            artist = 'Various Artists'
-        if ' - ' in album_name:  # artist - album
-            artist, album_name = album_name.split(' - ', 1)
-        download_info = open(info_file).read()
-        lines = download_info.splitlines()
-        # if 'playlists' in info:  # playlists page - not really using this at the mo
-        #     if not get_playlist_info(info):
-        #         continue
-        #     get_youtube_playlists()  # restart, since directory structure has changed
-        #     break
-        if '{' in download_info:
-            playlist = json.loads(download_info)  # dict with keys: url, artist, album
-            lines = [playlist['url']]
-        elif lines[0].startswith(('https://www.youtube.com/', 'https://music.youtube.com/')):  # just the url?
-            playlist = {}
-        else:
-            continue  # can't process info
-        for url in lines:
-            playlist['url'] = url.strip()
-            # print(playlist)
-            add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
-            options = {'download_archive': archive_file,  # keep track of previously-downloaded videos
-                       'force_write_download_archive': True,
-                       # 'no-warnings': True,
-                       # 'verbose': True,
-                       'quiet': True,
-                       # 'max_downloads': 1,  # for testing
-                       'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
-                       # reverse order for channels (otherwise new videos will always be track 1)
-                       'playlistreverse': 'channel' in playlist['url'],
-                       # https://github.com/yt-dlp/yt-dlp#output-template
-                       'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
-                       # 'parse_metadata': 'title:%(artist)s - %(album)s',
-                       'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
-                                          {'key': 'EmbedThumbnail'}],
-                       'match_filter': reject_existing, 'progress_hooks': [show_status]}
-            with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
-                with YoutubeDL(options) as downloader:
-                    downloader.add_post_processor(add_tags, when='after_move')
-                    error_code = downloader.download([playlist['url']])  # 1 if error occurred, else 0
-                    # _Copied folder is for albums not playlists, won't be updated so can delete info file
-                    if '_Copied' in folder and not error_code:
-                        print(f'Success. Deleting {info_file} from {folder}')
-                        send2trash(info_file)
-                    new_files = add_tags.files
-                    if new_files:
-                        toast += f'{album_name}: ' + \
-                                 (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
-                                 (' (with errors)\n' if error_code else '\n')
-                        if not image_filename:
-                            for file in new_files:
-                                media = MediaFile(file)
-                                if media.art:
-                                    _, image_filename = tempfile.mkstemp()
-                                    open(image_filename, 'wb').write(media.art)
-                                    break
+            album_name = folder.parts[-1]  # folder name
+            artist = folder.parts[-2]  # parent folder name
+            if artist in ('Emma', 'Jess', 'YouTube'):  # compilation
+                artist = 'Various Artists'
+            if ' - ' in album_name:  # artist - album
+                artist, album_name = album_name.split(' - ', 1)
+            download_info = (folder / info_file).read_text()
+            lines = download_info.splitlines()
+            # if 'playlists' in info:  # playlists page - not really using this at the mo
+            #     if not get_playlist_info(info):
+            #         continue
+            #     get_youtube_playlists()  # restart, since directory structure has changed
+            #     break
+            if '{' in download_info:
+                playlist = json.loads(download_info)  # dict with keys: url, artist, album
+                lines = [playlist['url']]
+            elif lines[0].startswith(('https://www.youtube.com/', 'https://music.youtube.com/')):  # just the url?
+                playlist = {}
+            else:
+                continue  # can't process info
+            for url in lines:
+                playlist['url'] = url.strip()
+                # print(playlist)
+                add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
+                options = {'paths': {'home': str(folder), 'temp': temp_folder},
+                           'download_archive': str(folder / archive_file),  # keep track of previously-downloaded videos
+                           'force_write_download_archive': True,
+                           # 'no-warnings': True,
+                           # 'verbose': True,
+                           'quiet': True,
+                           # 'max_downloads': 1,  # for testing
+                           'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
+                           # reverse order for channels (otherwise new videos will always be track 1)
+                           'playlistreverse': 'channel' in playlist['url'],
+                           # https://github.com/yt-dlp/yt-dlp#output-template
+                           'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
+                           # 'parse_metadata': 'title:%(artist)s - %(album)s',
+                           'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
+                                              {'key': 'EmbedThumbnail'}],
+                           'match_filter': reject_existing, 'progress_hooks': [show_status],
+                           }
+                deno_exe = r'C:\ProgramData\chocolatey\lib\deno\deno.exe'
+                if os.path.exists(deno_exe):
+                    options['js_runtimes'] = {'deno': {'path': deno_exe}}  # so that yt_dlp finds the JS runtime
+                with (contextlib.suppress(yt_dlp.utils.MaxDownloadsReached)):  # don't give an error when limit reached
+                    with YoutubeDL(options) as downloader:
+                        downloader.add_post_processor(add_tags, when='after_move')
+                        error_code = downloader.download([playlist['url']])  # 1 if error occurred, else 0
+                        # _Copied folder is for albums not playlists, won't be updated so can delete info file
+                        if '_Copied' == folder.relative_to(music_folder).parts[0] and not error_code:
+                            print(f'Success. Deleting {info_file} from {folder}')
+                            send2trash(folder / info_file)
+                        new_files = add_tags.files
+                        if new_files:
+                            toast += f'{album_name}: ' + \
+                                     (f'{len(new_files)} new files' if len(new_files) > 1 else f'{new_files[0]}') + \
+                                     (' (with errors)\n' if error_code else '\n')
+                            if not image_filename:
+                                for file in new_files:
+                                    media = MediaFile(file)
+                                    if media.art:
+                                        _, image_filename = tempfile.mkstemp()
+                                        open(image_filename, 'wb').write(media.art)
+                                        break
 
     return (toast, image_filename) if image_filename else toast
 

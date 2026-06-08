@@ -16,7 +16,7 @@ pandas
 tabulate
 selenium
 mediafile
-yt-dlp
+yt-dlp[default]
 pushbullet.py
 progress
 filetype

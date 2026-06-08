@@ -20,6 +20,7 @@ def get_directions() -> str | datetime:
     if last_ride_date.date() == now.date() and 'to work' in last_ride_route:  # it's a cycle day - don't need driving route
         return (now + timedelta(days=1)).replace(hour=16, minute=0)
     home = {"location": {"latLng": locations.home}}
+    home = {"location": {"latLng": locations.arnold_clark}}
     work = {"location": {"latLng": locations.bike_shed}}
     url = 'https://routes.googleapis.com/directions/v2:computeRoutes'
     km_cost = 0.107
@@ -61,7 +62,7 @@ def get_directions() -> str | datetime:
               *route['warnings'],
               sep='\t')
     route = response['routes'][0]
-    return f"ETA {route['eta'].strftime('%H:%M')} via {route['description']}"
+    return f"🏠 {route['eta'].strftime('%H:%M')} via {route['description']}"
 
 
 def concise_warning(warning: str) -> str:
