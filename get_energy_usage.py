@@ -36,8 +36,9 @@ glowmarkt_url = 'https://api.glowmarkt.com/api/v0-1/'
 home_postcode = 'WA10'
 rich_output = print.__module__ == 'rich'
 bars = "▁▂▃▄▅▆▇"  # one fewer bar (left out █) to avoid clashes between rows
-colours = {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
-           'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"}
+colours = CaseInsensitiveDict(
+    {'Gas': 'orange_red1', 'Solar': 'bright_yellow', 'Hydro': 'blue', 'Wind': 'bright_cyan', 'Misc': 'cyan',
+     'Imports': 'grey50', 'Biomass': '#895129', 'Nuclear': 'yellow', 'PSH': "dodger_blue1"})
 icons = CaseInsensitiveDict({'Gas': '🔥', 'Solar': '☀️', 'Hydro': '💧', 'Wind': '💨', 'Misc': '➿',
                              'Imports': '🌍', 'Biomass': '🪵', 'Nuclear': '☢️', 'PSH': '🏞️'})
 records = CaseInsensitiveDict({'Wind': 23.880, 'Solar': 14.035, 'Gas': 27.868, 'Nuclear': 9.342, 'Coal': 26.044,
@@ -302,11 +303,11 @@ class RegionId(IntEnum):
     wales = 17
 
 
-def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home_postcode,
+def get_co2_data(start: pandas.Timestamp | None, geography: str | int | RegionId = home_postcode,
                  remove_incomplete_rows: bool = True, do_pivot: bool = True,
                  end: pandas.Timestamp | None = None) -> pandas.DataFrame:
     """Use the Carbon Intensity API to fetch regional or national CO₂ intensity data.
-    :param start: date/time for the start of the period.
+    :param start: date/time for the start of the period. Use None to get current intensity only.
     :param end: date/time for the end of the period. A maximum of 14 days will be returned (API limit).
     If end is None, return as much data as possible.
     :param do_pivot: Return a DataFrame where the rows are days and the columns hours. Ignores remove_incomplete_rows.
@@ -314,15 +315,24 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
     :param remove_incomplete_rows: Specify False to fill in -1 values where there are data gaps."""
     if end is None:
         end = today()  # - pandas.to_timedelta(1, 'day')
-    end = min(end, start + pandas.to_timedelta(13, 'day'))  # can't get more than 14 days at a time
-    if end <= start:
-        return pandas.DataFrame()
+    if start:
+        end = min(end, start + pandas.to_timedelta(13, 'day'))  # can't get more than 14 days at a time
+        if end <= start:
+            return pandas.DataFrame()
     if geography:
         area = 'regional/'
         suffix = f'/postcode/{geography}' if isinstance(geography, str) else f'/regionid/{geography}'
     else:
         area, suffix = '', ''
-    url = f'{carbon_int_url}/{area}intensity/{ymd(start, time=True)}Z/{ymd(end, time=True)}Z{suffix}'
+    if start:
+        # https://api.carbonintensity.org.uk/intensity/2017-09-18T12:00Z/2017-10-01T12:00Z
+        # https://api.carbonintensity.org.uk/regional/intensity/2018-05-15T12:00Z/2018-05-16T12:00Z/postcode/RG10
+        url = f'{carbon_int_url}/{area}intensity/{ymd(start, time=True)}Z/{ymd(end, time=True)}Z{suffix}'
+    else:  # current values only
+        # https://api.carbonintensity.org.uk/intensity
+        # https://api.carbonintensity.org.uk/regional/postcode/RG10
+        area = 'regional' if geography else 'intensity'
+        url = f'{carbon_int_url}/{area}{suffix}'
     # print(url)
     json = get_json(url)
     # print(json)
@@ -341,8 +351,8 @@ def get_co2_data(start: pandas.Timestamp, geography: str | int | RegionId = home
         return pivot.dropna() if remove_incomplete_rows else pivot.fillna(-1)
     else:
         df.set_index('to', inplace=True)  # index is the *end* time of each period
-        # Add the generation mix as well, why not?
-        print(df['generationmix'])
+        # Add the generation mix as well
+        # print(df['generationmix'])
         gen_mix = pandas.DataFrame([
             {item['fuel']: item['perc'] for item in row}
             for row in df['generationmix']], index=df.index)
@@ -505,35 +515,56 @@ def get_live_generation(source: str | None = None) -> str:
     """Fetch the live generation data for a given fuel.
     :param source: the fuel type to fetch - Gas Solar Coal Hydro Wind Misc Imports PSH Biomass Nuclear. Supply None to return largest."""
     global records
-    url = 'https://www.energydashboard.co.uk/api/latest/generation'
-    response = requests.get(url)
-    data = response.json()
+    data = requests.get('https://www.energydashboard.co.uk/api/latest/generation').json()
     generation_values = data['fiveMinuteData']['generationValues']
-    highest_gw = 0
-    biggest_source = ''
-    terminal_width, _ = os.get_terminal_size()
-    sparkline = ''
+    try:
+        data = requests.get('https://www.energydashboard.co.uk/api/latest/carbon').json()
+        intensity = data['carbonLastItem']['intensity']['forecast']
+        generation_values['intensity'] = intensity
+    except Exception:  # not critical to get intensity
+        pass
     if records['lastUpdated'] < today():
         try:
             records = get_generation_records()
         except Exception as exception:
             print('Failed to update records', exception)
+    biggest_source, sparkline = bar_chart(generation_values)
+    print(sparkline)
+    regional_generation = get_co2_data(None, do_pivot=False).to_dict('records')[0]
+    _, sparkline = bar_chart(regional_generation)
+    print(sparkline)
+    source = source or biggest_source
+    total = generation_values[source]['total']
+    broken = source in records and total > records[source]
+    label = '🏆 ' if broken else ''
+    return f'{icons.get(source, source)} {label}{total:.2f} GW'
+
+
+def bar_chart(generation_values: dict[str, dict[str, float] | float]) -> tuple[str, str]:
+    """Build a bar chart of the supplied generation values suitable for terminal printing."""
+    global records
+    terminal_width, _ = os.get_terminal_size()
+    sparkline = ''
     total_raw = 0
     total_clipped = 0
-    for source_name, info in generation_values.items():
-        raw_width = info['percentage'] * terminal_width / 100
+    intensity = generation_values.pop('intensity', None)
+    biggest_source = max(generation_values, key=lambda key: get_percentage(generation_values[key]))
+    for source_name, info in sorted(generation_values.items(), key=lambda item: item[0], reverse=True):
+        percentage = get_percentage(info)
+        raw_width = percentage * terminal_width / 100
         # add or take away a bit (cascade rounding, ish) to make overall width add up to exactly terminal_width
         width = int(raw_width + total_raw - total_clipped)
         total_raw += raw_width
         change_colour = rich_output and source_name in colours
         bar = icons.get(source_name, source_name)
-        if total := info['total']:
-            bar += f' {total} GW'
-            if total > highest_gw:
-                highest_gw = total
-                biggest_source = source_name
+        if isinstance(info, dict) and (total := info['total']):
+            bar += f' {total:.3f} GW'
             if source_name in records:
                 bar += f' 🏆 {records[source_name]} GW'
+        else:
+            bar += f' {percentage:.0f}%'
+        if source_name == biggest_source and intensity is not None:
+            bar += f' 📏 {intensity} gCO₂e/kWh'
         bar = wcwidth.clip(wcwidth.ljust(bar, width, ' ' if rich_output else '*'), 0, width)
         clipped_width = wcwidth.width(bar)
         total_clipped += clipped_width
@@ -541,13 +572,11 @@ def get_live_generation(source: str | None = None) -> str:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
         sparkline += bar
-    # print(total_raw, total_clipped)
-    print(sparkline)
-    source = source or biggest_source
-    total = generation_values[source]['total']
-    broken = source in records and total > records[source]
-    label = '🏆 ' if broken else ''
-    return f'{icons.get(source, source)} {label}{total:.2f} GW'
+    return biggest_source, sparkline
+
+
+def get_percentage(info: dict[str, float] | float):
+    return info['percentage'] if isinstance(info, dict) else info
 
 
 def get_generation_records() -> CaseInsensitiveDict:
@@ -569,21 +598,23 @@ def get_generation_records() -> CaseInsensitiveDict:
 
 
 if __name__ == '__main__':
-    print(get_usage_data(remove_incomplete_rows=True))
+    # print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
+    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
     # print(asyncio.run(get_fuel_data(start, 'electricity', remove_incomplete_rows=False)))
     # print(get_fuel_data_n3rgy(start, 'gas', remove_incomplete_rows=False))
     # print(get_temp_data())
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    # print(get_live_generation())
+    print(get_live_generation())
     # print(get_generation_records())
     # asyncio.run(loop_refresh_readings())
 
-    print(get_co2_data(start, 'WA4', do_pivot=False))
+    # print(get_co2_data(start, 'WA4', do_pivot=False))
+
+    # print(get_co2_data(None, 'WA4', do_pivot=False))
