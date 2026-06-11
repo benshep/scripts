@@ -540,7 +540,7 @@ def get_live_generation(source: str | None = None) -> str:
     return f'{icons.get(source, source)} {label}{total:.2f} GW'
 
 
-def bar_chart(generation_values: dict[str, dict[str, float] | float]) -> tuple[str, str]:
+def bar_chart(generation_values: dict) -> tuple[str, str]:
     """Build a bar chart of the supplied generation values suitable for terminal printing."""
     global records
     terminal_width, _ = os.get_terminal_size()
@@ -557,14 +557,19 @@ def bar_chart(generation_values: dict[str, dict[str, float] | float]) -> tuple[s
         total_raw += raw_width
         change_colour = rich_output and source_name in colours
         bar = icons.get(source_name, source_name)
-        if isinstance(info, dict) and (total := info['total']):
+        # national (energydashboard.co.uk): {'gas': {'percentage': 50, 'total': 10}, ... }
+        # regional (carbonintensity.org.uk): {'gas': 50, ... }
+        is_national = isinstance(info, dict)
+        if is_national and (total := info['total']):
             bar += f' {total:.3f} GW'
             if source_name in records:
                 bar += f' 🏆 {records[source_name]} GW'
         else:
             bar += f' {percentage:.0f}%'
-        if source_name == biggest_source and intensity is not None:
-            bar += f' 📏 {intensity} gCO₂e/kWh'
+        if source_name == biggest_source:
+            bar += ' 🇬🇧' if is_national else ' 📌'
+            if intensity is not None:
+                bar += f' {intensity} gCO₂e/kWh'
         bar = wcwidth.clip(wcwidth.ljust(bar, width, ' ' if rich_output else '*'), 0, width)
         clipped_width = wcwidth.width(bar)
         total_clipped += clipped_width
