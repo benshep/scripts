@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
+from dateutil.relativedelta import relativedelta
 
 import google_api
 
@@ -31,16 +32,19 @@ def ymd(date: datetime, time: bool = False) -> str:
 
 
 def get_home_fixtures(sport: str, team: str, team_full_name: str) -> dict[str, Fixture]:
-    """Get a list of home fixtures for the St Helens rugby league teams using the BBC Sports API."""
-    today = datetime.today()
-    end_date = today + timedelta(weeks=12)
+    """Get a list of home fixtures for a given team using the BBC Sports API."""
+    today = datetime.today().replace(tzinfo=ZoneInfo('Europe/London'))
+    # some calls to the API seem to need a whole month to be requested, otherwise an error is returned
+    start_date = today.replace(day=1)
+    end_date = start_date + relativedelta(day=31)
     params = {'selectedEndDate': ymd(end_date),
-              'selectedStartDate': ymd(today),
+              'selectedStartDate': ymd(start_date),
               'todayDate': ymd(today),
               'urn': f'urn:bbc:sportsdata:{sport}:team:{team}'}
-    url = 'https://www.bbc.co.uk/wc-data/container/sport-data-scores-fixtures?' + urllib.parse.urlencode(params)
+    url = f'https://web-cdn.api.bbci.co.uk/wc-poll-data/container/sport-data-scores-fixtures?{urllib.parse.urlencode(params)}'
     print(url)
     data = json.loads(requests.get(url).text)
+    # print(data)
     fixtures = {}
     for event in data['eventGroups']:
         match = event['secondaryGroups'][0]['events'][0]
@@ -60,6 +64,8 @@ def get_home_fixtures(sport: str, team: str, team_full_name: str) -> dict[str, F
         else:  # start time TBA: just parse the date and assume a 12:00 kick-off
             start_time = datetime.strptime(start_date_time, '%Y-%m-%d').replace(hour=12,
                                                                                 tzinfo=ZoneInfo('Europe/London'))
+        if start_time < today:
+            continue  # only return future fixtures
         bbc_id = match['id']
         if home_team == team_full_name:
             fixtures[bbc_id] = Fixture(start_time, home_team, away_team, tournament, definite_time)
@@ -98,7 +104,7 @@ def get_local_fixtures() -> dict[str, Fixture]:
                 if not venue:
                     if home_team != 'St Helens':
                         continue
-                elif venue != 'Totally Wicked Stadium':
+                elif venue not in ('Totally Wicked Stadium', 'BrewDog Stadium'):  # name change!
                     continue
                 bbc_id = match['id']
                 fixtures[bbc_id] = Fixture(start_time, home_team, away_team, competition_round)
@@ -151,5 +157,5 @@ def update_saints_calendar() -> str:
 if __name__ == '__main__':
     # print(*get_home_fixtures('rugby-league', 'st-helens', 'St Helens'), sep='\n')
     # print(*get_home_fixtures('football', 'liverpool-ladies', 'Liverpool'), sep='\n')
-    print(get_calendar_events())
-    # print(update_saints_calendar())
+    # print(get_calendar_events())
+    print(update_saints_calendar())
