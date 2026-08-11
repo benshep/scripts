@@ -112,7 +112,6 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
         return tomorrow
 
     all_fuel_data = [fuel_data.head(min_size) for fuel_data in all_fuel_data]
-    print(all_fuel_data)
 
     # check all dates are the same
     if len({tuple(fuel_data.axes[0].to_list()) for fuel_data in all_fuel_data}) > 1:

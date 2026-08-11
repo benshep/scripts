@@ -20,7 +20,7 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 
 on_windows = sys.platform == 'win32'
 nzp = '#' if on_windows else '-'  # character for no zero padding in dates - platform-specific!
-script_start = datetime.now() - timedelta(hours=1)
+script_start = datetime.now()
 pushbullet = Pushbullet(api_key)
 app_title = '📷 Move photos'
 
@@ -76,7 +76,7 @@ def convert_mov_videos(moved_list: list[Path]):
 
 
 def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[Path]:
-    file_counter = Counter()
+    file_counter: Counter[Path] = Counter()
     moved_list = []
     for filename in temp_folder.glob('*.jpg', case_sensitive=False):
         taken_date = datetime.fromtimestamp(filename.stat().st_mtime).date()
@@ -91,7 +91,8 @@ def move_photos_to_organised_folders(responses: list[tuple[date, str]]) -> list[
         moved_list.append(move(filename, destination_folder))
         file_counter[destination_folder] += 1
     os.rmdir(temp_folder)
-    pushbullet.push_note(app_title, '\n'.join(f'{folder}: {count} files' for folder, count in file_counter.items()))
+    message = '\n'.join(f'{folder.relative_to(pics_folder)}: {count} files' for folder, count in file_counter.items())
+    pushbullet.push_note(app_title, message)
     return moved_list
 
 
@@ -99,7 +100,7 @@ def move_photos_to_temp_folder() -> list[date]:
     """Move pictures off memory card onto local storage."""
     #  move all pics from folders under DCIM to single folder under Pictures
     if on_windows:
-        folder = Path(r'D:/DCIM')
+        folder = Path(r'D:\DCIM')
     else:
         card_name = {'me': 'SD-4GB', 'Katie': '9488-CBB1'}
         folder = Path(f'/media/ben/{card_name[name]}/DCIM')
@@ -107,7 +108,7 @@ def move_photos_to_temp_folder() -> list[date]:
 
     taken_dates = set()
     # loop through folders under DCIM
-    for file in folder.glob('*.jpg', case_sensitive=False):
+    for file in folder.rglob('*.jpg', case_sensitive=False):
         taken_date = datetime.fromtimestamp(file.stat().st_mtime).date()
         if taken_date.year == 2014:  # likely the 'if found' image
             continue
@@ -137,7 +138,8 @@ def get_response(year_lookup: dict[int, int]) -> list[tuple[date, str]]:
     07-30 Weekend away
     08-09 Other thing
     08-10 Something else"""
-    pushes = get_pushes(pushbullet, modified_after=script_start.timestamp())
+    hour_ago = script_start - timedelta(hours=1)
+    pushes = get_pushes(pushbullet, modified_after=hour_ago.timestamp())
     for push in pushes:
         if 'title' in push:  # most have titles: looking for one without (sent from phone)
             return []
