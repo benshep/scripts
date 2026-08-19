@@ -101,6 +101,7 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     # use fillna when data seems to be permanently missing - we can get incomplete days and fill in the gaps manually
     all_fuel_data = [fuel_data.dropna() if remove_incomplete_rows else fuel_data.fillna(-1)
                      for fuel_data in all_fuel_data]
+    # print(all_fuel_data)
 
     # truncate all of them to size of the smallest, keeping only a whole number of days (i.exception. 48 half-hourly periods)
     min_size = min(len(fuel_data) for fuel_data in all_fuel_data)
@@ -121,8 +122,8 @@ async def get_usage_data_async(remove_incomplete_rows: bool = True) -> None | st
     for (title, colour), fuel_data in zip(data_titles.items(), all_fuel_data):
         if len(fuel_data) > 0:
             print(title.ljust(max_title_len), end='\n' if len(fuel_data) > 1 else ' ')
-            vmax = fuel_data.values.max()
             vmin = fuel_data.values.min()
+            vmax = fuel_data.values.max() or 0.1  # ensure vmax != vmin when both are zero
             idx = round((len(bars) - 1) * (fuel_data - vmin) / (vmax - vmin))
             blocks = pandas.DataFrame.map(idx, lambda x: bars[int(x)])
             for date, block_row, data_row in zip(fuel_data.index, blocks.values, fuel_data.values):
@@ -284,20 +285,20 @@ def get_temp_data() -> dict[str, str]:
 class RegionId(IntEnum):
     """Region names as defined by the Carbon Intensity API.
     See https://carbon-intensity.github.io/api-definitions/#region-list"""
-    north_scotland = 1
-    south_scotland = 2
-    north_west_england = 3
-    north_east_england = 4
-    yorkshire = 5
-    north_wales = 6
-    south_wales = 7
-    west_midlands = 8
-    east_midlands = 9
-    east_england = 10
-    south_west_england = 11
-    south_england = 12
-    london = 13
-    south_east_england = 14
+    north_scotland = 1  # PES = 17
+    south_scotland = 2  # PES = 18
+    north_west_england = 3  # PES = 16
+    north_east_england = 4  # PES = 15
+    yorkshire = 5  # PES = 23
+    north_wales = 6  # PES = 13
+    south_wales = 7  # PES = 21
+    west_midlands = 8  # PES = 14
+    east_midlands = 9  # PES = 11
+    east_england = 10  # PES = 10
+    south_west_england = 11  # PES = 22
+    south_england = 12  # PES = 20
+    london = 13  # PES = 12
+    south_east_england = 14  # PES = 19
     england = 15
     scotland = 16
     wales = 17
@@ -544,14 +545,16 @@ def bar_chart(generation_values: dict) -> tuple[str, str]:
     """Build a bar chart of the supplied generation values suitable for terminal printing."""
     global records
     terminal_width, _ = os.get_terminal_size()
+    terminal_width -= 1
     sparkline = ''
     total_raw = 0
     total_clipped = 0
     intensity = generation_values.pop('intensity', None)
+    total_percentage = sum(get_percentage(v) for v in generation_values.values())  # expect 100 but sometimes not quite
     biggest_source = max(generation_values, key=lambda key: get_percentage(generation_values[key]))
     for source_name, info in sorted(generation_values.items(), key=lambda item: item[0], reverse=True):
         percentage = get_percentage(info)
-        raw_width = percentage * terminal_width / 100
+        raw_width = percentage * terminal_width / total_percentage
         # add or take away a bit (cascade rounding, ish) to make overall width add up to exactly terminal_width
         width = int(raw_width + total_raw - total_clipped)
         total_raw += raw_width
@@ -577,7 +580,7 @@ def bar_chart(generation_values: dict) -> tuple[str, str]:
             colour = colours[source_name]
             bar = f'[black on {colour}]{bar}[/black on {colour}]'
         sparkline += bar
-    return biggest_source, sparkline
+    return biggest_source, sparkline + ' '  # add space so it doesn't extend the last bar when terminal size changed
 
 
 def get_percentage(info: dict[str, float] | float):
@@ -603,20 +606,20 @@ def get_generation_records() -> CaseInsensitiveDict:
 
 
 if __name__ == '__main__':
-    # print(get_usage_data(remove_incomplete_rows=True))
+    print(get_usage_data(remove_incomplete_rows=True))
     # print(get_regional_intensity())
     # get_old_data_avg()
     # while True:
     #     print(tabulate(get_mix(pandas.to_datetime('now') - pandas.to_timedelta(36, 'h'), 'NG2'), headers='keys'))
     #     time.sleep(30 * 60)
-    # start = pandas.to_datetime('today').to_period('D').start_time - pandas.to_timedelta(2, 'D')
+    # start = pandas.to_datetime('today').to_period('D').start_time # - pandas.to_timedelta(2, 'D')
     # print(asyncio.run(get_fuel_data(start, 'electricity', remove_incomplete_rows=False)))
     # print(get_fuel_data_n3rgy(start, 'gas', remove_incomplete_rows=False))
     # print(get_temp_data())
     # print(asyncio.run(get_virtual_entities()))
     # print(asyncio.run(get_resources(energy_credentials.glowmarkt["entity"])))
     # j = asyncio.run(get_readings(start, 'electricity', ReadingPeriod.half_hour))
-    print(get_live_generation())
+    # print(get_live_generation())
     # print(get_generation_records())
     # asyncio.run(loop_refresh_readings())
 

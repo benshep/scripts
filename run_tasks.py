@@ -295,7 +295,9 @@ def run_tasks():
             update_cell(i + 2, get_column('Last result'), result)
 
         next_time_str = next_task_time.strftime("%H:%M")
-        print(f'Next scheduled run: {next_task_name} at {next_time_str}')
+        print(f'Next expected run: {next_task_name} at {next_time_str}')
+        # but check back in an hour anyway
+        next_task_time = min(next_task_time, datetime.now() + timedelta(hours=1))
         if node() == 'eddie':
             # Schedule next run for given hour and minute in crontab
             # Ignore date portion - if schedule missed, will happen again next day
@@ -310,8 +312,8 @@ def run_tasks():
         set_window_title(window_title)
         if title_toast and on_windows:
             windows_tools.flash_window(window_title)
-        while datetime.now() < next_task_time + timedelta(minutes=4):  # give some extra time for eddie
-            sleep(300)
+        while datetime.now() < next_task_time + timedelta(seconds=30):  # give some extra time for eddie
+            sleep(60)
 
             # restart code
             now = datetime.now()
