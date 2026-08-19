@@ -28,7 +28,7 @@ def update_phone_music() -> str | tuple[str, str]:
     return toast
 
 
-async def check_radio_files() -> str | tuple[str, str]:
+async def check_radio_files() -> str | tuple[str, Path]:
     """Find and remove recently-played tracks from the Radio folder. Fix missing titles in tags."""
     if not folders.radio_folder.exists():
         return ''  # doesn't exist on every computer
@@ -68,7 +68,7 @@ async def check_radio_files() -> str | tuple[str, str]:
         # weeks = (file_date - min_date).days // 7
 
         # remove archive In Our Time episodes
-        if '(Archive Episode)' in file.stem:
+        if '(Archive Episode)' in file.stem or '_Archive_' in file.stem:
             toast += delete_file(file)
             continue
 
@@ -149,7 +149,7 @@ async def check_radio_files() -> str | tuple[str, str]:
     total_seconds = total_play_time.total_seconds()
     if toast:  # only report total time if we're reporting something else too
         toast += f'📻 {total_seconds // 3600:.0f}h {(total_seconds // 60) % 60:.0f}m\n'
-    return (toast, image_filename) if image_filename else toast
+    return (toast, Path(image_filename)) if image_filename else toast
 
 
 def delete_file(file: Path) -> str:
