@@ -265,7 +265,8 @@ def run_tasks():
                         if on_windows:
                             # try a local notification instead
                             win11toast.notify(title=toast_title, body=toast, image=filename, duration='long')
-                case Exception():  # something went wrong with the task
+                case Exception() as exception:  # something went wrong with the task
+                    print(exception)
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
@@ -303,7 +304,7 @@ def run_tasks():
             # Ignore date portion - if schedule missed, will happen again next day
             cron = CronTab(user='ben')
             job = next(cron.find_command('run_tasks'))
-            job.setall(next_task_time.time())  # just time portion
+            job.setall(next_task_time.time().minute, None)  # just minute portion
             cron.write()
             break  # just run once on cron
 
