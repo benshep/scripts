@@ -213,7 +213,7 @@ def run_tasks():
             set_window_title(icon_and_name)
             print('\n', last_triggered, icon_and_name, parameters)
             try:
-                return_value = function() if parameters == '' else function(parameters)
+                return_value = function(last_run_time=last_run_time) if parameters == '' else function(parameters, last_run_time=last_run_time)
             except Exception as exception:  # something went wrong with the task!
                 return_value = exception
                 exception_type, exception_value, exception_traceback = sys.exc_info()
@@ -251,16 +251,20 @@ def run_tasks():
                     print(toast)
                     print(filename)
                     try:
+                        push_it = pushbullet.push_file
                         if isinstance(filename, Path):
                             filename = str(filename)  # upload_file needs a str object
                             with open(filename, 'rb') as file_handle:
                                 file_details = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
-                        else:  # URL
+                        elif filename.lower().endswith(('.jpg', '.png')):  # image URL
                             file_details = dict(file_name='cover.jpg', file_url=filename, file_type='image/jpg')
+                        else:  # other URL
+                            file_details = dict(url=filename)
+                            push_it = pushbullet.push_link
                         if filename.startswith(tempfile.gettempdir()):  # clean up temp files
                             with suppress(PermissionError):
                                 os.remove(filename)
-                        pushbullet.push_file(title=toast_title, body=toast, **file_details)
+                        push_it(title=toast_title, body=toast, **file_details)
                     except requests.exceptions.ReadTimeout:
                         if on_windows:
                             # try a local notification instead

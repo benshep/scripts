@@ -18,7 +18,7 @@ max_cut = int(0.9 * compare_length)  # anything more than this is probably an er
 hash_size = 1  # just use the first N characters of a hash
 
 
-def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] = timedelta(seconds=60)) -> str:
+def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] = timedelta(seconds=60),**kwargs) -> str:
     """Search for repeated segments in MP3 files in the radio folder, and erase those segments from the files.
     Set only_known=True to only search for known repeats (stored in repeats.txt) , otherwise it will compare every file
     to all the previous ones.

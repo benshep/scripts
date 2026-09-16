@@ -34,17 +34,36 @@ sheets = spreadsheets.values()
 calendar = build('calendar', 'v3', credentials=creds)
 
 
-def get_data(sheet_id : str, sheet_name : str, data_range : str) -> list[list[str]]:
+def get_data(sheet_id: str, sheet_name: str, data_range: str) -> list[list[str]]:
     """Fetch a range of data from a specified workbook and worksheet."""
     return sheets.get(spreadsheetId=sheet_id, range=f'{sheet_name}!{data_range}').execute()['values']
 
 
-def update_cell(sheet_id : str, sheet_name : str, cell : str, value):
+def update_cell(sheet_id: str, sheet_name: str, cell: str, value):
     """Update a cell in a specified sheet with the given value."""
     range_spec = f'{sheet_name}!{cell}' if sheet_name else cell
     payload = {'values': [[value]], 'majorDimension': "ROWS", 'range': range_spec}
     sheets.update(spreadsheetId=sheet_id, range=range_spec,
                   valueInputOption='USER_ENTERED', body=payload).execute(num_retries=5)
+
+
+def update_note(workbook_id, sheet_name, cell_range, note_text: str):
+    """Update a cell note. Set note_text to a blank string to clear the note."""
+    request = {
+        'updateCells': {
+            'range': f'{sheet_name}!{cell_range}' if sheet_name else cell_range,
+            'rows': [{
+                'values': [{
+                    'note': note_text
+                }]
+            }],
+            'fields': 'note'
+        }
+    }
+    spreadsheets.batchUpdate(
+        spreadsheetId=workbook_id,
+        body={'requests': [request]}
+    ).execute(num_retries=5)
 
 
 def update_cells(workbook_id, sheet_name, cell_range, values):
@@ -54,16 +73,24 @@ def update_cells(workbook_id, sheet_name, cell_range, values):
                        body={'value_input_option': 'USER_ENTERED', 'data': cells}).execute(num_retries=5)
 
 
-def fill_down(sheet_id, grid_id, start_column, column_count, from_row, fill_row_count):
+def fill_down(sheet_id: str, grid_id: str, start_column: int, column_count: int, from_row: int, fill_row_count: int):
     """Fill a range down from a starting row. Rows and columns are zero-based."""
-    request_body = {'requests': [{'autoFill': {'useAlternateSeries': False,
-                                               'sourceAndDestination': {
-                                                   'source': {'sheetId': grid_id,
-                                                              'startRowIndex': from_row,
-                                                              'endRowIndex': from_row + 1,  # half-open
-                                                              'startColumnIndex': start_column,
-                                                              'endColumnIndex': start_column + column_count - 1,
-                                                              }, 'dimension': 'ROWS', 'fillLength': fill_row_count}}}]}
+    request_body = {
+        'requests': [{'autoFill': {
+            'useAlternateSeries': False,
+            'sourceAndDestination': {
+                'source': {
+                    'sheetId': grid_id,
+                    'startRowIndex': from_row,
+                    'endRowIndex': from_row + 1,  # half-open
+                    'startColumnIndex': start_column,
+                    'endColumnIndex': start_column + column_count - 1,
+                },
+                'dimension': 'ROWS',
+                'fillLength': fill_row_count
+            }
+        }}]
+    }
     spreadsheets.batchUpdate(spreadsheetId=sheet_id, body=request_body).execute(num_retries=5)
 
 

@@ -20,7 +20,7 @@ from pushbullet_api_key import api_key  # local file, keep secret!
 test_mode = False  # don't change anything!
 
 
-def update_phone_music() -> str | tuple[str, str]:
+def update_phone_music(**kwargs) -> str | tuple[str, str]:
     """Deleted listened-to radio files."""
     start_time = datetime.now()
     toast = asyncio.run(check_radio_files())

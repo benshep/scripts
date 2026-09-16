@@ -74,7 +74,7 @@ def get_recent_crossings(days_back: int = 30) -> list[Crossing]:
     return crossings
 
 
-def log_crossings() -> str:
+def log_crossings(**kwargs) -> str:
     """Log the most recent crossings to a Google spreadsheet."""
     sheet_id = '13mso0bRg1PUVeojM2-d31yf71-3HaNfQ7cpxant7aAU'  # 🌉 Mersey Gateway spreadsheet
     sheet_name = 'Sheet1'

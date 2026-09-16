@@ -88,7 +88,7 @@ class Tags(NamedTuple):
     """The length of the album in minutes."""
 
 
-def copy_album(album: AlbumKey, files: Album, existing_folder: Path | None = None) -> Path:
+def copy_album(album: AlbumKey, files: Album, copy_root: Path, existing_folder: Path | None = None) -> Path:
     """Copy a given album to the copy folder."""
     if album.title:
         no_artist = album.artist in (None, 'None', '', 'Various', 'Various Artists')
@@ -104,7 +104,7 @@ def copy_album(album: AlbumKey, files: Album, existing_folder: Path | None = Non
         else:
             n = 0
     else:  # making a new folder
-        copied_name = Path(datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename)
+        copied_name = Path(copy_root / (datetime.strftime(datetime.now(), '%Y-%m-%d ') + album_filename))
         if not test_mode:
             copied_name.mkdir()
         n = 0
@@ -123,10 +123,10 @@ def copy_album(album: AlbumKey, files: Album, existing_folder: Path | None = Non
     return copied_name
 
 
-def reducible_copy_album(existing_folder: Path, album_spec: tuple[AlbumKey, Album]) -> Path:
+def reducible_copy_album(existing_folder: Path, album_spec: tuple[AlbumKey, Album, Path]) -> Path:
     """Version of copy_album that can be passed to functools.reduce for multiple subsequent copy operations."""
-    album, files = album_spec
-    return copy_album(album, files, existing_folder)
+    album, files, copy_root = album_spec
+    return copy_album(album, files, copy_root, existing_folder)
 
 
 async def get_tags(folder: Path, file: Path, album: dict, copied_already: set[str],
@@ -188,7 +188,7 @@ def get_album_files() -> list[tuple[Path, str]]:
 
 async def copy_albums(copy_folder_list: list[Folder],
                       supplied_file_list: list[tuple[Path, str]],
-                      copied_already: set[str]) -> tuple[str, str]:
+                      copied_already: set[str]) -> tuple[str, Path]:
     """Select random albums up to the given length for each folder.
     Avoids a big scan of tags by picking folders and files at random from a (fast) os.walk list."""
     toast = ''
@@ -300,14 +300,13 @@ async def copy_albums(copy_folder_list: list[Folder],
             total_length = sum(lengths)
             if min_length <= total_length <= max_length:
                 copied_already |= {key.tab_join() for key in copy_dict.keys()}
-                folder_name: Path | None = reduce(reducible_copy_album, copy_dict.items(), None)
-                folder_name_inc_length = f'{folder_name} [{total_length:.0f}]'
+                folder_name: Path | None = reduce(reducible_copy_album, [(ak, a, copy_folder.address) for ak, a in copy_dict.items()], None)
+                folder_name_inc_length = Path(f'{folder_name} [{total_length:.0f}]')
                 if not test_mode:
                     with suppress(OSError):  # doesn't matter if an error occurs here
-                        folder_name.rename(copy_folder.address / folder_name_inc_length)
-                toast += f'{tick} {folder_name_inc_length[11:]}\n'
-                for key, album in sorted(copy_dict.items(), reverse=True,
-                                         key=lambda item: sum(item[1].values())):
+                        folder_name.rename(folder_name_inc_length)
+                toast += f'{tick} {folder_name_inc_length.name[11:]}\n'
+                for key, album in sorted(copy_dict.items(), reverse=True, key=lambda item: sum(item[1].values())):
                     # Check for embedded images in the tags of the first file
                     media = await read_tags(list(album.keys())[0], key.folder)
                     if media.art:
@@ -330,7 +329,7 @@ async def copy_albums(copy_folder_list: list[Folder],
           f' in {elapsed_seconds :.1f}s, {files_scanned / elapsed_seconds :.0f} files/sec')
 
     if not image_filenames:
-        return toast, ''
+        return toast
 
     thumbnail_size = 300
     show_count = min(len(image_filenames), 4)
@@ -351,7 +350,7 @@ async def copy_albums(copy_folder_list: list[Folder],
             y += 1
     _, output_image = tempfile.mkstemp(suffix='.jpg')
     gallery.save(output_image)
-    return toast, output_image
+    return toast, Path(output_image)
 
 
 def list_lengths(lengths: list[float]) -> str:
@@ -423,7 +422,7 @@ async def check_folder_list(copy_folder_list: list[Folder]) -> tuple[str, list[F
 
         for subfolder in to_delete:
             send2trash(subfolder)
-            toast += f'{cross} {subfolder[11:]}\n'
+            toast += f'{cross} {subfolder.name[11:]}\n'
             subfolders.remove(subfolder)
         if test_mode or len(subfolders) < copy_folder.min_count:  # need more albums in this folder
             folders_to_fill.append(copy_folder)
@@ -455,7 +454,7 @@ def find_copy_folders() -> list[Folder]:
     return folder_list
 
 
-def copy_60_minutes() -> str | tuple[str, str] | datetime:
+def copy_60_minutes(**kwargs) -> str | tuple[str, str] | datetime:
     return asyncio.run(copy_60_minutes_async())
 
 

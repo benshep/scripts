@@ -116,5 +116,6 @@ def check_previous(title: str, line_start: str = '', show_date: bool = True, day
 
 
 if __name__ == '__main__':
-    # odd_even_pages(28)
-    check_previous('✂  erase_trailers')
+    while True:
+        odd_even_pages(int(input('Number of pages: ')))
+    # check_previous('🎵 copy_60_minutes', days_before=10)

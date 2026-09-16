@@ -13,7 +13,8 @@ from PIL import Image
 from io import BytesIO
 from media import is_media_file
 from send2trash import send2trash
-from folders import music_folder
+from folders import music_folder, misc_folder
+
 
 def crop_cover(media):
     """Deal with album covers that have been turned into widescreen thumbnails."""
@@ -64,7 +65,8 @@ class AddTags(yt_dlp.postprocessor.PostProcessor):
                 media.album = self.album
             pos = media.album.find('Official')
             if pos > 1:  # e.g. Album Name (Official Audio)
-                media.album = media.album[:pos].rstrip(' (-[')  # remove suffices like " - Official" and " [Official]" as well
+                media.album = media.album[:pos].rstrip(
+                    ' (-[')  # remove suffices like " - Official" and " [Official]" as well
         media.track = track
         title = media.title
         if title is not None:
@@ -102,7 +104,7 @@ def show_status(progress: dict[str, str]):
         print(f'{progress["_eta_str"]} {progress["filename"]}', end='\r')
 
 
-def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
+def get_youtube_playlists(just_crop_art: bool = False, **kwargs) -> str | tuple[str, str]:
     info_file = 'download.txt'  # info file contained in each folder
     archive_file = 'download-archive.txt'
     # folder = r'K:\Music\_Copied\YouTube\Elbow\The Take Off and Landing of Everything'
@@ -166,23 +168,23 @@ def get_youtube_playlists(just_crop_art: bool = False) -> str | tuple[str, str]:
                 playlist['url'] = url.strip()
                 # print(playlist)
                 add_tags = AddTags(playlist.get('album', album_name), playlist.get('artist', artist))
-                options = {'paths': {'home': str(folder), 'temp': temp_folder},
-                           'download_archive': str(folder / archive_file),  # keep track of previously-downloaded videos
-                           'force_write_download_archive': True,
-                           # 'no-warnings': True,
-                           # 'verbose': True,
-                           'quiet': True,
-                           # 'max_downloads': 1,  # for testing
-                           'ignoreerrors': True, 'writethumbnail': True, 'format': 'bestaudio/best',
-                           # reverse order for channels (otherwise new videos will always be track 1)
-                           'playlistreverse': 'channel' in playlist['url'],
-                           # https://github.com/yt-dlp/yt-dlp#output-template
-                           'outtmpl': "%(playlist_index)02d %(title)s.%(ext)s",
-                           # 'parse_metadata': 'title:%(artist)s - %(album)s',
-                           'postprocessors': [{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
-                                              {'key': 'EmbedThumbnail'}],
-                           'match_filter': reject_existing, 'progress_hooks': [show_status],
-                           }
+                options: dict = dict(paths={'home': str(folder), 'temp': temp_folder},
+                                     download_archive=str(folder / archive_file),
+                                     force_write_download_archive=True,  # keep track of previously-downloaded videos
+                                     # no-warnings=True,
+                                     # verbose=True,
+                                     # max_downloads=1,  # for testing
+                                     quiet=True, ignoreerrors=True, writethumbnail=True, format='bestaudio/best',
+                                     # reverse order for channels (otherwise new videos will always be track 1)
+                                     playlistreverse='channel' in playlist['url'],
+                                     # https://github.com/yt-dlp/yt-dlp#output-template
+                                     outtmpl="%(playlist_index)02d %(title)s.%(ext)s",
+                                     # parse_metadata='title:%(artist)s - %(album)s',
+                                     postprocessors=[{'key': 'FFmpegExtractAudio'}, {'key': 'FFmpegMetadata'},
+                                                     {'key': 'EmbedThumbnail'}],
+                                     match_filter=reject_existing, progress_hooks=[show_status],
+                                     cookies=str(misc_folder / 'Scripts' / 'cookies-yt-dlp.txt'),  # in case of age-restricted videos
+                                     )
                 deno_exe = r'C:\ProgramData\chocolatey\lib\deno\deno.exe'
                 if os.path.exists(deno_exe):
                     options['js_runtimes'] = {'deno': {'path': deno_exe}}  # so that yt_dlp finds the JS runtime
