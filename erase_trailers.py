@@ -33,7 +33,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
     # https://pypi.org/project/pyacoustid/
     # and use audioread to get the PCM data
 
-    toast = ''
+    toast = []
     if not radio_folder.exists():
         return ''  # doesn't exist on every computer
     # os.chdir(radio_folder)
@@ -41,6 +41,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
     digest = {}  # store each file's digest in a dict
     repeats = repeat_file.read_text().splitlines()
     print(f'{len(repeats)} known repeats')
+    checklist = read_checklist()
     start_time = datetime.now()
     if isinstance(limit, list):
         file_list = [radio_folder / file for file in limit]
@@ -103,9 +104,10 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
             print('')  # new line after progress bar
         digest[file] = this_digest
         if cut_length:
-            toast += f'{file.stem}, {cut_length:.0f}s\n'
+            toast.append(f'{file.stem}, {cut_length:.0f}s')
             checklist[unbump(file.stem)] = f'{cut_length:.0f}s'
-    return toast
+            write_checklist(checklist)
+    return '\n'.join(sorted(toast))
 
 
 def get_matches(prev_digest, matcher, bar):
