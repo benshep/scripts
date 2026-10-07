@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import timedelta, datetime
 from difflib import SequenceMatcher
 from hashlib import sha1
@@ -10,12 +11,14 @@ from progress.bar import IncrementalBar
 from send2trash import send2trash
 
 from folders import radio_folder
+from tools import check_previous
 
 frame_start = b'\xff\xfe'
 test_mode = False
 compare_length = 1153  # first ~30s
 max_cut = int(0.9 * compare_length)  # anything more than this is probably an error
 hash_size = 1  # just use the first N characters of a hash
+list_filename = radio_folder / 'trailers_erased.md'
 
 
 def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] = timedelta(seconds=60),**kwargs) -> str:
@@ -43,6 +46,8 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
         file_list = [radio_folder / file for file in limit]
     else:
         file_list = list(radio_folder.glob('*.mp3', case_sensitive=False))
+        # remove any deleted files from checklist
+        checklist = {unbump(filename.stem): checklist.get(unbump(filename.stem), False) for filename in file_list}
         last_index = limit if isinstance(limit, int) else len(file_list)
         file_list = sample(file_list, last_index)
     for file in file_list:
@@ -58,6 +63,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
                 # digest and file length are identical to a previous file, almost certainly a duplicate
                 print(f'{file.name} is duplicate of {other_file.name} - deleting')
                 send2trash(file)
+                checklist.pop(unbump(file.stem))
                 continue
         except StopIteration:
             pass
@@ -98,6 +104,7 @@ def erase_trailers(only_known: bool = False, limit: int | timedelta | list[str] 
         digest[file] = this_digest
         if cut_length:
             toast += f'{file.stem}, {cut_length:.0f}s\n'
+            checklist[unbump(file.stem)] = f'{cut_length:.0f}s'
     return toast
 
 
@@ -121,6 +128,42 @@ def write_mp3_file(file: Path, frames: list[bytes]) -> float:
         return 0  # don't guess length in test mode
 
 
+def unbump(name: str) -> str:
+    """Return an unbumped version of the file name
+    i.e. 2026-02-01 (bumped from 2026-10-05) xxx -> 2026-02-21 xxx."""
+    return (name[:10] + name[35:]) if '(bumped from ' in name else name
+
+
+def read_checklist() -> dict[str, bool | str]:
+    """Read in checklist from file: Markdown format with checkboxes, and cut length listed after each checked entry."""
+    checklist: dict[str, bool | str] = {}
+    for line in list_filename.read_text().splitlines():
+        stem = line[6:]
+        cut_length = line.startswith('- [x] ')
+        if cut_length:
+            stem, cut_length = stem.rsplit(', ', maxsplit=1)
+        checklist[stem] = cut_length
+    return checklist
+
+
+def produce_list():
+    """Check previous alerts and tick off on a list which trailers have been erased."""
+    checklist: dict[str, bool | str] = read_checklist()
+    for line in check_previous('✂  erase_trailers', days_before=740):
+        stem, cut_length = line.rsplit(', ', maxsplit=1)
+        if stem in checklist:
+            checklist[stem] = cut_length
+            write_checklist(checklist)
+
+
+def write_checklist(checklist: dict[str, bool | str]):
+    list_filename.open('w').write('\n'.join([
+        (f'- [x] {filename}, {cut_length}' if cut_length else f'- [ ] {filename}')
+        for filename, cut_length in sorted(checklist.items())
+    ]))
+
+
 if __name__ == '__main__':
     # test_mode = True
-    print(erase_trailers(limit=5))
+    # print(erase_trailers(limit=5))
+    produce_list()
