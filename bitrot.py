@@ -22,10 +22,8 @@
 
 from __future__ import annotations
 
-import argparse
 import atexit
 import contextlib
-import datetime
 import errno
 import hashlib
 import os
@@ -34,13 +32,15 @@ import sqlite3
 import stat
 import sys
 import tempfile
-import time
+from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
 from fnmatch import fnmatch
 from importlib.metadata import version, PackageNotFoundError
 from multiprocessing import freeze_support
 from os import stat_result
 from platform import node
+from time import time
 
 import unicodedata
 from progress.bar import IncrementalBar, Bar
@@ -79,7 +79,7 @@ def sha1(path, chunk_size):
 
 
 def ts():
-    return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
+    return datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S%z')
 
 
 def get_sqlite3_cursor(path, copy=False):
@@ -109,7 +109,7 @@ def get_sqlite3_cursor(path, copy=False):
 
 
 def list_existing_paths(directory, ignored=(),
-                              verbosity=1, follow_links=False):
+                        verbosity=1, follow_links=False):
     """list_existing_paths('/dir') -> ([path1, path2, ...], total_size)
 
     Returns a tuple with a set of existing files in `directory` and its subdirectories
@@ -242,16 +242,16 @@ class Bitrot(object):
         self.pool = ProcessPoolExecutor(max_workers=workers)
         self.sublist_count = sublist_count
         if sublist_index is None:
-            sublist_index = datetime.datetime.today().toordinal() % self.sublist_count
+            sublist_index = datetime.today().toordinal() % self.sublist_count
         self.sublist_index = sublist_index
 
     def maybe_commit(self, conn):
-        if time.time() < self._last_commit_ts + self.commit_interval:
+        if time() < self._last_commit_ts + self.commit_interval:
             # no time for commit yet!
             return
 
         conn.commit()
-        self._last_commit_ts = time.time()
+        self._last_commit_ts = time()
 
     def run(self):
         # check_sha512_integrity(verbosity=self.verbosity)
@@ -561,7 +561,7 @@ def run_from_command_line():
 
     freeze_support()
 
-    parser = argparse.ArgumentParser(prog='bitrot')
+    parser = ArgumentParser(prog='bitrot')
     parser.add_argument(
         '-l', '--follow-links', action='store_true',
         help="follow symbolic links and store target files' hashes. Once "
@@ -659,13 +659,18 @@ def read_exclude_list(exclude_list):
     return [line.rstrip('\n') for line in open(exclude_list)]
 
 
-def check_folders_for_bitrot(verbosity=1, sublist_count=60, **kwargs):
+def check_folders_for_bitrot(verbosity=1, sublist_count=60, **kwargs) -> str | datetime:
     """Go through the list of folders, checking each one for bitrot."""
+    # Don't run in the evening on eddie to keep the noise down in the living room
+    now = datetime.now()
+    if node() == 'eddie' and 18 <= now.hour <= 22:
+        return now.replace(hour=23)
     script_dir = os.path.split(__file__)[0]
     os.chdir(script_dir)
     exclude_list = read_exclude_list('exclude.txt')
     toast = ''
-    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a', encoding='utf-8')  # always append - don't overwrite sublist errors
+    error_file_handle = open(f'bitrot-errors-{node()}.txt', 'a',
+                             encoding='utf-8')  # always append - don't overwrite sublist errors
     for folder in check_folders:
         print(folder)
         os.chdir(folder)

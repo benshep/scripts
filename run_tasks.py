@@ -48,14 +48,17 @@ sheet_name = 'Sheet1'
 install()  # rich text
 
 
-def lazy_import(name: str) -> ModuleType:
+def lazy_import(name: str, lazy: bool = True) -> ModuleType:
     """Import a module with the given name."""
-    spec = importlib.util.find_spec(name)
-    loader = importlib.util.LazyLoader(spec.loader)
-    spec.loader = loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
+    if lazy:
+        spec = importlib.util.find_spec(name)
+        loader = importlib.util.LazyLoader(spec.loader)
+        spec.loader = loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        loader.exec_module(module)
+    else:
+        module = importlib.import_module(name)
     module.mod_time = os.path.getmtime(module.__file__)
     print('Imported', module, datetime.fromtimestamp(module.mod_time))
     return module
@@ -90,13 +93,13 @@ def run_tasks():
         'find_new_python_packages': lazy_import('package_updates'),
         'get_directions': lazy_import('directions'),
         'flat_search': lazy_import('find_accommodation'),
+        'get_feed': lazy_import('push_feed'),
     }
 
     at_home = docs_folder is None  # no work documents
     if not at_home:
         # 'work' tasks
         sys.path.append(os.path.join(docs_folder, 'Scripts'))
-
         group_module = lazy_import('group')
         page_changes_module = lazy_import('page_changes')
         osc_module = lazy_import('oracle_staff_check')
@@ -142,11 +145,18 @@ def run_tasks():
         print('Fetching data from spreadsheet', datetime.now() - start_time)
         try:
             headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
+            checkin_headers, *checkins = google_api.get_data(sheet_id, 'Checkin', 'A:B')
         except Exception as e:
             print(e)
             sleep(60)
             continue
         assert headers == column_names
+        assert checkin_headers == ['Machine', 'Last seen']
+        for i, (machine, last_seen) in enumerate(checkins):
+            if machine == 'eddie' and datetime.strptime(last_seen, time_format) < datetime.now() - timedelta(hours=24):
+                pushbullet.push_note('🤖 run_tasks', f'eddie not seen since {last_seen}')
+            elif machine == node():
+                google_api.update_cell(sheet_id, 'Checkin', f'B{i + 2}', datetime.now().strftime(time_format))
         min_period = min(float(row[period_col]) for row in data)
         next_task_time = datetime.now() + timedelta(days=7)  # set a long time off, reduce as we go through task list
         next_task_name = 'task check'
