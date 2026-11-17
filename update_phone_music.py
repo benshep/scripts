@@ -67,8 +67,8 @@ async def check_radio_files() -> str | tuple[str, Path]:
         # min_date = min_date or file_date  # set to first one
         # weeks = (file_date - min_date).days // 7
 
-        # remove archive In Our Time episodes
-        if '(Archive Episode)' in file.stem or '_Archive_' in file.stem:
+        # remove archive In Our Time and Allusionist episodes
+        if '(Archive Episode)' in file.stem or '_Archive_' in file.stem or 'Allusiovaults' in file.stem:
             toast += delete_file(file)
             continue
 
