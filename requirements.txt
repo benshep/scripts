@@ -20,3 +20,5 @@ yt-dlp[default]
 pushbullet.py
 progress
 filetype
+win11toast ; sys_platform == 'win32'
+pywin32 ; sys_platform == 'win32'
