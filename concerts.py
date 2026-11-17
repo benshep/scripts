@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 import googleapiclient.errors
 import requests
 from progress.bar import IncrementalBar
-from selenium.webdriver.common.devtools.v147.runtime import release_object_group
 
 import google_api
 from folders import music_folder
@@ -135,7 +134,7 @@ def format_time(time: datetime):
     return time.strftime('%d %b %H:%M')  # e.g. 15 Mar 14:00
 
 
-def update_gig_calendar():
+def update_gig_calendar(**kwargs):
     toast = ''
     my_events = get_calendar_events()
     for artist_name, shows in get_upcoming_shows().items():
@@ -240,7 +239,7 @@ def get_new_releases(artist) -> list[Release]:
     ]
 
 
-def find_new_releases() -> None | str | tuple[str, str]:
+def find_new_releases(**kwargs) -> None | str | tuple[str, str]:
     """Find new releases for the user's top artists."""
     release_list_filename = music_folder / 'New releases.md'
     release_list = release_list_filename.read_text(encoding='utf-8') if release_list_filename.exists() else ''

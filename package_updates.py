@@ -117,7 +117,7 @@ def pip_outdated() -> set[str]:
     return {line.split()[0] for line in outdated[2:-1]}  # skip header and last blank line
 
 
-def find_new_python_packages() -> str:
+def find_new_python_packages(**kwargs) -> str:
     """Return a list of new available packages, from conda, pip and chocolatey."""
     pip_new = pip_outdated() - {'certifi', 'pycparser'}  # updates usually fail for these
     conda_new = set()

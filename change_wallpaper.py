@@ -72,7 +72,7 @@ def apply_orientation(im: Image) -> Image:
     return im
 
 
-def change_wallpaper(target: str = 'desktop') -> None:
+def change_wallpaper(target: str = 'desktop', **kwargs) -> None:
     """Pick a random image for a new desktop wallpaper image from the user's Pictures folder.
     The parameter target can be desktop, lockscreen or phone."""
     print(f'Wallpaper Changer, {target=}')
@@ -220,7 +220,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 wallpaper_subfolder.mkdir(exist_ok=True)
                 image_files = []
                 for filename in wallpaper_subfolder.glob('*.jpg'):
-                    if 'sync-conflict' in filename:
+                    if 'sync-conflict' in filename.name:
                         # Android date issue, sync conflicts get erroneously generated every so often - safe to delete
                         print(' Removing', filename)
                         send2trash(filename)
@@ -229,7 +229,7 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 if image_files:
                     newest = max(image_files, key=lambda file: file.stat().st_mtime)
                     # Increment by 1
-                    file_num = (int(newest[:-4]) + 1) % 200
+                    file_num = (int(newest.stem) + 1) % 200
                 else:
                     file_num = 0
                 wallpaper_filename = wallpaper_subfolder / f'{file_num:03d}.jpg'
@@ -244,30 +244,31 @@ def change_wallpaper(target: str = 'desktop') -> None:
                 canvas.save(wallpaper_filename)
             break
 
-    if target != 'phone':
+    if target == 'desktop':
         wallpaper_filename = wallpaper_dir / 'wallpaper.jpg'
-        if target == 'desktop':
-            for _ in range(5):
-                try:
-                    canvas.save(wallpaper_filename)
-                    break
-                except OSError as error:
-                    # sometimes get 'Invalid argument' error - is the file locked?
-                    if error.errno != 22:
-                        raise  # something else went wrong instead!
-                    time.sleep(5)
-            else:  # tried 5 times and failed
-                raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
-
-        if target == 'lockscreen':  # save as lockscreen filename
-            # registry key to disable changing this:
-            # HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization
-            canvas.save(wallpaper_dir / '00.jpg')
-            # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
-            canvas.save(wallpaper_dir / '01.jpg')
-
-        elif on_windows:  # use USER32 call to set a desktop background
+        for _ in range(5):
+            try:
+                canvas.save(wallpaper_filename)
+                break
+            except OSError as error:
+                # sometimes get 'Invalid argument' error - is the file locked?
+                if error.errno != 22:
+                    raise  # something else went wrong instead!
+                time.sleep(5)
+        else:  # tried 5 times and failed
+            raise RuntimeError(f"Couldn't save image in {wallpaper_filename}")
+        if on_windows:  # use USER32 call to set a desktop background
             ctypes.windll.user32.SystemParametersInfoW(20, 0, str(wallpaper_filename), 3)
+        else:  # Ubuntu / Gnome
+            for mode in ('', '-dark'):  # set for dark and light mode separately
+                subprocess.call(['gsettings', 'set', 'org.gnome.desktop.background', f'picture-uri{mode}', wallpaper_filename.as_uri()])
+
+    if target == 'lockscreen':  # save as lockscreen filename
+        # registry key to disable changing this:
+        # HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Personalization
+        canvas.save(wallpaper_dir / '00.jpg')
+        # save another one, since Win10 needs >1 file in a lockscreen slideshow folder
+        canvas.save(wallpaper_dir / '01.jpg')
 
 
 def find_mosaic_images(full_name: Path, image_size,

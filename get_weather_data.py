@@ -11,7 +11,7 @@ api_url = 'https://api.openweathermap.org/data/3.0/onecall/timemachine?'
 
 
 def one_day():
-    date = datetime.datetime(2023, 8, 24, 7, 30, 0)
+    date = datetime.datetime(2026, 7, 23, 17, 00, 0)
     unix_time = int(time.mktime(date.timetuple()))
     query = urlencode({'lat': home['latitude'], 'lon': home['longitude'],
                        'dt': unix_time, 'appid': api_key, 'units': 'metric'})
@@ -83,4 +83,4 @@ def loop_hours():
 
 
 if __name__ == '__main__':
-    loop_days()
+    one_day()

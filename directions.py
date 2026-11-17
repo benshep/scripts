@@ -8,7 +8,7 @@ from google_routing_credentials import api_key
 import locations
 
 
-def get_directions() -> str | datetime:
+def get_directions(**kwargs) -> str | datetime:
     """Get expected time and best route for driving home."""
     # wait until late afternoon
     now = datetime.now()
@@ -20,7 +20,7 @@ def get_directions() -> str | datetime:
     if last_ride_date.date() == now.date() and 'to work' in last_ride_route:  # it's a cycle day - don't need driving route
         return (now + timedelta(days=1)).replace(hour=16, minute=0)
     home = {"location": {"latLng": locations.home}}
-    home = {"location": {"latLng": locations.arnold_clark}}
+    # home = {"location": {"latLng": locations.arnold_clark}}
     work = {"location": {"latLng": locations.bike_shed}}
     url = 'https://routes.googleapis.com/directions/v2:computeRoutes'
     km_cost = 0.107

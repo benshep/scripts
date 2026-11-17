@@ -122,7 +122,7 @@ def format_time(time: datetime) -> str:
     return time.strftime('%d %b %H:%M')  # e.g. 15 Mar 14:00
 
 
-def update_saints_calendar() -> str:
+def update_saints_calendar(**kwargs) -> str:
     toast = ''
     my_events = get_calendar_events()
     fixture_list = get_local_fixtures() \

@@ -48,14 +48,17 @@ sheet_name = 'Sheet1'
 install()  # rich text
 
 
-def lazy_import(name: str) -> ModuleType:
+def lazy_import(name: str, lazy: bool = True) -> ModuleType:
     """Import a module with the given name."""
-    spec = importlib.util.find_spec(name)
-    loader = importlib.util.LazyLoader(spec.loader)
-    spec.loader = loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
+    if lazy:
+        spec = importlib.util.find_spec(name)
+        loader = importlib.util.LazyLoader(spec.loader)
+        spec.loader = loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        loader.exec_module(module)
+    else:
+        module = importlib.import_module(name)
     module.mod_time = os.path.getmtime(module.__file__)
     print('Imported', module, datetime.fromtimestamp(module.mod_time))
     return module
@@ -90,13 +93,13 @@ def run_tasks():
         'find_new_python_packages': lazy_import('package_updates'),
         'get_directions': lazy_import('directions'),
         'flat_search': lazy_import('find_accommodation'),
+        'get_feed': lazy_import('push_feed'),
     }
 
     at_home = docs_folder is None  # no work documents
     if not at_home:
         # 'work' tasks
         sys.path.append(os.path.join(docs_folder, 'Scripts'))
-
         group_module = lazy_import('group')
         page_changes_module = lazy_import('page_changes')
         osc_module = lazy_import('oracle_staff_check')
@@ -142,11 +145,18 @@ def run_tasks():
         print('Fetching data from spreadsheet', datetime.now() - start_time)
         try:
             headers, *data = google_api.get_data(sheet_id, sheet_name, f'A:{last_col}')
+            checkin_headers, *checkins = google_api.get_data(sheet_id, 'Checkin', 'A:B')
         except Exception as e:
             print(e)
             sleep(60)
             continue
         assert headers == column_names
+        assert checkin_headers == ['Machine', 'Last seen']
+        for i, (machine, last_seen) in enumerate(checkins):
+            if machine == 'eddie' and datetime.strptime(last_seen, time_format) < datetime.now() - timedelta(hours=24):
+                pushbullet.push_note('🤖 run_tasks', f'eddie not seen since {last_seen}')
+            elif machine == node():
+                google_api.update_cell(sheet_id, 'Checkin', f'B{i + 2}', datetime.now().strftime(time_format))
         min_period = min(float(row[period_col]) for row in data)
         next_task_time = datetime.now() + timedelta(days=7)  # set a long time off, reduce as we go through task list
         next_task_name = 'task check'
@@ -213,7 +223,7 @@ def run_tasks():
             set_window_title(icon_and_name)
             print('\n', last_triggered, icon_and_name, parameters)
             try:
-                return_value = function() if parameters == '' else function(parameters)
+                return_value = function(last_run_time=last_run_time) if parameters == '' else function(parameters, last_run_time=last_run_time)
             except Exception as exception:  # something went wrong with the task!
                 return_value = exception
                 exception_type, exception_value, exception_traceback = sys.exc_info()
@@ -251,21 +261,26 @@ def run_tasks():
                     print(toast)
                     print(filename)
                     try:
+                        push_it = pushbullet.push_file
                         if isinstance(filename, Path):
                             filename = str(filename)  # upload_file needs a str object
                             with open(filename, 'rb') as file_handle:
                                 file_details = pushbullet.upload_file(file_handle, filename, filetype.guess_mime(filename))
-                        else:  # URL
+                        elif filename.lower().endswith(('.jpg', '.png')):  # image URL
                             file_details = dict(file_name='cover.jpg', file_url=filename, file_type='image/jpg')
+                        else:  # other URL
+                            file_details = dict(url=filename)
+                            push_it = pushbullet.push_link
                         if filename.startswith(tempfile.gettempdir()):  # clean up temp files
                             with suppress(PermissionError):
                                 os.remove(filename)
-                        pushbullet.push_file(title=toast_title, body=toast, **file_details)
+                        push_it(title=toast_title, body=toast, **file_details)
                     except requests.exceptions.ReadTimeout:
                         if on_windows:
                             # try a local notification instead
                             win11toast.notify(title=toast_title, body=toast, image=filename, duration='long')
-                case Exception():  # something went wrong with the task
+                case Exception() as exception:  # something went wrong with the task
+                    print(exception)
                     next_run_time = now + timedelta(days=min_period)  # try again soon
                     split = last_result.split(' ')
                     fail_count = int(split[1]) + 1 if split[0] == 'Failure' else 1
@@ -303,7 +318,7 @@ def run_tasks():
             # Ignore date portion - if schedule missed, will happen again next day
             cron = CronTab(user='ben')
             job = next(cron.find_command('run_tasks'))
-            job.setall(next_task_time.time())  # just time portion
+            job.setall(next_task_time.time().minute, None)  # just minute portion
             cron.write()
             break  # just run once on cron
 

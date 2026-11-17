@@ -60,7 +60,7 @@ def ymdhm(date: datetime):
     return date.strftime('%Y%m%d%H%M')
 
 
-def get_usage_data(remove_incomplete_rows: bool = True) -> None | str | datetime:
+def get_usage_data(remove_incomplete_rows: bool = True, **kwargs) -> None | str | datetime:
     return asyncio.run(get_usage_data_async(remove_incomplete_rows=remove_incomplete_rows))
 
 
